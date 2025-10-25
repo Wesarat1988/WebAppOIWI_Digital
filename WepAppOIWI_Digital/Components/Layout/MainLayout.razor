@@ -1,12 +1,19 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 
 <div class="page">
-    <div class="sidebar">
-        <NavMenu />
+    <div class="@SidebarCssClass">
+        <NavMenu IsCollapsed="_isSidebarCollapsed" />
     </div>
 
     <main>
         <div class="top-row px-4">
+            <button type="button"
+                    class="sidebar-toggle @(_isSidebarCollapsed ? "collapsed" : string.Empty)"
+                    @onclick="ToggleSidebar"
+                    aria-label="Toggle sidebar"
+                    aria-expanded="@(!_isSidebarCollapsed)">
+                <span class="sidebar-toggle-icon"></span>
+            </button>
             <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
         </div>
 
@@ -21,3 +28,14 @@
     <a href="" class="reload">Reload</a>
     <a class="dismiss">🗙</a>
 </div>
+
+@code {
+    private bool _isSidebarCollapsed;
+
+    private string SidebarCssClass => _isSidebarCollapsed ? "sidebar collapsed" : "sidebar";
+
+    private void ToggleSidebar()
+    {
+        _isSidebarCollapsed = !_isSidebarCollapsed;
+    }
+}
