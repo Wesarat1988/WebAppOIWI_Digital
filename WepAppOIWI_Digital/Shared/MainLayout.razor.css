@@ -1,0 +1,125 @@
+.page {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f8fbff 0%, #e6f1ff 35%, #f8fbff 100%);
+  color: #1a2a6c;
+  transition: grid-template-columns 0.2s ease;
+}
+
+.sidebar {
+  background: linear-gradient(180deg, #1f3fb2 0%, #2e6cf3 50%, #36c0fb 100%);
+  color: rgba(255, 255, 255, 0.92);
+  transition: transform 0.2s ease;
+  overflow: hidden;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background-color: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(6px);
+}
+
+.top-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(90deg, rgba(31, 63, 178, 0.92), rgba(54, 192, 251, 0.85));
+  color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 8px rgba(31, 63, 178, 0.25);
+}
+
+.top-row a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.top-row a:hover,
+.top-row a:focus {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+.content {
+  padding-top: 1.5rem;
+  padding-bottom: 2rem;
+}
+
+.btn-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.btn-toggle:hover,
+.btn-toggle:focus {
+  background: rgba(255, 255, 255, 0.24);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.btn-toggle:active {
+  transform: translateY(1px);
+}
+
+/* Collapsed state */
+.page.collapsed {
+  grid-template-columns: 0 1fr;
+}
+
+.page.collapsed .sidebar {
+  transform: translateX(-100%);
+  box-shadow: none;
+}
+
+/* Responsive: off-canvas behavior */
+@media (max-width: 992px) {
+  .page {
+    position: relative;
+    grid-template-columns: 0 1fr;
+  }
+
+  .sidebar {
+    position: absolute;
+    z-index: 1040;
+    width: 250px;
+    max-width: 80vw;
+    height: 100vh;
+    top: 0;
+    left: 0;
+    transform: translateX(-100%);
+  }
+
+  .page:not(.collapsed) .sidebar {
+    transform: translateX(0);
+  }
+
+  main {
+    min-height: 100vh;
+  }
+}
+
+@media (max-width: 576px) {
+  .top-row {
+    padding: 0.75rem;
+  }
+
+  .navbar-brand {
+    font-size: 1rem;
+  }
+}
