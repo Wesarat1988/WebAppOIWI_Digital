@@ -1,0 +1,13 @@
+# Visual Studio / .NET
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+*.log
+# Node
+**/node_modules/
+# OS noise
+.DS_Store
+Thumbs.db
