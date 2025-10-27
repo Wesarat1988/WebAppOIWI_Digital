@@ -1,6 +1,23 @@
 @inherits LayoutComponentBase
 
-<div class="main-content">
+<button class="menu-button"
+        @onclick="ToggleMenu"
+        aria-label="Open menu"
+        aria-expanded="@isOpen"
+        aria-controls="main-sidepanel">
+    <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+</button>
+
+<div class="overlay @(isOpen ? "show" : string.Empty)" @onclick="CloseMenu"></div>
+
+<aside id="main-sidepanel"
+       class="sidepanel @(isOpen ? "open" : string.Empty)"
+       role="navigation"
+       aria-hidden="@(!isOpen)">
+    <NavMenu />
+</aside>
+
+<div class="main-content" aria-live="polite">
     @Body
 </div>
 
@@ -9,3 +26,11 @@
     <a href="" class="reload">Reload</a>
     <a class="dismiss">🗙</a>
 </div>
+
+@code {
+    private bool isOpen;
+
+    private void ToggleMenu() => isOpen = !isOpen;
+
+    private void CloseMenu() => isOpen = false;
+}

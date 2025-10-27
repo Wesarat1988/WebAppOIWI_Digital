@@ -1,12 +1,87 @@
+/* ปุ่มเมนู (มุมขวาบน) */
+.menu-button {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  z-index: 2000;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.menu-button .bar {
+  width: 24px;
+  height: 3px;
+  background: #1f2937;
+  border-radius: 3px;
+}
+
+.menu-button .bar + .bar {
+  margin-top: 5px;
+}
+
+.menu-button:focus {
+  outline: 3px solid rgba(37, 99, 235, 0.45);
+  outline-offset: 2px;
+}
+
+/* แผงสไลด์ด้านขวา */
+.sidepanel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100dvh;
+  width: 320px;
+  max-width: 85vw;
+  background: #0b1020;
+  color: #e5e7eb;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  z-index: 1500;
+  overflow: auto;
+  padding: 24px 20px;
+  box-shadow: -4px 0 18px rgba(15, 23, 42, 0.45);
+}
+
+.sidepanel.open {
+  transform: translateX(0);
+}
+
+/* ม่านคลุม (อย่าทับคลิกตอนซ่อน) */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 1400;
+}
+
+.overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .main-content {
   min-height: 100dvh;
-  padding: 24px 16px;
+  padding: 92px 16px 32px;
   background: #f8fafc;
+  position: relative;
+  z-index: 1;
 }
 
 @media (min-width: 768px) {
   .main-content {
-    padding: 32px 48px;
+    padding: 112px 48px 48px;
   }
 }
 
