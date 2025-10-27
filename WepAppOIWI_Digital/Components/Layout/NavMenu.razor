@@ -1,50 +1,44 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
-    <div class="container-fluid">
-        <a class="navbar-brand" href="">WepAppOIWI_Digital</a>
-    </div>
-</div>
+<nav class="nav-panel" aria-label="Main navigation">
+    <header class="nav-panel__header">
+        <span class="nav-panel__title">WepAppOIWI_Digital</span>
+        <span class="nav-panel__subtitle">เมนูหลัก</span>
+    </header>
 
-<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+    <button type="button"
+            class="group-header"
+            @onclick="ToggleGroup"
+            aria-expanded="@isGroupOpen"
+            aria-controls="main-nav-group">
+        <span class="group-title">สำรวจแอป</span>
+        <span class="chevron @(isGroupOpen ? "open" : null)" aria-hidden="true">▸</span>
+    </button>
 
-<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-    <nav class="flex-column nav-vertical">
-        <button type="button"
-                class="group-header"
-                @onclick="ToggleGroup"
-                @onclick:stopPropagation="true"
-                aria-expanded="@isGroupOpen"
-                aria-controls="main-nav-group">
-            <span class="group-title">WepAppOIWI_Digital</span>
-            <span class="chevron @(isGroupOpen ? "open" : null)" aria-hidden="true">▸</span>
-        </button>
-
-        <div id="main-nav-group" class="group-body @(isGroupOpen ? "open" : null)">
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                    <span class="bi bi-house-door-fill" aria-hidden="true"></span> Home
-                </NavLink>
-            </div>
-
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="counter">
-                    <span class="bi bi-plus-square-fill" aria-hidden="true"></span> Counter
-                </NavLink>
-            </div>
-
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="weather">
-                    <span class="bi bi-list-nested" aria-hidden="true"></span> Weather
-                </NavLink>
-            </div>
+    <div id="main-nav-group" class="group-body @(isGroupOpen ? "open" : null)">
+        <div class="nav-item">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill" aria-hidden="true"></span>
+                <span>Home</span>
+            </NavLink>
         </div>
-    </nav>
-</div>
+
+        <div class="nav-item">
+            <NavLink class="nav-link" href="counter">
+                <span class="bi bi-plus-square-fill" aria-hidden="true"></span>
+                <span>Counter</span>
+            </NavLink>
+        </div>
+
+        <div class="nav-item">
+            <NavLink class="nav-link" href="weather">
+                <span class="bi bi-list-nested" aria-hidden="true"></span>
+                <span>Weather</span>
+            </NavLink>
+        </div>
+    </div>
+</nav>
 
 @code {
     private bool isGroupOpen = true;
 
-    private void ToggleGroup()
-    {
-        isGroupOpen = !isGroupOpen;
-    }
+    private void ToggleGroup() => isGroupOpen = !isGroupOpen;
 }
