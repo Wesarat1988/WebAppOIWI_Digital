@@ -1,0 +1,41 @@
+@inherits LayoutComponentBase
+
+<div class="page @(isCollapsed ? "collapsed" : "expanded")">
+    <div id="layout-sidebar" class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row navbar navbar-dark">
+            <button type="button"
+                    class="btn-toggle"
+                    @onclick="ToggleSidebar"
+                    title="Toggle sidebar"
+                    aria-expanded="@(isCollapsed ? "false" : "true")"
+                    aria-controls="layout-sidebar">
+                ☰
+            </button>
+            <a class="navbar-brand ms-2" href="">WepAppOIWI_Digital</a>
+            <a class="ms-auto me-3" href="about">About</a>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>
+
+@code {
+    private bool isCollapsed;
+
+    private void ToggleSidebar()
+    {
+        isCollapsed = !isCollapsed;
+    }
+}
