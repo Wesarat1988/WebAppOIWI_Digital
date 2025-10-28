@@ -1,15 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<!-- ตั้งชื่อ Assembly ให้ชัด (ถ้าชื่อ exe ไม่ตรงกับชื่อโปรเจกต์ ให้แก้บรรทัดนี้) -->
+		<AssemblyName>WepAppOIWI_Digital</AssemblyName>
+	</PropertyGroup>
 
-  <Target Name="TerminateRunningAppInstance" BeforeTargets="Build">
-    <Exec Condition="'$([MSBuild]::IsOSPlatform(''Windows''))' == 'true'"
-          Command="taskkill /F /IM WepAppOIWI_Digital.exe"
-          IgnoreExitCode="true" />
-  </Target>
+	<!-- ปิดโปรเซสที่อาจล็อกไฟล์ ก่อน Build/Rebuild/Publish -->
+	<Target Name="TerminateRunningAppInstance" BeforeTargets="Build;Rebuild;Publish">
+		<!-- ใช้ PowerShell: ปิดเฉพาะที่มีอยู่จริง และไม่พ่น error ออกมา -->
+		<Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+			  Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-Process -Name '$(AssemblyName)','iisexpress','dotnet' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue&quot;"
+			  IgnoreExitCode="true" />
+	</Target>
+
+	<!-- ปิด build servers หลัง Clean เพื่อลดการล็อกจากคอมไพเลอร์ -->
+	<Target Name="ShutdownDotNetBuildServer" AfterTargets="Clean">
+		<Exec Command="dotnet build-server shutdown" IgnoreExitCode="true" />
+	</Target>
 
 </Project>
