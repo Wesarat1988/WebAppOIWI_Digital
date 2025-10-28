@@ -6,4 +6,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <Target Name="TerminateRunningAppInstance" BeforeTargets="Build">
+    <Exec Condition="'$([MSBuild]::IsOSPlatform(''Windows''))' == 'true'"
+          Command="taskkill /F /IM WepAppOIWI_Digital.exe"
+          IgnoreExitCode="true" />
+  </Target>
+
 </Project>
