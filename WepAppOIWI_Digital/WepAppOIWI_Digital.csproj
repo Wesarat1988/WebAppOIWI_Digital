@@ -4,27 +4,20 @@
 		<TargetFramework>net8.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<!-- ตั้งชื่อ Assembly ให้ชัด (ถ้าชื่อ exe ไม่ตรงกับชื่อโปรเจกต์ ให้แก้บรรทัดนี้) -->
 		<AssemblyName>WepAppOIWI_Digital</AssemblyName>
 	</PropertyGroup>
 
 	<!-- ปิดโปรเซสที่อาจล็อกไฟล์ ก่อน Build/Rebuild/Publish -->
 	<Target Name="TerminateRunningAppInstance" BeforeTargets="Build;Rebuild;Publish">
-		<!-- ใช้ PowerShell: ปิดเฉพาะที่มีอยู่จริง และไม่พ่น error ออกมา -->
+		<!-- ✅ เงื่อนไข MSBuild ที่ถูกต้อง (ไม่ต้องเทียบ == 'true') -->
 		<Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
 			  Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-Process -Name '$(AssemblyName)','iisexpress','dotnet' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue&quot;"
 			  IgnoreExitCode="true" />
 	</Target>
 
-	<!-- ปิด build servers หลัง Clean เพื่อลดการล็อกจากคอมไพเลอร์ -->
+	<!-- ปิด build servers หลัง Clean -->
 	<Target Name="ShutdownDotNetBuildServer" AfterTargets="Clean">
 		<Exec Command="dotnet build-server shutdown" IgnoreExitCode="true" />
 	</Target>
-
-  <Target Name="TerminateRunningAppInstance" BeforeTargets="Build">
-    <Exec Condition="'$([MSBuild]::IsOSPlatform(''Windows''))' == 'true'"
-          Command="taskkill /F /IM WepAppOIWI_Digital.exe"
-          IgnoreExitCode="true" />
-  </Target>
 
 </Project>
