@@ -258,6 +258,17 @@ label span {
             background: rgba(0, 91, 172, 0.22);
         }
 
+    .btn.warning {
+        background: rgba(249, 115, 22, 0.16);
+        color: #c2410c;
+        padding-inline: 1.25rem;
+    }
+
+        .btn.warning:not(:disabled):hover {
+            transform: translateY(-1px);
+            background: rgba(249, 115, 22, 0.24);
+        }
+
     .btn.tertiary {
         background: rgba(140, 200, 255, 0.24);
         color: var(--dtl-primary-dark);
