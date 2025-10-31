@@ -4,14 +4,16 @@ using System.Net.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// DI: HttpClient สำหรับคอมโพเนนต์
+builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
+
+// DI: HttpClient รร“รรร‘ยบยครรรขยพร ยนยนยตรฌ
 builder.Services.AddScoped<HttpClient>(sp =>
 {
     var nav = sp.GetRequiredService<NavigationManager>();
     return new HttpClient { BaseAddress = new Uri(nav.BaseUri) };
 });
 
-// (ถ้าต้องมี MES)
+// (ยถรฉร’ยตรฉรยงรร• MES)
 // builder.Services.AddHttpClient("MES", c => c.BaseAddress = new Uri("https://your-mes-endpoint/"));
 
 builder.Services.AddRazorComponents()
@@ -25,7 +27,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
-// app.UseHttpsRedirection(); // ปิดถ้ายังใช้ http
+// app.UseHttpsRedirection(); // ยปร”ยดยถรฉร’รร‘ยงรฃยชรฉ http
 
 app.UseStaticFiles();
 app.UseAntiforgery();

@@ -5,12 +5,16 @@
 @inject IJSRuntime JS
 @inject ILogger<WepAppOIWI_Digital.Components.Pages.Setup> Log
 
+@inject SetupStateStore StateStore
+
 @using System.Net
 @using System.Text.Json
 @using System.Linq
 @using System.Threading
+@using System.Collections.Generic
 @using Microsoft.Extensions.Logging
 @using WepAppOIWI_Digital.Helpers
+@using WepAppOIWI_Digital.Services
 
 <PageTitle>Setup</PageTitle>
 
@@ -208,61 +212,126 @@
 
     private bool ShowGetMoModal { get; set; }
     private bool isLoading;
-    private string SearchFilter { get; set; } = string.Empty;
-    private string WorkOrderFilter { get; set; } = string.Empty;
+
+    private string SearchFilter
+    {
+        get => StateStore.SearchFilter;
+        set => StateStore.SearchFilter = value;
+    }
+
+    private string WorkOrderFilter
+    {
+        get => StateStore.WorkOrderFilter;
+        set => StateStore.WorkOrderFilter = value;
+    }
+
     private bool ShowStationPicker { get; set; }
 
-    private string WorkOrder { get; set; } = string.Empty;
-    private string Model { get; set; } = string.Empty;
-    private string Line { get; set; } = string.Empty;
-    private string Section { get; set; } = string.Empty;
-    private string Group { get; set; } = string.Empty;
-    private string Station { get; set; } = string.Empty;
+    private string WorkOrder
+    {
+        get => StateStore.WorkOrder;
+        set => StateStore.WorkOrder = value;
+    }
 
-    private string EmpNo { get; set; } = string.Empty;
-    private string Factory { get; set; } = "DET6";
-    private string GetDataType { get; set; } = "0";
-    private string MoType { get; set; } = "0";
+    private string Model
+    {
+        get => StateStore.Model;
+        set => StateStore.Model = value;
+    }
 
-    private string InputLine { get; set; } = string.Empty;
+    private string Line
+    {
+        get => StateStore.Line;
+        set => StateStore.Line = value;
+    }
+
+    private string Section
+    {
+        get => StateStore.Section;
+        set => StateStore.Section = value;
+    }
+
+    private string Group
+    {
+        get => StateStore.Group;
+        set => StateStore.Group = value;
+    }
+
+    private string Station
+    {
+        get => StateStore.Station;
+        set => StateStore.Station = value;
+    }
+
+    private string EmpNo
+    {
+        get => StateStore.EmpNo;
+        set => StateStore.EmpNo = value;
+    }
+
+    private string Factory
+    {
+        get => StateStore.Factory;
+        set => StateStore.Factory = value;
+    }
+
+    private string GetDataType
+    {
+        get => StateStore.GetDataType;
+        set => StateStore.GetDataType = value;
+    }
+
+    private string MoType
+    {
+        get => StateStore.MoType;
+        set => StateStore.MoType = value;
+    }
+
+    private string InputLine
+    {
+        get => StateStore.InputLine;
+        set => StateStore.InputLine = value;
+    }
+
     private string StatusMessage { get; set; } = string.Empty;
     private string StatusLevel { get; set; } = "info";
     private bool IsStatusVisible { get; set; }
     private bool IsStatusFading { get; set; }
-    
+
     private CancellationTokenSource? statusResetCts;
-    private List<WorkOrderEntry> MoResults { get; set; } = new();
-    private List<StationInfo> FilteredStationList { get; set; } = new();
-    private List<StationInfo> StationList { get; } = new();
-    private List<WorkOrderEntry> FilteredMoList { get; set; } = new();
-    private bool IsWorkOrderSelectionLocked { get; set; }
-    private string SelectedWorkOrderId { get; set; } = string.Empty;
 
+    private List<SetupStateStore.WorkOrderEntry> FilteredMoList { get; set; } = new();
+    private List<SetupStateStore.StationInfo> FilteredStationList { get; set; } = new();
 
-    private sealed class WorkOrderEntry
+    private bool IsWorkOrderSelectionLocked
     {
-        public string WorkOrder { get; set; } = string.Empty;
-        public string Model { get; set; } = string.Empty;
-        public string Line { get; set; } = string.Empty;
+        get => StateStore.IsWorkOrderSelectionLocked;
+        set => StateStore.IsWorkOrderSelectionLocked = value;
     }
 
-    private sealed class PendingMoConfig
+    private string SelectedWorkOrderId
     {
-        public string WorkOrder { get; set; } = string.Empty;
-        public string Model { get; set; } = string.Empty;
-        public string Line { get; set; } = string.Empty;
-        public string Section { get; set; } = string.Empty;
-        public string Group { get; set; } = string.Empty;
-        public string Station { get; set; } = string.Empty;
+        get => StateStore.SelectedWorkOrderId;
+        set => StateStore.SelectedWorkOrderId = value;
     }
-    private PendingMoConfig Pending { get; } = new();
 
-    private sealed class StationInfo
+    private List<SetupStateStore.WorkOrderEntry> MoResults => StateStore.MoResults;
+    private List<SetupStateStore.StationInfo> StationList => StateStore.StationList;
+    private SetupStateStore.PendingMoConfig Pending => StateStore.Pending;
+
+    protected override void OnInitialized()
     {
-        public string Line { get; set; } = string.Empty;
-        public string Section { get; set; } = string.Empty;
-        public string Group { get; set; } = string.Empty;
-        public string Station { get; set; } = string.Empty;
+        base.OnInitialized();
+
+        if (MoResults.Count > 0)
+        {
+            FilterWorkOrders();
+        }
+
+        if (StationList.Count > 0)
+        {
+            FilterStations();
+        }
     }
 
     private void CloseStationPicker()
@@ -270,7 +339,7 @@
         ShowStationPicker = false;
     }
 
-    private void SelectStation(StationInfo station)
+    private void SelectStation(SetupStateStore.StationInfo station)
     {
         Pending.Section = station.Section ?? string.Empty;
         Pending.Group = station.Group ?? string.Empty;
@@ -278,7 +347,7 @@
         ShowStationPicker = false;
     }
 
-    private void SelectWorkOrder(WorkOrderEntry entry)
+    private void SelectWorkOrder(SetupStateStore.WorkOrderEntry entry)
     {
         SelectedWorkOrderId = entry.WorkOrder;
 
@@ -293,11 +362,11 @@
         SetStatus($"เลือก Work Order {WorkOrder} เรียบร้อย", "success");
     }
 
-    private bool IsWorkOrderSelected(WorkOrderEntry entry)
+    private bool IsWorkOrderSelected(SetupStateStore.WorkOrderEntry entry)
         => !string.IsNullOrWhiteSpace(SelectedWorkOrderId)
            && string.Equals(SelectedWorkOrderId, entry.WorkOrder, StringComparison.OrdinalIgnoreCase);
 
-    private async Task ConfirmSelectWorkOrderAsync(WorkOrderEntry entry)
+    private async Task ConfirmSelectWorkOrderAsync(SetupStateStore.WorkOrderEntry entry)
     {
         if (IsWorkOrderSelectionLocked && !IsWorkOrderSelected(entry))
         {
@@ -445,7 +514,7 @@
         }
     }
 
-    private async Task<List<WorkOrderEntry>> FetchWorkOrdersFromMesAsync()
+    private async Task<List<SetupStateStore.WorkOrderEntry>> FetchWorkOrdersFromMesAsync()
     {
         string param = $"EMP_NO{EmpNo}FACTORY{Factory}GETDATA_TYPE{GetDataType}LINE_NAME{InputLine}MO_TYPE{MoType}";
         string sign = MD5Helper.Generate(secretKey + param);
@@ -477,15 +546,15 @@
         if (!root.TryGetProperty("Result", out var resultProp) ||
             !string.Equals(resultProp.GetString(), "OK", StringComparison.OrdinalIgnoreCase))
         {
-            return new List<WorkOrderEntry>();
+            return new List<SetupStateStore.WorkOrderEntry>();
         }
 
         if (!root.TryGetProperty("Message", out var messages) || messages.ValueKind != JsonValueKind.Array)
         {
-            return new List<WorkOrderEntry>();
+            return new List<SetupStateStore.WorkOrderEntry>();
         }
 
-        var list = new List<WorkOrderEntry>();
+        var list = new List<SetupStateStore.WorkOrderEntry>();
         foreach (var item in messages.EnumerateArray())
         {
             var line = item.TryGetProperty("LINE_NAME", out var lineProp) ? lineProp.GetString() : null;
@@ -494,7 +563,7 @@
                 continue;
             }
 
-            list.Add(new WorkOrderEntry
+            list.Add(new SetupStateStore.WorkOrderEntry
             {
                 WorkOrder = item.TryGetProperty("MO_NUMBER", out var mo) ? mo.GetString() ?? string.Empty : string.Empty,
                 Model = item.TryGetProperty("MODEL_NAME", out var model) ? model.GetString() ?? string.Empty : string.Empty,
@@ -533,7 +602,9 @@
         try
         {
             WorkOrderFilter = string.Empty;
-            MoResults = await FetchWorkOrdersFromMesAsync();
+            var results = await FetchWorkOrdersFromMesAsync();
+            MoResults.Clear();
+            MoResults.AddRange(results);
             FilterWorkOrders();
 
             ShowGetMoModal = false;
@@ -591,21 +662,21 @@
             !string.Equals(resultProp.GetString(), "OK", StringComparison.OrdinalIgnoreCase))
         {
             StationList.Clear();
-            FilteredStationList = new List<StationInfo>();
+            FilteredStationList = new List<SetupStateStore.StationInfo>();
             return;
         }
 
         if (!root.TryGetProperty("Message", out var messages) || messages.ValueKind != JsonValueKind.Array)
         {
             StationList.Clear();
-            FilteredStationList = new List<StationInfo>();
+            FilteredStationList = new List<SetupStateStore.StationInfo>();
             return;
         }
 
         StationList.Clear();
         foreach (var item in messages.EnumerateArray())
         {
-            StationList.Add(new StationInfo
+            StationList.Add(new SetupStateStore.StationInfo
             {
                 Line = InputLine,
                 Section = item.TryGetProperty("SECTION_NAME", out var section) ? section.GetString() ?? string.Empty : string.Empty,
@@ -614,5 +685,4 @@
             });
         }
     }
-
 }
