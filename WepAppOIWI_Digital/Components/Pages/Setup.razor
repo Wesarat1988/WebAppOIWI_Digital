@@ -5,6 +5,8 @@
 @inject IJSRuntime JS
 @inject ILogger<WepAppOIWI_Digital.Components.Pages.Setup> Log
 
+@inject SetupStateCache SetupCache
+
 @using System.Net
 @using System.Text.Json
 @using System.Linq
@@ -12,13 +14,15 @@
 @using Microsoft.Extensions.Logging
 @using WepAppOIWI_Digital.Helpers
 
+@using WepAppOIWI_Digital.Services
+
 <PageTitle>Setup</PageTitle>
 
 <h1>⚙️Setup WorkOrder</h1>
 
 <p>จัดการข้อมูล Work Order ด้วยการดึงจาก MES และแก้ไขข้อมูลที่จำเป็น</p>
 
-<button class="btn btn GetMO" @onclick="OpenGetMoModal">📥 Get MO</button>
+<button class="btn GetMO" @onclick="OpenGetMoModal">📥 Get MO</button>
 
 @if (ShowGetMoModal)
 {
@@ -31,26 +35,26 @@
             <div class="modal-body">
                 <label>
                     <span>EMP_NO</span>
-                    <input class="input" @bind="EmpNo" @bind:event="oninput" />
+                    <input class="input" @bind="EmpNo" @bind:event="oninput" @bind:after="PersistStateAsync" />
                 </label>
                 <label>
                     <span>FACTORY</span>
-                    <input class="input" @bind="Factory" @bind:event="oninput" />
+                    <input class="input" @bind="Factory" @bind:event="oninput" @bind:after="PersistStateAsync" />
                 </label>
                 <label>
                     <span>LINE_NAME</span>
-                    <input class="input" @bind="InputLine" @bind:event="oninput" />
+                    <input class="input" @bind="InputLine" @bind:event="oninput" @bind:after="PersistStateAsync" />
                 </label>
                 <label>
                     <span>GETDATA_TYPE</span>
-                    <select class="input" @bind="GetDataType">
+                    <select class="input" @bind="GetDataType" @bind:after="PersistStateAsync">
                         <option value="0">0 - Mean in 180 Day</option>
                         <option value="1">1 - Mean in 7 Day</option>
                     </select>
                 </label>
                 <label>
                     <span>MO_TYPE</span>
-                    <select class="input" @bind="MoType">
+                    <select class="input" @bind="MoType" @bind:after="PersistStateAsync">
                         <option value="0">0 - Main Line</option>
                         <option value="1">1 - AI/SMT</option>
                     </select>
@@ -114,7 +118,7 @@
                                         <td>@station.Station</td>
                                         <td class="actions">
                                             <button class="btn primary"
-                                                    @onclick="() => SelectStation(station)"
+                                                    @onclick="() => SelectStationAsync(station)"
                                                     @onclick:stopPropagation="true">
                                                 เลือก
                                             </button>
@@ -134,75 +138,83 @@
     </div>
 }
 
-@if (ShowWorkOrderModal)
+@if (FilteredMoList.Count > 0)
 {
-    <div class="modal-backdrop" @onclick="CloseWorkOrderModal">
-        <div class="modal-card wide" @onclick:stopPropagation="true">
-            <header class="modal-header">
-                <h2>📋 เลือก Work Order</h2>
-                <button class="icon-button" @onclick="CloseWorkOrderModal">✖</button>
-            </header>
-            <div class="modal-body">
-                <label>
-                    <span>ตัวกรองคำค้นหา</span>
-                    <input class="input" @bind="WorkOrderFilter" @bind:event="oninput" @bind:after="FilterWorkOrders" placeholder="กรอกคำค้นหา..." />
-                </label>
+    <section class="panel @(IsWorkOrderSelectionLocked ? "locked" : string.Empty)">
+        <header class="panel-header">
+            <h2>📋 เลือก Work Order</h2>
 
-                @if (FilteredMoList.Count > 0)
-                {
-                    <div class="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Work Order</th>
-                                    <th>Model</th>
-                                    <th>Line</th>
-                                    <th>Plan Start</th>
-                                    <th>Plan End</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var mo in FilteredMoList)
-                                {
-                                    <tr>
-                                        <td>@mo.WorkOrder</td>
-                                        <td>@mo.Model</td>
-                                        <td>@mo.Line</td>
-                                        <td>@mo.PlanStart</td>
-                                        <td>@mo.PlanEnd</td>
-                                        <td class="actions">
-                                            <button class="btn primary"
-                                                    @onclick="() => SelectWorkOrder(mo)"
-                                                    @onclick:stopPropagation="true">
-                                                เลือก
-                                            </button>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-                else
-                {
-                    <p class="empty-state">ไม่มีข้อมูล Work Order ให้เลือก</p>
-                }
-            </div>
+            @if (IsWorkOrderSelectionLocked)
+            {
+                <button class="btn warning" @onclick="UnlockWorkOrderSelectionAsync">✏️ แก้ไข</button>
+            }
+        </header>
+
+        <div class="filter-row">
+            <label>
+                <span>ตัวกรองคำค้นหา</span>
+                <input class="input" @bind="WorkOrderFilter" @bind:event="oninput" @bind:after="OnWorkOrderFilterChangedAsync" placeholder="กรอกคำค้นหา..." disabled="@IsWorkOrderSelectionLocked" />
+            </label>
         </div>
-    </div>
+
+        @if (IsWorkOrderSelectionLocked && !string.IsNullOrWhiteSpace(SelectedWorkOrderId))
+        {
+            <div class="selected-summary">
+                <span><strong>Work Order:</strong> @WorkOrder</span>
+                <span><strong>Model:</strong> @Model</span>
+                <span><strong>Line:</strong> @Line</span>
+            </div>
+        }
+
+        @if (IsWorkOrderSelectionLocked)
+        {
+            <p class="lock-message">🔒 เลือก Work Order แล้ว หากต้องการเปลี่ยนให้กดปุ่มแก้ไข</p>
+        }
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Work Order</th>
+                        <th>Model</th>
+                        <th>Line</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var mo in FilteredMoList)
+                    {
+                        var isSelected = IsWorkOrderSelected(mo);
+
+                        <tr class="@(isSelected ? "selected" : string.Empty)">
+                            <td>@mo.WorkOrder</td>
+                            <td>@mo.Model</td>
+                            <td>@mo.Line</td>
+                            <td class="actions">
+                                <button class="btn @(isSelected ? "success" : "primary")"
+                                        disabled="@IsWorkOrderSelectionLocked"
+                                        @onclick="() => ConfirmSelectWorkOrderAsync(mo)">
+                                    @(isSelected ? "✔ เลือกแล้ว" : "เลือก")
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
 }
 
 @code
 {
     private const string tokenID = "894A0F0DF8494799E0530CCA940AC604";
     private const string secretKey = "894A0F0DF84A4799E0530CCA940AC604";
+    private const string SetupStateStorageKey = "setup-page-state";
 
     private bool ShowGetMoModal { get; set; }
     private bool isLoading;
     private string SearchFilter { get; set; } = string.Empty;
     private string WorkOrderFilter { get; set; } = string.Empty;
-    private bool ShowWorkOrderModal { get; set; }
     private bool ShowStationPicker { get; set; }
 
     private string WorkOrder { get; set; } = string.Empty;
@@ -228,6 +240,9 @@
     private List<StationInfo> FilteredStationList { get; set; } = new();
     private List<StationInfo> StationList { get; } = new();
     private List<WorkOrderEntry> FilteredMoList { get; set; } = new();
+    private bool IsWorkOrderSelectionLocked { get; set; }
+    private string SelectedWorkOrderId { get; set; } = string.Empty;
+    private bool isStateInitialized;
 
 
     private sealed class WorkOrderEntry
@@ -235,8 +250,6 @@
         public string WorkOrder { get; set; } = string.Empty;
         public string Model { get; set; } = string.Empty;
         public string Line { get; set; } = string.Empty;
-        public string PlanStart { get; set; } = string.Empty;
-        public string PlanEnd { get; set; } = string.Empty;
     }
 
     private sealed class PendingMoConfig
@@ -258,9 +271,41 @@
         public string Station { get; set; } = string.Empty;
     }
 
-    private void CloseWorkOrderModal()
+    private sealed class SetupPageState
     {
-        ShowWorkOrderModal = false;
+        public string? EmpNo { get; set; }
+        public string? Factory { get; set; }
+        public string? GetDataType { get; set; }
+        public string? MoType { get; set; }
+        public string? InputLine { get; set; }
+        public PendingMoConfig? Pending { get; set; }
+        public List<WorkOrderEntry>? MoResults { get; set; }
+        public string? WorkOrderFilter { get; set; }
+        public string? WorkOrder { get; set; }
+        public string? Model { get; set; }
+        public string? Line { get; set; }
+        public string? Section { get; set; }
+        public string? Group { get; set; }
+        public string? Station { get; set; }
+        public bool IsWorkOrderSelectionLocked { get; set; }
+        public string? SelectedWorkOrderId { get; set; }
+    }
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        ApplyCachedStateIfAny();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+
+        if (firstRender)
+        {
+            await LoadStateAsync();
+            isStateInitialized = true;
+        }
     }
 
     private void CloseStationPicker()
@@ -268,16 +313,195 @@
         ShowStationPicker = false;
     }
 
-    private void SelectStation(StationInfo station)
+    private async Task SelectStationAsync(StationInfo station)
     {
         Pending.Section = station.Section ?? string.Empty;
         Pending.Group = station.Group ?? string.Empty;
         Pending.Station = station.Station ?? string.Empty;
         ShowStationPicker = false;
+
+        await PersistStateAsync();
+    }
+
+    private void ApplyCachedStateIfAny()
+    {
+        if (SetupCache is null)
+        {
+            return;
+        }
+
+        var cached = SetupCache.CachedJson;
+        if (string.IsNullOrWhiteSpace(cached))
+        {
+            return;
+        }
+
+        if (!TryApplyStateFromJson(cached, fromCache: true))
+        {
+            SetupCache.Clear();
+        }
+    }
+
+    private bool TryApplyStateFromJson(string? json, bool fromCache)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            if (!fromCache)
+            {
+                SetupCache?.Clear();
+            }
+
+            return false;
+        }
+
+        try
+        {
+            var state = JsonSerializer.Deserialize<SetupPageState>(json);
+            if (state is null)
+            {
+                if (!fromCache)
+                {
+                    SetupCache?.Clear();
+                }
+
+                return false;
+            }
+
+            ApplyState(state);
+
+            if (!fromCache)
+            {
+                SetupCache?.Save(json);
+            }
+
+            return true;
+        }
+        catch (JsonException ex)
+        {
+            if (fromCache)
+            {
+                Log.LogWarning(ex, "Invalid cached setup state ignored");
+            }
+            else
+            {
+                Log.LogWarning(ex, "Invalid setup state detected in local storage");
+                SetupCache?.Clear();
+            }
+
+            return false;
+        }
+    }
+
+    private void ApplyState(SetupPageState state)
+    {
+        EmpNo = state.EmpNo ?? string.Empty;
+        Factory = state.Factory ?? Factory;
+        GetDataType = state.GetDataType ?? GetDataType;
+        MoType = state.MoType ?? MoType;
+        InputLine = state.InputLine ?? string.Empty;
+
+        if (state.Pending is not null)
+        {
+            Pending.WorkOrder = state.Pending.WorkOrder ?? string.Empty;
+            Pending.Model = state.Pending.Model ?? string.Empty;
+            Pending.Line = state.Pending.Line ?? string.Empty;
+            Pending.Section = state.Pending.Section ?? string.Empty;
+            Pending.Group = state.Pending.Group ?? string.Empty;
+            Pending.Station = state.Pending.Station ?? string.Empty;
+        }
+        else
+        {
+            Pending.WorkOrder = string.Empty;
+            Pending.Model = string.Empty;
+            Pending.Line = string.Empty;
+            Pending.Section = string.Empty;
+            Pending.Group = string.Empty;
+            Pending.Station = string.Empty;
+        }
+
+        MoResults = state.MoResults ?? new List<WorkOrderEntry>();
+        WorkOrderFilter = state.WorkOrderFilter ?? string.Empty;
+        FilterWorkOrders();
+
+        WorkOrder = state.WorkOrder ?? string.Empty;
+        Model = state.Model ?? string.Empty;
+        Line = state.Line ?? string.Empty;
+        Section = state.Section ?? string.Empty;
+        Group = state.Group ?? string.Empty;
+        Station = state.Station ?? string.Empty;
+
+        IsWorkOrderSelectionLocked = state.IsWorkOrderSelectionLocked;
+        SelectedWorkOrderId = state.SelectedWorkOrderId ?? string.Empty;
+    }
+
+    private async Task LoadStateAsync()
+    {
+        try
+        {
+            var json = await JS.InvokeAsync<string?>("localStorage.getItem", SetupStateStorageKey);
+            TryApplyStateFromJson(json, fromCache: false);
+        }
+        catch (JSException ex)
+        {
+            Log.LogWarning(ex, "Unable to load setup state from local storage");
+        }
+        finally
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task PersistStateAsync()
+    {
+        if (!isStateInitialized)
+        {
+            return;
+        }
+
+        try
+        {
+            var state = new SetupPageState
+            {
+                EmpNo = EmpNo,
+                Factory = Factory,
+                GetDataType = GetDataType,
+                MoType = MoType,
+                InputLine = InputLine,
+                Pending = new PendingMoConfig
+                {
+                    WorkOrder = Pending.WorkOrder,
+                    Model = Pending.Model,
+                    Line = Pending.Line,
+                    Section = Pending.Section,
+                    Group = Pending.Group,
+                    Station = Pending.Station
+                },
+                MoResults = MoResults.ToList(),
+                WorkOrderFilter = WorkOrderFilter,
+                WorkOrder = WorkOrder,
+                Model = Model,
+                Line = Line,
+                Section = Section,
+                Group = Group,
+                Station = Station,
+                IsWorkOrderSelectionLocked = IsWorkOrderSelectionLocked,
+                SelectedWorkOrderId = SelectedWorkOrderId
+            };
+
+            var payload = JsonSerializer.Serialize(state);
+            SetupCache?.Save(payload);
+            await JS.InvokeVoidAsync("localStorage.setItem", SetupStateStorageKey, payload);
+        }
+        catch (JSException ex)
+        {
+            Log.LogWarning(ex, "Unable to persist setup state to local storage");
+        }
     }
 
     private void SelectWorkOrder(WorkOrderEntry entry)
     {
+        SelectedWorkOrderId = entry.WorkOrder;
+
         WorkOrder = entry.WorkOrder;
         Model = entry.Model;
         Line = entry.Line;
@@ -286,10 +510,50 @@
         Station = Pending.Station;
         InputLine = entry.Line;
 
-        ShowWorkOrderModal = false;
+        SetStatus($"เลือก Work Order {WorkOrder} เรียบร้อย", "success");
+    }
+
+    private bool IsWorkOrderSelected(WorkOrderEntry entry)
+        => !string.IsNullOrWhiteSpace(SelectedWorkOrderId)
+           && string.Equals(SelectedWorkOrderId, entry.WorkOrder, StringComparison.OrdinalIgnoreCase);
+
+    private async Task ConfirmSelectWorkOrderAsync(WorkOrderEntry entry)
+    {
+        if (IsWorkOrderSelectionLocked && !IsWorkOrderSelected(entry))
+        {
+            return;
+        }
+
+        var confirmMessage = $"ยืนยันเลือก Work Order {entry.WorkOrder}? หากยืนยันจะไม่สามารถเปลี่ยนแปลงได้";
+        var confirmed = await JS.InvokeAsync<bool>("confirm", confirmMessage);
+        if (!confirmed)
+        {
+            return;
+        }
+
+        IsWorkOrderSelectionLocked = true;
         ShowGetMoModal = false;
 
-        SetStatus($"เลือก Work Order {WorkOrder} เรียบร้อย", "success");
+        SelectWorkOrder(entry);
+        await PersistStateAsync();
+    }
+
+    private async Task UnlockWorkOrderSelectionAsync()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "ต้องการแก้ไขการเลือก Work Order หรือไม่?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        IsWorkOrderSelectionLocked = false;
+        SelectedWorkOrderId = string.Empty;
+        WorkOrder = string.Empty;
+        Model = string.Empty;
+        Line = string.Empty;
+        SetStatus("ปลดล็อกการเลือก Work Order แล้ว สามารถเลือกใหม่ได้", "info");
+
+        await PersistStateAsync();
     }
 
     private void SetStatus(string message, string level)
@@ -457,9 +721,7 @@
             {
                 WorkOrder = item.TryGetProperty("MO_NUMBER", out var mo) ? mo.GetString() ?? string.Empty : string.Empty,
                 Model = item.TryGetProperty("MODEL_NAME", out var model) ? model.GetString() ?? string.Empty : string.Empty,
-                Line = line ?? string.Empty,
-                PlanStart = item.TryGetProperty("PLAN_START_DATE", out var planStart) ? planStart.GetString() ?? string.Empty : string.Empty,
-                PlanEnd = item.TryGetProperty("PLAN_END_DATE", out var planEnd) ? planEnd.GetString() ?? string.Empty : string.Empty
+                Line = line ?? string.Empty
             });
         }
 
@@ -477,6 +739,12 @@
             .ToList();
     }
 
+    private async Task OnWorkOrderFilterChangedAsync()
+    {
+        FilterWorkOrders();
+        await PersistStateAsync();
+    }
+
     private async Task GetMOAsync()
     {
         if (string.IsNullOrWhiteSpace(EmpNo) || string.IsNullOrWhiteSpace(Factory) || string.IsNullOrWhiteSpace(InputLine))
@@ -486,6 +754,9 @@
         }
 
         isLoading = true;
+        IsWorkOrderSelectionLocked = false;
+        SelectedWorkOrderId = string.Empty;
+
         SetStatus("กำลังดึงข้อมูลจาก MES...", "info");
 
         try
@@ -494,10 +765,10 @@
             MoResults = await FetchWorkOrdersFromMesAsync();
             FilterWorkOrders();
 
+            ShowGetMoModal = false;
+
             if (FilteredMoList.Count > 0)
             {
-                ShowWorkOrderModal = true;
-                ShowGetMoModal = false;
                 SetStatus($"พบ {FilteredMoList.Count} Work Order", "success");
             }
             else
@@ -516,6 +787,8 @@
         {
             isLoading = false;
         }
+
+        await PersistStateAsync();
     }
 
     private async Task LoadStationsFromMesAsync()
