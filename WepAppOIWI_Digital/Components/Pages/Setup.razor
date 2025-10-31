@@ -144,12 +144,26 @@
                     <span>ตัวกรองคำค้นหา</span>
                     <input class="input" @bind="WorkOrderFilter" @bind:event="oninput" @bind:after="FilterWorkOrders" placeholder="กรอกคำค้นหา..." disabled="@IsWorkOrderSelectionLocked" />
                 </label>
+
+                @if (IsWorkOrderSelectionLocked)
+                {
+                    <button class="btn warning" @onclick="UnlockWorkOrderSelectionAsync">✏️ แก้ไข</button>
+                }
             </div>
         </header>
 
+        @if (!string.IsNullOrWhiteSpace(SelectedWorkOrderId))
+        {
+            <div class="selected-summary">
+                <span><strong>Work Order:</strong> @WorkOrder</span>
+                <span><strong>Model:</strong> @Model</span>
+                <span><strong>Line:</strong> @Line</span>
+            </div>
+        }
+
         @if (IsWorkOrderSelectionLocked)
         {
-            <p class="lock-message">🔒 เลือก Work Order แล้ว หากต้องการเปลี่ยนกรุณาดึงข้อมูลใหม่</p>
+            <p class="lock-message">🔒 เลือก Work Order แล้ว หากต้องการเปลี่ยนให้กดปุ่มแก้ไข</p>
         }
 
         <div class="table-wrapper">
@@ -159,8 +173,6 @@
                         <th>Work Order</th>
                         <th>Model</th>
                         <th>Line</th>
-                        <th>Plan Start</th>
-                        <th>Plan End</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -173,8 +185,6 @@
                             <td>@mo.WorkOrder</td>
                             <td>@mo.Model</td>
                             <td>@mo.Line</td>
-                            <td>@mo.PlanStart</td>
-                            <td>@mo.PlanEnd</td>
                             <td class="actions">
                                 <button class="btn @(isSelected ? "success" : "primary")"
                                         disabled="@IsWorkOrderSelectionLocked"
@@ -233,8 +243,6 @@
         public string WorkOrder { get; set; } = string.Empty;
         public string Model { get; set; } = string.Empty;
         public string Line { get; set; } = string.Empty;
-        public string PlanStart { get; set; } = string.Empty;
-        public string PlanEnd { get; set; } = string.Empty;
     }
 
     private sealed class PendingMoConfig
@@ -306,6 +314,18 @@
         ShowGetMoModal = false;
 
         SelectWorkOrder(entry);
+    }
+
+    private async Task UnlockWorkOrderSelectionAsync()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "ต้องการแก้ไขการเลือก Work Order หรือไม่?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        IsWorkOrderSelectionLocked = false;
+        SetStatus("ปลดล็อกการเลือก Work Order แล้ว สามารถเลือกใหม่ได้", "info");
     }
 
     private void SetStatus(string message, string level)
@@ -473,9 +493,7 @@
             {
                 WorkOrder = item.TryGetProperty("MO_NUMBER", out var mo) ? mo.GetString() ?? string.Empty : string.Empty,
                 Model = item.TryGetProperty("MODEL_NAME", out var model) ? model.GetString() ?? string.Empty : string.Empty,
-                Line = line ?? string.Empty,
-                PlanStart = item.TryGetProperty("PLAN_START_DATE", out var planStart) ? planStart.GetString() ?? string.Empty : string.Empty,
-                PlanEnd = item.TryGetProperty("PLAN_END_DATE", out var planEnd) ? planEnd.GetString() ?? string.Empty : string.Empty
+                Line = line ?? string.Empty
             });
         }
 
