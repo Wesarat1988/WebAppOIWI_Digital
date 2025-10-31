@@ -382,10 +382,11 @@ tbody tr:hover {
     box-shadow: none;
 }
 
+
 .panel-header {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
 }
@@ -397,22 +398,25 @@ tbody tr:hover {
     color: #312e81;
 }
 
-.panel-actions {
+.filter-row {
+    margin-top: 0.5rem;
     display: flex;
-    gap: 1rem;
-    align-items: flex-end;
+    justify-content: flex-start;
 }
 
-.panel-actions label {
+.filter-row label {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
     font-weight: 600;
     color: #334155;
+    max-width: 210px;
+    width: 100%;
 }
 
-.panel-actions .input {
-    min-width: 240px;
+.filter-row .input {
+    width: 100%;
+    min-width: 0;
 }
 
 .selected-summary {
@@ -465,14 +469,18 @@ tbody tr.selected {
         padding: 1.25rem;
     }
 
-    .panel-actions {
+    .filter-row {
         width: 100%;
     }
 
-        .panel-actions .input {
-            width: 100%;
-            min-width: unset;
-        }
+    .filter-row label {
+        max-width: none;
+    }
+
+    .filter-row .input {
+        width: 100%;
+        min-width: unset;
+    }
 }
 
 @media (max-width: 720px) {

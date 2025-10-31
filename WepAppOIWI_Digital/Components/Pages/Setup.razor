@@ -139,20 +139,21 @@
     <section class="panel @(IsWorkOrderSelectionLocked ? "locked" : string.Empty)">
         <header class="panel-header">
             <h2>📋 เลือก Work Order</h2>
-            <div class="panel-actions">
-                <label>
-                    <span>ตัวกรองคำค้นหา</span>
-                    <input class="input" @bind="WorkOrderFilter" @bind:event="oninput" @bind:after="FilterWorkOrders" placeholder="กรอกคำค้นหา..." disabled="@IsWorkOrderSelectionLocked" />
-                </label>
 
-                @if (IsWorkOrderSelectionLocked)
-                {
-                    <button class="btn warning" @onclick="UnlockWorkOrderSelectionAsync">✏️ แก้ไข</button>
-                }
-            </div>
+            @if (IsWorkOrderSelectionLocked)
+            {
+                <button class="btn warning" @onclick="UnlockWorkOrderSelectionAsync">✏️ แก้ไข</button>
+            }
         </header>
 
-        @if (!string.IsNullOrWhiteSpace(SelectedWorkOrderId))
+        <div class="filter-row">
+            <label>
+                <span>ตัวกรองคำค้นหา</span>
+                <input class="input" @bind="WorkOrderFilter" @bind:event="oninput" @bind:after="FilterWorkOrders" placeholder="กรอกคำค้นหา..." disabled="@IsWorkOrderSelectionLocked" />
+            </label>
+        </div>
+
+        @if (IsWorkOrderSelectionLocked && !string.IsNullOrWhiteSpace(SelectedWorkOrderId))
         {
             <div class="selected-summary">
                 <span><strong>Work Order:</strong> @WorkOrder</span>
@@ -325,6 +326,10 @@
         }
 
         IsWorkOrderSelectionLocked = false;
+        SelectedWorkOrderId = string.Empty;
+        WorkOrder = string.Empty;
+        Model = string.Empty;
+        Line = string.Empty;
         SetStatus("ปลดล็อกการเลือก Work Order แล้ว สามารถเลือกใหม่ได้", "info");
     }
 
