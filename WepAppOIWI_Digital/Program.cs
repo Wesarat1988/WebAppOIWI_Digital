@@ -1,22 +1,31 @@
 using WepAppOIWI_Digital.Components;
+using Microsoft.AspNetCore.Components;
+using System.Net.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// DI: HttpClient สำหรับคอมโพเนนต์
+builder.Services.AddScoped<HttpClient>(sp =>
+{
+    var nav = sp.GetRequiredService<NavigationManager>();
+    return new HttpClient { BaseAddress = new Uri(nav.BaseUri) };
+});
+
+// (ถ้าต้องมี MES)
+// builder.Services.AddHttpClient("MES", c => c.BaseAddress = new Uri("https://your-mes-endpoint/"));
+
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
-//app.UseHttpsRedirection();
+// app.UseHttpsRedirection(); // ปิดถ้ายังใช้ http
 
 app.UseStaticFiles();
 app.UseAntiforgery();
@@ -24,7 +33,7 @@ app.UseAntiforgery();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
-// ===== KILL Browser Refresh script (dev only) =====
+// kill browser refresh ...
 app.Use(async (ctx, next) =>
 {
     var path = ctx.Request.Path.Value ?? "";
@@ -37,6 +46,5 @@ app.Use(async (ctx, next) =>
     }
     await next();
 });
-// ================================================
 
 app.Run();

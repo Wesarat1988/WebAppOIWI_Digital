@@ -7,12 +7,14 @@
 		<AssemblyName>WepAppOIWI_Digital</AssemblyName>
 	</PropertyGroup>
 
+	<ItemGroup>
+	  <Folder Include="wwwroot\js\" />
+	</ItemGroup>
+
 	<!-- ปิดโปรเซสที่อาจล็อกไฟล์ ก่อน Build/Rebuild/Publish -->
 	<Target Name="TerminateRunningAppInstance" BeforeTargets="Build;Rebuild;Publish">
 		<!-- ✅ เงื่อนไข MSBuild ที่ถูกต้อง (ไม่ต้องเทียบ == 'true') -->
-		<Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
-			  Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-Process -Name '$(AssemblyName)','iisexpress','dotnet' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue&quot;"
-			  IgnoreExitCode="true" />
+		<Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))" Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-Process -Name '$(AssemblyName)','iisexpress','dotnet' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue&quot;" IgnoreExitCode="true" />
 	</Target>
 
 	<!-- ปิด build servers หลัง Clean -->
