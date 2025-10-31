@@ -1,11 +1,64 @@
-﻿.btn.GetMO {
-    background: linear-gradient(135deg,#6366f1,#4f46e5);
+﻿:host {
+    --dtl-primary-light: #38bdf8;
+    --dtl-primary-mid: #2563eb;
+    --dtl-primary-dark: #1d4ed8;
+    --dtl-navy: #0f172a;
+    --dtl-soft-blue: #e0f2fe;
+    --dtl-soft-azure: #dbeafe;
+    --dtl-surface: #ffffff;
+    --dtl-surface-alt: #f1f5f9;
+    --dtl-shadow: rgba(15, 23, 42, 0.18);
+    --dtl-border: rgba(37, 99, 235, 0.16);
+    --dtl-border-strong: rgba(30, 64, 175, 0.28);
+}
+
+.setup-page {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
+    box-sizing: border-box;
+    padding: 2.5rem 1.5rem 3.5rem;
+    background: linear-gradient(180deg, rgba(224, 242, 254, 0.88) 0%, rgba(191, 219, 254, 0.72) 58%, #f8fafc 100%);
+    border-radius: 26px;
+    box-shadow: 0 28px 60px rgba(15, 23, 42, 0.14);
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+}
+
+.setup-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    background: rgba(255, 255, 255, 0.82);
+    padding: 1.75rem 2rem;
+    border-radius: 22px;
+    border: 1px solid rgba(148, 197, 255, 0.45);
+    box-shadow: 0 20px 45px rgba(37, 99, 235, 0.18);
+}
+
+.setup-heading h1 {
+    margin: 0;
+    font-size: clamp(1.8rem, 2vw + 1rem, 2.5rem);
+    font-weight: 700;
+    color: var(--dtl-navy);
+}
+
+.setup-heading p {
+    margin: 0.5rem 0 0;
+    color: rgba(15, 23, 42, 0.7);
+    font-size: 1rem;
+}
+
+.btn.GetMO {
+    background: linear-gradient(135deg, var(--dtl-primary-light), var(--dtl-primary-mid));
     color: #fff;
-    box-shadow: 0 12px 25px rgba(99,102,241,.35);
+    box-shadow: 0 12px 26px rgba(37, 99, 235, 0.45);
     border: none;
-    /* ปรับให้โค้งมาก */
-    border-radius: 9999px; /* สำคัญที่สุด */
-    padding: .65rem 1.25rem; /* เติมระยะขอบให้ทรง pill สวย */
+    border-radius: 9999px;
+    padding: 0.65rem 1.5rem;
 
     cursor: pointer;
     position: relative;
@@ -17,20 +70,20 @@
     /* ยกขึ้นนิด ๆ ตอน hover */
     .btn.GetMO:hover {
         transform: translateY(-1px);
-        box-shadow: 0 16px 30px rgba(99,102,241,.45);
+        box-shadow: 0 18px 32px rgba(37, 99, 235, 0.55);
     }
 
     /* กดลงนิด ๆ ตอน active */
     .btn.GetMO:active {
         transform: translateY(0) scale(.98);
-        box-shadow: 0 8px 18px rgba(99,102,241,.30);
+        box-shadow: 0 12px 22px rgba(29, 78, 216, 0.35);
         filter: brightness(.98);
     }
 
     /* วงแหวนโฟกัสสำหรับคีย์บอร์ด */
     .btn.GetMO:focus-visible {
         outline: none;
-        box-shadow: 0 12px 25px rgba(99,102,241,.35), 0 0 0 4px rgba(99,102,241,.25);
+        box-shadow: 0 12px 26px rgba(37,99,235,.35), 0 0 0 4px rgba(59,130,246,.28);
     }
 
     /* จุดกำเนิด ripple (ตรงกลาง) */
@@ -73,7 +126,7 @@
 }
 
 .settings-card {
-    background: var(--bs-body-bg, #ffffff);
+    background: rgba(255, 255, 255, 0.92);
     border-radius: 20px;
     box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
     padding: 2rem;
@@ -99,7 +152,7 @@
 
 .subtitle {
     margin: 0.35rem 0 0;
-    color: #64748b;
+    color: #1e3a8a;
     font-size: 0.95rem;
 }
 
@@ -119,28 +172,29 @@ label span {
     display: block;
     font-size: 0.85rem;
     font-weight: 600;
-    color: #334155;
+    color: #1e3a8a;
     margin-bottom: 0.45rem;
 }
 
 .input {
     width: 100%;
     border-radius: 10px;
-    border: 1px solid #cbd5f5;
+    border: 1px solid var(--dtl-border);
     padding: 0.65rem 0.75rem;
     font-size: 1rem;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    background: rgba(255, 255, 255, 0.9);
 }
 
     .input:focus {
         outline: none;
-        border-color: #6366f1;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        border-color: var(--dtl-primary-mid);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
     }
 
     .input[readonly] {
-        background: rgba(226, 232, 240, 0.35);
-        color: #475569;
+        background: rgba(226, 244, 255, 0.55);
+        color: #1d4ed8;
     }
 
 .input-with-button {
@@ -170,66 +224,78 @@ label span {
     }
 
     .btn.primary {
-        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        background: linear-gradient(135deg, var(--dtl-primary-light), var(--dtl-primary-mid));
         color: #fff;
         margin-top: 18px;
-        box-shadow: 0 12px 25px rgba(99, 102, 241, 0.35);
+        box-shadow: 0 12px 26px rgba(37, 99, 235, 0.35);
     }
 
         .btn.primary:not(:disabled):hover {
             transform: translateY(-1px);
-            box-shadow: 0 16px 28px rgba(99, 102, 241, 0.4);
+            box-shadow: 0 16px 28px rgba(37, 99, 235, 0.45);
         }
 
     .btn.secondary {
-        background: rgba(59, 130, 246, 0.12);
+        background: rgba(148, 197, 255, 0.22);
         margin-top: 18px;
-        color: #1d4ed8;
+        color: var(--dtl-primary-dark);
     }
 
         .btn.secondary:not(:disabled):hover {
             transform: translateY(-1px);
-            background: rgba(59, 130, 246, 0.18);
+            background: rgba(148, 197, 255, 0.3);
+        }
+
+    .btn.warning {
+        background: rgba(59, 130, 246, 0.18);
+        color: var(--dtl-primary-dark);
+        padding-inline: 1.25rem;
+        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.22);
+    }
+
+        .btn.warning:not(:disabled):hover {
+            transform: translateY(-1px);
+            background: rgba(59, 130, 246, 0.24);
         }
 
     .btn.tertiary {
-        background: rgba(148, 163, 184, 0.2);
-        color: #334155;
+        background: rgba(148, 197, 255, 0.24);
+        color: var(--dtl-primary-dark);
         padding-inline: 1rem;
     }
 
         .btn.tertiary:hover {
             transform: translateY(-1px);
-            background: rgba(148, 163, 184, 0.28);
+            background: rgba(148, 197, 255, 0.32);
         }
 
 .status-message {
     padding: 0.75rem 1rem;
     border-radius: 12px;
     font-weight: 500;
-    background: rgba(148, 163, 184, 0.18);
-    color: #475569;
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(148, 197, 255, 0.16);
+    color: var(--dtl-primary-dark);
+    border: 1px solid rgba(148, 197, 255, 0.35);
     opacity: 1;
     transition: opacity 0.4s ease;
 }
 
     .status-message.success {
-        background: rgba(34, 197, 94, 0.1);
-        color: #047857;
-        border-color: rgba(34, 197, 94, 0.25);
+        background: rgba(14, 165, 233, 0.18);
+        color: #075985;
+        border-color: rgba(14, 165, 233, 0.35);
     }
 
     .status-message.warning {
-        background: rgba(251, 191, 36, 0.12);
+        background: rgba(250, 204, 21, 0.16);
         color: #b45309;
-        border-color: rgba(251, 191, 36, 0.28);
+        border-color: rgba(245, 158, 11, 0.32);
     }
 
     .status-message.error {
-        background: rgba(239, 68, 68, 0.12);
+        background: rgba(248, 113, 113, 0.15);
         color: #b91c1c;
-        border-color: rgba(239, 68, 68, 0.25);
+        border-color: rgba(248, 113, 113, 0.35);
     }
 
     .status-message.fade-out {
@@ -249,7 +315,7 @@ label span {
 }
 
 .modal-card {
-    background: var(--bs-body-bg, #ffffff);
+    background: var(--dtl-surface);
     border-radius: 18px;
     box-shadow: 0 24px 45px rgba(15, 23, 42, 0.28);
     width: min(520px, 100%);
@@ -311,8 +377,9 @@ label span {
 .table-wrapper {
     max-height: 50vh;
     overflow: auto;
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    border: 1px solid var(--dtl-border);
     border-radius: 14px;
+    background: rgba(255, 255, 255, 0.95);
 }
 
 table {
@@ -322,7 +389,7 @@ table {
 }
 
 thead {
-    background: rgba(99, 102, 241, 0.12);
+    background: rgba(191, 219, 254, 0.7);
     position: sticky;
     top: 0;
     z-index: 1;
@@ -332,17 +399,18 @@ thead {
         text-align: left;
         padding: 0.75rem 1rem;
         font-weight: 600;
-        color: #4338ca;
+        color: var(--dtl-navy);
+        border-bottom: 1px solid rgba(148, 197, 255, 0.5);
     }
 
 tbody td {
     padding: 0.75rem 1rem;
-    border-top: 1px solid rgba(148, 163, 184, 0.18);
-    color: #1f2937;
+    border-top: 1px solid rgba(148, 197, 255, 0.28);
+    color: #0f172a;
 }
 
 tbody tr:hover {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(224, 242, 254, 0.5);
 }
 
 .actions {
@@ -353,6 +421,161 @@ tbody tr:hover {
     text-align: center;
     color: #64748b;
     margin: 1rem 0 0;
+}
+
+.panel {
+    margin-top: 2rem;
+    background: rgba(255, 255, 255, 0.92);
+    border-radius: 18px;
+    box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    border: 1px solid rgba(148, 197, 255, 0.35);
+}
+
+.panel.locked {
+    border: 1px solid rgba(59, 130, 246, 0.32);
+    box-shadow: none;
+    background: rgba(219, 234, 254, 0.72);
+}
+
+
+.panel-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.panel-header h2 {
+    margin: 0;
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--dtl-navy);
+}
+
+.filter-row {
+    margin-top: 0.5rem;
+    display: flex;
+    justify-content: flex-start;
+}
+
+.filter-row label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-weight: 600;
+    color: var(--dtl-primary-dark);
+    max-width: 210px;
+    width: 100%;
+}
+
+.filter-row .input {
+    width: 100%;
+    min-width: 0;
+}
+
+.selected-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.5rem;
+    background: rgba(191, 219, 254, 0.45);
+    border: 1px solid rgba(148, 197, 255, 0.6);
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    color: var(--dtl-primary-dark);
+}
+
+.selected-summary strong {
+    color: var(--dtl-navy);
+}
+
+.lock-message {
+    margin: 0;
+    font-weight: 600;
+    color: var(--dtl-navy);
+    background: rgba(148, 197, 255, 0.35);
+    border: 1px solid rgba(37, 99, 235, 0.28);
+    border-radius: 12px;
+    padding: 0.65rem 1rem;
+}
+
+tbody tr.selected {
+    background: rgba(191, 219, 254, 0.62);
+}
+
+.panel tbody tr.selected:hover {
+    background: rgba(148, 197, 255, 0.5);
+}
+
+.btn.success {
+    background: linear-gradient(135deg, var(--dtl-primary-mid), var(--dtl-primary-dark));
+    color: #fff;
+    box-shadow: 0 12px 26px rgba(29, 78, 216, 0.45);
+}
+
+    .btn.success:not(:disabled):hover {
+        transform: translateY(-1px);
+        box-shadow: 0 18px 30px rgba(29, 78, 216, 0.5);
+    }
+
+@media (max-width: 992px) {
+    .setup-page {
+        padding: 1.75rem 1rem 2.75rem;
+        border-radius: 20px;
+    }
+
+    .setup-header {
+        padding: 1.35rem 1.5rem;
+        border-radius: 18px;
+    }
+}
+
+@media (max-width: 720px) {
+    .setup-page {
+        padding: 1.25rem 0.75rem 2.25rem;
+        border-radius: 16px;
+    }
+
+    .setup-header {
+        padding: 1.1rem 1.25rem;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+
+    .setup-heading h1 {
+        font-size: 1.75rem;
+    }
+
+    .setup-heading p {
+        font-size: 0.95rem;
+    }
+
+    .setup-header .btn.GetMO {
+        width: 100%;
+    }
+
+    .panel {
+        padding: 1.25rem;
+    }
+
+    .filter-row {
+        width: 100%;
+    }
+
+    .filter-row label {
+        max-width: none;
+    }
+
+    .filter-row .input {
+        width: 100%;
+        min-width: unset;
+    }
 }
 
 @media (max-width: 720px) {
