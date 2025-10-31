@@ -134,63 +134,71 @@
     </div>
 }
 
-@if (ShowWorkOrderModal)
+@if (FilteredMoList.Count > 0)
 {
-    <div class="modal-backdrop" @onclick="CloseWorkOrderModal">
-        <div class="modal-card wide" @onclick:stopPropagation="true">
-            <header class="modal-header">
-                <h2>📋 เลือก Work Order</h2>
-                <button class="icon-button" @onclick="CloseWorkOrderModal">✖</button>
-            </header>
-            <div class="modal-body">
-                <label>
-                    <span>ตัวกรองคำค้นหา</span>
-                    <input class="input" @bind="WorkOrderFilter" @bind:event="oninput" @bind:after="FilterWorkOrders" placeholder="กรอกคำค้นหา..." />
-                </label>
+    <section class="panel @(IsWorkOrderSelectionLocked ? "locked" : string.Empty)">
+        <header class="panel-header">
+            <h2>📋 เลือก Work Order</h2>
 
-                @if (FilteredMoList.Count > 0)
-                {
-                    <div class="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Work Order</th>
-                                    <th>Model</th>
-                                    <th>Line</th>
-                                    <th>Plan Start</th>
-                                    <th>Plan End</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var mo in FilteredMoList)
-                                {
-                                    <tr>
-                                        <td>@mo.WorkOrder</td>
-                                        <td>@mo.Model</td>
-                                        <td>@mo.Line</td>
-                                        <td>@mo.PlanStart</td>
-                                        <td>@mo.PlanEnd</td>
-                                        <td class="actions">
-                                            <button class="btn primary"
-                                                    @onclick="() => SelectWorkOrder(mo)"
-                                                    @onclick:stopPropagation="true">
-                                                เลือก
-                                            </button>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-                else
-                {
-                    <p class="empty-state">ไม่มีข้อมูล Work Order ให้เลือก</p>
-                }
-            </div>
+            @if (IsWorkOrderSelectionLocked)
+            {
+                <button class="btn warning" @onclick="UnlockWorkOrderSelectionAsync">✏️ แก้ไข</button>
+            }
+        </header>
+
+        <div class="filter-row">
+            <label>
+                <span>ตัวกรองคำค้นหา</span>
+                <input class="input" @bind="WorkOrderFilter" @bind:event="oninput" @bind:after="FilterWorkOrders" placeholder="กรอกคำค้นหา..." disabled="@IsWorkOrderSelectionLocked" />
+            </label>
         </div>
-    </div>
+
+        @if (IsWorkOrderSelectionLocked && !string.IsNullOrWhiteSpace(SelectedWorkOrderId))
+        {
+            <div class="selected-summary">
+                <span><strong>Work Order:</strong> @WorkOrder</span>
+                <span><strong>Model:</strong> @Model</span>
+                <span><strong>Line:</strong> @Line</span>
+            </div>
+        }
+
+        @if (IsWorkOrderSelectionLocked)
+        {
+            <p class="lock-message">🔒 เลือก Work Order แล้ว หากต้องการเปลี่ยนให้กดปุ่มแก้ไข</p>
+        }
+
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Work Order</th>
+                        <th>Model</th>
+                        <th>Line</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var mo in FilteredMoList)
+                    {
+                        var isSelected = IsWorkOrderSelected(mo);
+
+                        <tr class="@(isSelected ? "selected" : string.Empty)">
+                            <td>@mo.WorkOrder</td>
+                            <td>@mo.Model</td>
+                            <td>@mo.Line</td>
+                            <td class="actions">
+                                <button class="btn @(isSelected ? "success" : "primary")"
+                                        disabled="@IsWorkOrderSelectionLocked"
+                                        @onclick="() => ConfirmSelectWorkOrderAsync(mo)">
+                                    @(isSelected ? "✔ เลือกแล้ว" : "เลือก")
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
 }
 
 @code
@@ -202,7 +210,6 @@
     private bool isLoading;
     private string SearchFilter { get; set; } = string.Empty;
     private string WorkOrderFilter { get; set; } = string.Empty;
-    private bool ShowWorkOrderModal { get; set; }
     private bool ShowStationPicker { get; set; }
 
     private string WorkOrder { get; set; } = string.Empty;
@@ -228,6 +235,8 @@
     private List<StationInfo> FilteredStationList { get; set; } = new();
     private List<StationInfo> StationList { get; } = new();
     private List<WorkOrderEntry> FilteredMoList { get; set; } = new();
+    private bool IsWorkOrderSelectionLocked { get; set; }
+    private string SelectedWorkOrderId { get; set; } = string.Empty;
 
 
     private sealed class WorkOrderEntry
@@ -235,8 +244,6 @@
         public string WorkOrder { get; set; } = string.Empty;
         public string Model { get; set; } = string.Empty;
         public string Line { get; set; } = string.Empty;
-        public string PlanStart { get; set; } = string.Empty;
-        public string PlanEnd { get; set; } = string.Empty;
     }
 
     private sealed class PendingMoConfig
@@ -258,11 +265,6 @@
         public string Station { get; set; } = string.Empty;
     }
 
-    private void CloseWorkOrderModal()
-    {
-        ShowWorkOrderModal = false;
-    }
-
     private void CloseStationPicker()
     {
         ShowStationPicker = false;
@@ -278,6 +280,8 @@
 
     private void SelectWorkOrder(WorkOrderEntry entry)
     {
+        SelectedWorkOrderId = entry.WorkOrder;
+
         WorkOrder = entry.WorkOrder;
         Model = entry.Model;
         Line = entry.Line;
@@ -286,10 +290,47 @@
         Station = Pending.Station;
         InputLine = entry.Line;
 
-        ShowWorkOrderModal = false;
+        SetStatus($"เลือก Work Order {WorkOrder} เรียบร้อย", "success");
+    }
+
+    private bool IsWorkOrderSelected(WorkOrderEntry entry)
+        => !string.IsNullOrWhiteSpace(SelectedWorkOrderId)
+           && string.Equals(SelectedWorkOrderId, entry.WorkOrder, StringComparison.OrdinalIgnoreCase);
+
+    private async Task ConfirmSelectWorkOrderAsync(WorkOrderEntry entry)
+    {
+        if (IsWorkOrderSelectionLocked && !IsWorkOrderSelected(entry))
+        {
+            return;
+        }
+
+        var confirmMessage = $"ยืนยันเลือก Work Order {entry.WorkOrder}? หากยืนยันจะไม่สามารถเปลี่ยนแปลงได้";
+        var confirmed = await JS.InvokeAsync<bool>("confirm", confirmMessage);
+        if (!confirmed)
+        {
+            return;
+        }
+
+        IsWorkOrderSelectionLocked = true;
         ShowGetMoModal = false;
 
-        SetStatus($"เลือก Work Order {WorkOrder} เรียบร้อย", "success");
+        SelectWorkOrder(entry);
+    }
+
+    private async Task UnlockWorkOrderSelectionAsync()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm", "ต้องการแก้ไขการเลือก Work Order หรือไม่?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        IsWorkOrderSelectionLocked = false;
+        SelectedWorkOrderId = string.Empty;
+        WorkOrder = string.Empty;
+        Model = string.Empty;
+        Line = string.Empty;
+        SetStatus("ปลดล็อกการเลือก Work Order แล้ว สามารถเลือกใหม่ได้", "info");
     }
 
     private void SetStatus(string message, string level)
@@ -457,9 +498,7 @@
             {
                 WorkOrder = item.TryGetProperty("MO_NUMBER", out var mo) ? mo.GetString() ?? string.Empty : string.Empty,
                 Model = item.TryGetProperty("MODEL_NAME", out var model) ? model.GetString() ?? string.Empty : string.Empty,
-                Line = line ?? string.Empty,
-                PlanStart = item.TryGetProperty("PLAN_START_DATE", out var planStart) ? planStart.GetString() ?? string.Empty : string.Empty,
-                PlanEnd = item.TryGetProperty("PLAN_END_DATE", out var planEnd) ? planEnd.GetString() ?? string.Empty : string.Empty
+                Line = line ?? string.Empty
             });
         }
 
@@ -486,6 +525,9 @@
         }
 
         isLoading = true;
+        IsWorkOrderSelectionLocked = false;
+        SelectedWorkOrderId = string.Empty;
+
         SetStatus("กำลังดึงข้อมูลจาก MES...", "info");
 
         try
@@ -494,10 +536,10 @@
             MoResults = await FetchWorkOrdersFromMesAsync();
             FilterWorkOrders();
 
+            ShowGetMoModal = false;
+
             if (FilteredMoList.Count > 0)
             {
-                ShowWorkOrderModal = true;
-                ShowGetMoModal = false;
                 SetStatus($"พบ {FilteredMoList.Count} Work Order", "success");
             }
             else
