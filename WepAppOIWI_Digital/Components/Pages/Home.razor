@@ -1,8 +1,83 @@
 @page "/"
 @rendermode InteractiveServer
+@inject WepAppOIWI_Digital.Services.SetupStateStore StateStore
 
 <PageTitle>Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1 class="mb-3">📄 OI/WI Overview</h1>
+<p class="text-muted mb-4">สรุปข้อมูลจากการ Setup ล่าสุด</p>
 
-Welcome to your new app.
+<div class="table-responsive">
+    <table class="table table-striped align-middle">
+        <thead class="table-light">
+            <tr>
+                <th scope="col" style="width: 70px;">No.</th>
+                <th scope="col">OI/WI Name</th>
+                <th scope="col">Line</th>
+                <th scope="col">Station</th>
+                <th scope="col">Model</th>
+                <th scope="col">Time</th>
+                <th scope="col">Name</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (HasSetupData)
+            {
+                <tr>
+                    <td>1</td>
+                    <td>@DisplayOiWiName</td>
+                    <td>@DisplayLine</td>
+                    <td>@DisplayStation</td>
+                    <td>@DisplayModel</td>
+                    <td>@DisplayTimestamp</td>
+                    <td>@DisplayUploader</td>
+                </tr>
+            }
+            else
+            {
+                <tr>
+                    <td colspan="7" class="text-center text-muted py-4">ยังไม่มีข้อมูลการ Setup เพื่อแสดงผล</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private bool HasSetupData =>
+        !string.IsNullOrWhiteSpace(StateStore.WorkOrder) ||
+        !string.IsNullOrWhiteSpace(StateStore.Model) ||
+        !string.IsNullOrWhiteSpace(StateStore.Line) ||
+        !string.IsNullOrWhiteSpace(StateStore.Station) ||
+        StateStore.LastUpdatedAt.HasValue;
+
+    private string DisplayOiWiName =>
+        !string.IsNullOrWhiteSpace(StateStore.WorkOrder)
+            ? StateStore.WorkOrder
+            : "-";
+
+    private string DisplayLine =>
+        string.IsNullOrWhiteSpace(StateStore.Line)
+            ? "-"
+            : StateStore.Line;
+
+    private string DisplayStation =>
+        string.IsNullOrWhiteSpace(StateStore.Station)
+            ? "-"
+            : StateStore.Station;
+
+    private string DisplayModel =>
+        string.IsNullOrWhiteSpace(StateStore.Model)
+            ? "-"
+            : StateStore.Model;
+
+    private string DisplayTimestamp =>
+        StateStore.LastUpdatedAt.HasValue
+            ? StateStore.LastUpdatedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "-";
+
+    private string DisplayUploader =>
+        !string.IsNullOrWhiteSpace(StateStore.LastUpdatedBy)
+            ? StateStore.LastUpdatedBy
+            : (!string.IsNullOrWhiteSpace(StateStore.EmpNo) ? StateStore.EmpNo : "-");
+}
