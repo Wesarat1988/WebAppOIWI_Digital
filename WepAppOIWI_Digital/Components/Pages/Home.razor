@@ -46,9 +46,9 @@ else
                         <tr>
                             <td>@(index + 1)</td>
                             <td>
-                                @if (!string.IsNullOrEmpty(document.RelativeUrl))
+                                @if (!string.IsNullOrEmpty(document.LinkUrl))
                                 {
-                                    <a href="@document.RelativeUrl" target="_blank" rel="noopener">@document.DisplayName</a>
+                                    <a href="@document.LinkUrl" target="_blank" rel="noopener">@document.DisplayName</a>
                                 }
                                 else
                                 {

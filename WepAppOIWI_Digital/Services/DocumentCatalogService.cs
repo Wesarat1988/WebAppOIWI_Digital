@@ -28,7 +28,7 @@ public sealed record DocumentRecord(
     string UploadedBy
 )
 {
-    public string RelativeUrl { get; init; } = string.Empty;
+    public string? LinkUrl { get; init; }
 }
 
 public sealed class DocumentCatalogService
@@ -104,47 +104,42 @@ public sealed class DocumentCatalogService
         {
             foreach (var entry in manifestRecords)
             {
-                var relativeFileName = entry.FileName ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(relativeFileName))
+                var normalizedRelativePath = NormalizeRelativePath(entry.FileName);
+                if (string.IsNullOrEmpty(normalizedRelativePath))
                 {
                     continue;
                 }
 
-                manifestFiles.Add(Path.GetFileName(relativeFileName));
+                manifestFiles.Add(normalizedRelativePath);
 
-                var fullPath = Path.Combine(_documentsDirectory, relativeFileName);
+                var fileSystemRelativePath = normalizedRelativePath.Replace('/', Path.DirectorySeparatorChar);
+                var fullPath = Path.Combine(_documentsDirectory, fileSystemRelativePath);
                 var fileInfo = new FileInfo(fullPath);
 
-                documents.Add(CreateRecord(entry, fileInfo));
+                documents.Add(CreateRecord(entry, fileInfo, normalizedRelativePath));
             }
         }
 
-        foreach (var filePath in Directory.GetFiles(_documentsDirectory))
+        foreach (var filePath in EnumerateDocumentFiles())
         {
-            var fileName = Path.GetFileName(filePath);
-            if (string.Equals(fileName, _options.ManifestFileName, StringComparison.OrdinalIgnoreCase))
+            var normalizedRelativePath = NormalizeRelativePath(Path.GetRelativePath(_documentsDirectory, filePath));
+            if (string.IsNullOrEmpty(normalizedRelativePath))
             {
                 continue;
             }
 
-            if (manifestFiles.Contains(fileName))
+            if (string.Equals(normalizedRelativePath, _options.ManifestFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (manifestFiles.Contains(normalizedRelativePath))
             {
                 continue;
             }
 
             var fileInfo = new FileInfo(filePath);
-            documents.Add(new DocumentRecord(
-                fileInfo.Name,
-                fileInfo.Name,
-                "-",
-                "-",
-                "-",
-                new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero),
-                "-"
-            )
-            {
-                RelativeUrl = BuildRelativeUrl(fileInfo.Name)
-            });
+            documents.Add(CreateRecord(fileInfo, normalizedRelativePath));
         }
 
         return documents
@@ -176,7 +171,7 @@ public sealed class DocumentCatalogService
         }
     }
 
-    private DocumentRecord CreateRecord(DocumentManifestEntry entry, FileInfo fileInfo)
+    private DocumentRecord CreateRecord(DocumentManifestEntry entry, FileInfo fileInfo, string normalizedRelativePath)
     {
         var updatedAt = entry.UpdatedAt;
 
@@ -185,33 +180,69 @@ public sealed class DocumentCatalogService
             updatedAt = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero);
         }
 
-        var fileName = entry.FileName ?? fileInfo.Name;
+        var fallbackDisplayName = Path.GetFileName(normalizedRelativePath);
         var displayName = string.IsNullOrWhiteSpace(entry.DisplayName)
-            ? Path.GetFileName(fileName)
+            ? fallbackDisplayName
             : entry.DisplayName!;
 
         return new DocumentRecord(
-            fileName,
-            displayName ?? fileName,
-            string.IsNullOrWhiteSpace(entry.Line) ? "-" : entry.Line!,
-            string.IsNullOrWhiteSpace(entry.Station) ? "-" : entry.Station!,
-            string.IsNullOrWhiteSpace(entry.Model) ? "-" : entry.Model!,
+            normalizedRelativePath,
+            string.IsNullOrWhiteSpace(displayName) ? fallbackDisplayName : displayName,
+            NormalizeMetadata(entry.Line),
+            NormalizeMetadata(entry.Station),
+            NormalizeMetadata(entry.Model),
             updatedAt,
-            string.IsNullOrWhiteSpace(entry.UploadedBy) ? "-" : entry.UploadedBy!)
+            NormalizeMetadata(entry.UploadedBy))
         {
-            RelativeUrl = BuildRelativeUrl(fileName)
+            LinkUrl = BuildDocumentLink(normalizedRelativePath, fileInfo.FullName)
         };
     }
 
-    private string BuildRelativeUrl(string fileName)
+    private DocumentRecord CreateRecord(FileInfo fileInfo, string normalizedRelativePath)
     {
+        var updatedAt = fileInfo.Exists
+            ? new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero)
+            : (DateTimeOffset?)null;
+
+        var displayName = Path.GetFileName(normalizedRelativePath);
+
+        return new DocumentRecord(
+            normalizedRelativePath,
+            displayName,
+            "-",
+            "-",
+            "-",
+            updatedAt,
+            "-"
+        )
+        {
+            LinkUrl = BuildDocumentLink(normalizedRelativePath, fileInfo.FullName)
+        };
+    }
+
+    private string? BuildDocumentLink(string normalizedRelativePath, string fullPath)
+    {
+        if (!string.IsNullOrWhiteSpace(_options.AbsolutePath))
+        {
+            if (Uri.TryCreate(fullPath, UriKind.Absolute, out var absoluteUri))
+            {
+                return absoluteUri.AbsoluteUri;
+            }
+
+            return null;
+        }
+
         var relativePath = string.IsNullOrWhiteSpace(_options.RelativePath)
             ? DefaultRelativePath
             : _options.RelativePath!;
 
         var sanitizedRelative = relativePath.Trim('/').Replace("\\", "/");
-        var normalizedFileName = fileName.Replace("\\", "/");
-        var segments = normalizedFileName.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var segments = normalizedRelativePath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
+        {
+            return null;
+        }
+
         var encoded = string.Join('/', segments.Select(Uri.EscapeDataString));
 
         if (string.IsNullOrEmpty(sanitizedRelative))
@@ -221,6 +252,56 @@ public sealed class DocumentCatalogService
 
         return $"/{sanitizedRelative}/{encoded}";
     }
+
+    private IEnumerable<string> EnumerateDocumentFiles()
+    {
+        try
+        {
+            return Directory.EnumerateFiles(_documentsDirectory, "*", SearchOption.AllDirectories)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enumerate document files under '{Directory}'.", _documentsDirectory);
+            return Array.Empty<string>();
+        }
+    }
+
+    private string? NormalizeRelativePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var candidate = path.Trim();
+
+        try
+        {
+            if (Path.IsPathRooted(candidate))
+            {
+                candidate = Path.GetRelativePath(_documentsDirectory, candidate);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+
+        candidate = candidate
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Replace('\', '/');
+
+        if (string.IsNullOrWhiteSpace(candidate) || candidate.StartsWith("../", StringComparison.Ordinal) || candidate == "..")
+        {
+            return null;
+        }
+
+        return candidate;
+    }
+
+    private static string NormalizeMetadata(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "-" : value!;
 
     private string ResolveDocumentsDirectory()
     {
