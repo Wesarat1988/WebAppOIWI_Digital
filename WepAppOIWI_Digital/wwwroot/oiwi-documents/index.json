@@ -7,6 +7,7 @@
       "station": "ST-A1",
       "model": "Model-A",
       "uploadedBy": "EMP001",
+      "comment": "เอกสารตัวอย่าง OI สำหรับทดสอบ",
       "updatedAt": "2024-05-01T09:30:00+07:00"
     },
     {
@@ -16,6 +17,7 @@
       "station": "ST-B3",
       "model": "Model-B",
       "uploadedBy": "EMP002",
+      "comment": "WI Beta สำหรับไลน์ประกอบ",
       "updatedAt": "2024-05-05T14:15:00+07:00"
     }
   ]

@@ -123,6 +123,7 @@ public sealed class DocumentUploadService
             Station = request.Station?.Trim(),
             Model = request.Model?.Trim(),
             UploadedBy = request.UploadedBy?.Trim(),
+            Comment = request.Comment?.Trim(),
             UpdatedAt = request.UploadedAt
         };
 
@@ -210,6 +211,7 @@ public sealed record DocumentUploadRequest(
     string? Station,
     string? Model,
     string? UploadedBy,
+    string? Comment,
     string OriginalFileName,
     Stream Content,
     DateTimeOffset UploadedAt);
@@ -236,5 +238,6 @@ internal sealed class ManifestEntry
     public string? Station { get; set; }
     public string? Model { get; set; }
     public string? UploadedBy { get; set; }
+    public string? Comment { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
 }

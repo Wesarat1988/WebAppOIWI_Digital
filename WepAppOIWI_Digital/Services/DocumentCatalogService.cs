@@ -32,7 +32,8 @@ public sealed record DocumentRecord(
     string Station,
     string Model,
     DateTimeOffset? UpdatedAt,
-    string UploadedBy
+    string UploadedBy,
+    string Comment
 )
 {
     public string? LinkUrl { get; init; }
@@ -328,7 +329,8 @@ public sealed class DocumentCatalogService : IDisposable
             NormalizeMetadata(entry.Station),
             NormalizeMetadata(entry.Model),
             updatedAt,
-            NormalizeMetadata(entry.UploadedBy))
+            NormalizeMetadata(entry.UploadedBy),
+            NormalizeMetadata(entry.Comment))
         {
             LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
         };
@@ -349,6 +351,7 @@ public sealed class DocumentCatalogService : IDisposable
             "-",
             "-",
             updatedAt,
+            "-",
             "-"
         )
         {
@@ -454,7 +457,15 @@ public sealed class DocumentCatalogService : IDisposable
             : path + Path.DirectorySeparatorChar;
 
     private static string NormalizeMetadata(string? value)
-        => string.IsNullOrWhiteSpace(value) ? "-" : value!;
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "-";
+        }
+
+        var trimmed = value.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? "-" : trimmed;
+    }
 
     private DocumentCatalogContext ResolveActiveContext()
     {
@@ -623,6 +634,7 @@ public sealed class DocumentCatalogService : IDisposable
         public string? Station { get; init; }
         public string? Model { get; init; }
         public string? UploadedBy { get; init; }
+        public string? Comment { get; init; }
         public DateTimeOffset? UpdatedAt { get; init; }
     }
 

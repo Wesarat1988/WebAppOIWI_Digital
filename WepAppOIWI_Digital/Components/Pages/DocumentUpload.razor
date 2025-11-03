@@ -46,6 +46,12 @@
     </div>
 
     <div class="mb-3">
+        <label class="form-label">Comment</label>
+        <InputTextArea class="form-control" @bind-Value="formModel.Comment" rows="3" />
+        <ValidationMessage For="() => formModel.Comment" />
+    </div>
+
+    <div class="mb-3">
         <label class="form-label">เลือกไฟล์</label>
         <InputFile OnChange="HandleFileSelected" />
         @if (!string.IsNullOrEmpty(selectedFileName))
@@ -113,6 +119,7 @@
                 Station: formModel.Station,
                 Model: formModel.Model,
                 UploadedBy: formModel.UploadedBy,
+                Comment: formModel.Comment,
                 OriginalFileName: selectedFile.Name,
                 Content: stream,
                 UploadedAt: DateTimeOffset.UtcNow);
@@ -201,6 +208,9 @@
         [StringLength(100, ErrorMessage = "ชื่อผู้ Upload ต้องไม่เกิน 100 ตัวอักษร")]
         public string? UploadedBy { get; set; }
 
+        [StringLength(500, ErrorMessage = "Comment ต้องไม่เกิน 500 ตัวอักษร")]
+        public string? Comment { get; set; }
+
         public void Reset()
         {
             DisplayName = null;
@@ -208,6 +218,7 @@
             Station = null;
             Model = null;
             UploadedBy = null;
+            Comment = null;
         }
     }
 }
