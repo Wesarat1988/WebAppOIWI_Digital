@@ -5,8 +5,15 @@
 
 <PageTitle>Home</PageTitle>
 
-<h1 class="mb-3">📄 รายการเอกสาร OI/WI</h1>
-<p class="text-muted mb-2">ข้อมูลนี้ดึงมาจากเอกสารที่เก็บไว้บน Server Local</p>
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+    <div>
+        <h1 class="mb-1">📄 รายการเอกสาร OI/WI</h1>
+        <p class="text-muted mb-0">ข้อมูลนี้ดึงมาจากเอกสารที่เก็บไว้บน Server Local</p>
+    </div>
+    <NavLink class="btn btn-primary mt-2 mt-sm-0" href="/documents/new">
+        ➕ เพิ่มเอกสาร OI/WI
+    </NavLink>
+</div>
 
 @if (!string.IsNullOrWhiteSpace(activeDirectoryPath))
 {

@@ -12,6 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
 builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
 builder.Services.AddSingleton<DocumentCatalogService>();
+builder.Services.AddSingleton<DocumentUploadService>();
 
 // DI: HttpClient ÊÓËÃÑº¤ÍÁâ¾à¹¹µì
 builder.Services.AddScoped<HttpClient>(sp =>

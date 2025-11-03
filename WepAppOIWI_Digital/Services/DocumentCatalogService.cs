@@ -106,6 +106,21 @@ public sealed class DocumentCatalogService : IDisposable
     public DocumentCatalogContext GetCatalogContext()
         => Volatile.Read(ref _currentContext);
 
+    public async Task<DocumentCatalogContext> EnsureCatalogContextAsync(CancellationToken cancellationToken = default)
+    {
+        await GetDocumentsAsync(cancellationToken).ConfigureAwait(false);
+        return GetCatalogContext();
+    }
+
+    public void InvalidateCache()
+    {
+        lock (_cacheLock)
+        {
+            _cachedDocuments = null;
+            _lastCacheTimeUtc = DateTime.MinValue;
+        }
+    }
+
     public static string EncodeDocumentToken(string normalizedPath)
     {
         if (string.IsNullOrWhiteSpace(normalizedPath))
