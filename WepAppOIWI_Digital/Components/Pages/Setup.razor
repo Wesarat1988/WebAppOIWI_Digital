@@ -7,6 +7,7 @@
 
 @inject SetupStateStore StateStore
 
+@using System
 @using System.Net
 @using System.Text.Json
 @using System.Linq
@@ -358,6 +359,12 @@
         Group = Pending.Group;
         Station = Pending.Station;
         InputLine = entry.Line;
+
+        StateStore.LastUpdatedAt = DateTimeOffset.UtcNow;
+        if (!string.IsNullOrWhiteSpace(EmpNo))
+        {
+            StateStore.LastUpdatedBy = EmpNo;
+        }
 
         SetStatus($"เลือก Work Order {WorkOrder} เรียบร้อย", "success");
     }
