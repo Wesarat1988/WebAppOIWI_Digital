@@ -3,9 +3,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -50,6 +53,7 @@ public sealed class DocumentCatalogService : IDisposable
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true
     };
+    private readonly FileExtensionContentTypeProvider _contentTypeProvider = new();
 
     private IReadOnlyList<DocumentRecord>? _cachedDocuments;
     private DateTime _lastCacheTimeUtc;
@@ -101,6 +105,47 @@ public sealed class DocumentCatalogService : IDisposable
 
     public DocumentCatalogContext GetCatalogContext()
         => Volatile.Read(ref _currentContext);
+
+    public static string EncodeDocumentToken(string normalizedPath)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            throw new ArgumentException("Value cannot be null or whitespace.", nameof(normalizedPath));
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(normalizedPath);
+        return WebEncoders.Base64UrlEncode(bytes);
+    }
+
+    public static bool TryDecodeDocumentToken(string? token, out string normalizedPath)
+    {
+        normalizedPath = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return false;
+        }
+
+        try
+        {
+            var bytes = WebEncoders.Base64UrlDecode(token);
+            var decoded = Encoding.UTF8.GetString(bytes);
+            if (string.IsNullOrWhiteSpace(decoded))
+            {
+                return false;
+            }
+
+            normalizedPath = decoded
+                .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Trim();
+
+            return !string.IsNullOrWhiteSpace(normalizedPath);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
 
     private async Task<IReadOnlyList<DocumentRecord>> LoadDocumentsAsync(CancellationToken cancellationToken)
     {
@@ -174,6 +219,54 @@ public sealed class DocumentCatalogService : IDisposable
             .OrderByDescending(d => d.UpdatedAt ?? DateTimeOffset.MinValue)
             .ThenBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    public Task<DocumentFileHandle?> TryGetDocumentFileAsync(string? requestedPath, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(requestedPath))
+        {
+            return Task.FromResult<DocumentFileHandle?>(null);
+        }
+
+        EnsureNetworkShareConnection();
+
+        var context = ResolveActiveContext();
+        Volatile.Write(ref _currentContext, context);
+
+        if (!context.RootExists || string.IsNullOrWhiteSpace(context.ActiveRootPath))
+        {
+            return Task.FromResult<DocumentFileHandle?>(null);
+        }
+
+        var normalized = NormalizeRelativePath(requestedPath, context.ActiveRootPath!);
+        if (string.IsNullOrEmpty(normalized))
+        {
+            return Task.FromResult<DocumentFileHandle?>(null);
+        }
+
+        var rootFullPath = Path.GetFullPath(context.ActiveRootPath!);
+        var relativePath = normalized.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        var combinedPath = Path.GetFullPath(Path.Combine(rootFullPath, relativePath));
+
+        if (!IsPathWithinRoot(rootFullPath, combinedPath) || !File.Exists(combinedPath))
+        {
+            return Task.FromResult<DocumentFileHandle?>(null);
+        }
+
+        if (!_contentTypeProvider.TryGetContentType(combinedPath, out var contentType) || string.IsNullOrWhiteSpace(contentType))
+        {
+            contentType = "application/octet-stream";
+        }
+
+        var fileName = Path.GetFileName(combinedPath);
+
+        return Task.FromResult<DocumentFileHandle?>(new DocumentFileHandle(
+            NormalizedPath: normalized,
+            PhysicalPath: combinedPath,
+            FileName: fileName,
+            ContentType: contentType));
     }
 
     private async Task<IReadOnlyList<DocumentManifestEntry>?> TryLoadManifestAsync(string rootDirectory, CancellationToken cancellationToken)
@@ -327,6 +420,24 @@ public sealed class DocumentCatalogService : IDisposable
         return candidate;
     }
 
+    private static bool IsPathWithinRoot(string rootPath, string candidatePath)
+    {
+        if (string.IsNullOrEmpty(rootPath) || string.IsNullOrEmpty(candidatePath))
+        {
+            return false;
+        }
+
+        var normalizedRoot = EnsureTrailingSeparator(Path.GetFullPath(rootPath));
+        var normalizedCandidate = Path.GetFullPath(candidatePath);
+
+        return normalizedCandidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string EnsureTrailingSeparator(string path)
+        => path.EndsWith(Path.DirectorySeparatorChar)
+            ? path
+            : path + Path.DirectorySeparatorChar;
+
     private static string NormalizeMetadata(string? value)
         => string.IsNullOrWhiteSpace(value) ? "-" : value!;
 
@@ -475,6 +586,12 @@ public sealed class DocumentCatalogService : IDisposable
     {
         public static DocumentCatalogContext Uninitialized { get; } = new("", false, CatalogLinkKind.Relative, false, null, null, null, null);
     }
+
+    public sealed record DocumentFileHandle(
+        string NormalizedPath,
+        string PhysicalPath,
+        string FileName,
+        string ContentType);
 
     private sealed record RelativeDirectorySettings(string PhysicalPath, string RequestPrefix);
 

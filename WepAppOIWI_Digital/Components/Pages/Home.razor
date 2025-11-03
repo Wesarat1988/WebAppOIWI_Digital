@@ -56,7 +56,15 @@ else
                         <tr>
                             <td>@(index + 1)</td>
                             <td>
-                                @if (!string.IsNullOrEmpty(document.LinkUrl))
+                                @{
+                                    var viewerUrl = BuildViewerUrl(document);
+                                }
+
+                                @if (!string.IsNullOrEmpty(viewerUrl))
+                                {
+                                    <a href="@viewerUrl" target="_blank" rel="noopener">@document.DisplayName</a>
+                                }
+                                else if (!string.IsNullOrEmpty(document.LinkUrl))
                                 {
                                     <a href="@document.LinkUrl" target="_blank" rel="noopener">@document.DisplayName</a>
                                 }
@@ -122,6 +130,25 @@ else
         => timestamp.HasValue
             ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
             : "-";
+
+    private string? BuildViewerUrl(DocumentRecord document)
+    {
+        if (string.IsNullOrWhiteSpace(document.FileName))
+        {
+            return null;
+        }
+
+        try
+        {
+            var token = DocumentCatalogService.EncodeDocumentToken(document.FileName);
+            return $"/documents/viewer/{Uri.EscapeDataString(token)}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to build viewer link for document '{DocumentName}'.", document.FileName);
+            return document.LinkUrl;
+        }
+    }
 
     private void UpdateCatalogStatus(DocumentCatalogService.DocumentCatalogContext context)
     {
