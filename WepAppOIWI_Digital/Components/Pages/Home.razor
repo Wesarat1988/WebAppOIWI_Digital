@@ -1,7 +1,218 @@
-﻿@page "/"
+@page "/"
+@rendermode InteractiveServer
+@inject DocumentCatalogService DocumentCatalog
+@inject ILogger<WepAppOIWI_Digital.Components.Pages.Home> Logger
 
 <PageTitle>Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+    <div>
+        <h1 class="mb-1">📄 รายการเอกสาร OI/WI</h1>
+        <p class="text-muted mb-0">ข้อมูลนี้ดึงมาจากเอกสารที่เก็บไว้บน Server Local</p>
+    </div>
+    <NavLink class="btn btn-primary mt-2 mt-sm-0" href="/documents/new">
+        ➕ เพิ่มเอกสาร OI/WI
+    </NavLink>
+</div>
 
-Welcome to your new app.
+@if (!string.IsNullOrWhiteSpace(activeDirectoryPath))
+{
+    <p class="small text-muted mb-2">โฟลเดอร์ที่กำลังใช้งาน: <code>@activeDirectoryPath</code></p>
+}
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <div class="@statusAlertClass" role="alert">@statusMessage</div>
+}
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">@errorMessage</div>
+}
+else if (isLoading)
+{
+    <p class="text-muted">กำลังโหลดข้อมูลเอกสาร...</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col" style="width: 70px;">No.</th>
+                    <th scope="col">OI/WI Name</th>
+                    <th scope="col">Line</th>
+                    <th scope="col">Station</th>
+                    <th scope="col">Model</th>
+                    <th scope="col">Time</th>
+                    <th scope="col">Name</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (documents.Count == 0)
+                {
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">ยังไม่มีไฟล์สำหรับแสดงผล</td>
+                    </tr>
+                }
+                else
+                {
+                    @for (var index = 0; index < documents.Count; index++)
+                    {
+                        var document = documents[index];
+                        <tr>
+                            <td>@(index + 1)</td>
+                            <td>
+                                @{
+                                    var viewerUrl = BuildViewerUrl(document);
+                                }
+
+                                @if (!string.IsNullOrEmpty(viewerUrl))
+                                {
+                                    <a href="@viewerUrl" target="_blank" rel="noopener">@document.DisplayName</a>
+                                }
+                                else if (!string.IsNullOrEmpty(document.LinkUrl))
+                                {
+                                    <a href="@document.LinkUrl" target="_blank" rel="noopener">@document.DisplayName</a>
+                                }
+                                else
+                                {
+                                    @document.DisplayName
+                                }
+                            </td>
+                            <td>@(DisplayOrDash(document.Line))</td>
+                            <td>@(DisplayOrDash(document.Station))</td>
+                            <td>@(DisplayOrDash(document.Model))</td>
+                            <td>@FormatTimestamp(document.UpdatedAt)</td>
+                            <td>@(DisplayOrDash(document.UploadedBy))</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private readonly List<DocumentRecord> documents = new();
+    private DocumentCatalogService.DocumentCatalogContext catalogContext = DocumentCatalogService.DocumentCatalogContext.Uninitialized;
+    private bool isLoading = true;
+    private string? errorMessage;
+    private string? activeDirectoryPath;
+    private string? statusAlertClass;
+    private string? statusMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDocumentsAsync();
+    }
+
+    private async Task LoadDocumentsAsync()
+    {
+        try
+        {
+            var result = await DocumentCatalog.GetDocumentsAsync();
+            documents.Clear();
+            documents.AddRange(result);
+            catalogContext = DocumentCatalog.GetCatalogContext();
+            UpdateCatalogStatus(catalogContext);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load OI/WI documents from the server file system.");
+            errorMessage = "ไม่สามารถโหลดรายการเอกสารได้ กรุณาลองใหม่อีกครั้ง";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static string DisplayOrDash(string? value)
+        => string.IsNullOrWhiteSpace(value) || value == "-"
+            ? "-"
+            : value;
+
+    private static string FormatTimestamp(DateTimeOffset? timestamp)
+        => timestamp.HasValue
+            ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "-";
+
+    private string? BuildViewerUrl(DocumentRecord document)
+    {
+        if (string.IsNullOrWhiteSpace(document.FileName))
+        {
+            return null;
+        }
+
+        try
+        {
+            var token = DocumentCatalogService.EncodeDocumentToken(document.FileName);
+            return $"/documents/viewer/{Uri.EscapeDataString(token)}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to build viewer link for document '{DocumentName}'.", document.FileName);
+            return document.LinkUrl;
+        }
+    }
+
+    private void UpdateCatalogStatus(DocumentCatalogService.DocumentCatalogContext context)
+    {
+        activeDirectoryPath = string.Empty;
+        statusAlertClass = null;
+        statusMessage = null;
+
+        var primaryPath = string.IsNullOrWhiteSpace(context.RequestedAbsolutePath)
+            ? null
+            : context.RequestedAbsolutePath;
+
+        var fallbackPath = string.IsNullOrWhiteSpace(context.RelativePhysicalPath)
+            ? null
+            : context.RelativePhysicalPath;
+
+        if (!string.IsNullOrWhiteSpace(context.ActiveRootPath))
+        {
+            activeDirectoryPath = context.ActiveRootPath;
+        }
+        else if (!string.IsNullOrWhiteSpace(primaryPath))
+        {
+            activeDirectoryPath = primaryPath;
+        }
+        else if (!string.IsNullOrWhiteSpace(fallbackPath))
+        {
+            activeDirectoryPath = fallbackPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(context.ConnectionErrorMessage))
+        {
+            statusAlertClass = "alert alert-danger";
+            statusMessage = $"ไม่สามารถเชื่อมต่อไปยังโฟลเดอร์หลักได้: {context.ConnectionErrorMessage}";
+            return;
+        }
+
+        if (context.IsFallback && !string.IsNullOrWhiteSpace(primaryPath))
+        {
+            statusAlertClass = "alert alert-warning";
+            statusMessage = $"ไม่พบโฟลเดอร์ \"{primaryPath}\" จึงแสดงข้อมูลจาก \"{fallbackPath ?? "ตัวอย่าง"}\" แทน";
+            return;
+        }
+
+        if (!context.RootExists)
+        {
+            statusAlertClass = "alert alert-warning";
+            if (!string.IsNullOrWhiteSpace(primaryPath))
+            {
+                statusMessage = $"ไม่พบโฟลเดอร์ \"{primaryPath}\" กรุณาตรวจสอบค่า DocumentCatalog.AbsolutePath ในไฟล์ appsettings";
+            }
+            else if (!string.IsNullOrWhiteSpace(fallbackPath))
+            {
+                statusMessage = $"ไม่พบโฟลเดอร์ \"{fallbackPath}\" กรุณาตรวจสอบค่า DocumentCatalog.RelativePath หรือสร้างโฟลเดอร์ดังกล่าว";
+            }
+            else
+            {
+                statusMessage = "ยังไม่ได้กำหนดโฟลเดอร์สำหรับเก็บเอกสาร OI/WI";
+            }
+        }
+    }
+}
