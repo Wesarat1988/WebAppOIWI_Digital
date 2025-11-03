@@ -57,8 +57,8 @@ else
 
     @if (canPreviewInline && !string.IsNullOrEmpty(previewSource))
     {
-        <div class="border rounded overflow-hidden" style="min-height: 70vh;">
-            <iframe src="@previewSource" title="ตัวอย่างเอกสาร" class="w-100 h-100 border-0"></iframe>
+        <div class="document-preview-frame border rounded overflow-hidden">
+            <iframe src="@previewSource" title="ตัวอย่างเอกสาร"></iframe>
         </div>
         <p class="text-muted small mt-2">
             หากไฟล์ไม่แสดงผลในตัวอย่าง กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
