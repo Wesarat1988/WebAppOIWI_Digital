@@ -54,6 +54,8 @@
     </div>
 </div>
 
+@{ var filteredDocuments = GetFilteredDocuments(); }
+
 @if (!string.IsNullOrWhiteSpace(activeDirectoryPath))
 {
     <p class="small text-muted mb-2">โฟลเดอร์ที่กำลังใช้งาน: <code>@activeDirectoryPath</code></p>
@@ -74,8 +76,6 @@ else if (isLoading)
 }
 else
 {
-    var filteredDocuments = GetFilteredDocuments();
-
     <div class="table-responsive">
         <table class="table table-striped align-middle">
             <thead class="table-light">
