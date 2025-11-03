@@ -106,13 +106,10 @@ else
                     @for (var index = 0; index < filteredDocuments.Count; index++)
                     {
                         var document = filteredDocuments[index];
+                        var viewerUrl = BuildViewerUrl(document);
                         <tr>
                             <td>@(index + 1)</td>
                             <td>
-                                @{
-                                    var viewerUrl = BuildViewerUrl(document);
-                                }
-
                                 @if (!string.IsNullOrEmpty(viewerUrl))
                                 {
                                     <a href="@viewerUrl" target="_blank" rel="noopener">@document.DisplayName</a>
