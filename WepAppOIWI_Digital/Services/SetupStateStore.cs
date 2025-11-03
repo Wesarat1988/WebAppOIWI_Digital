@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace WepAppOIWI_Digital.Services;
@@ -47,6 +48,9 @@ public sealed class SetupStateStore
 
     public string WorkOrderFilter { get; set; } = string.Empty;
     public string SearchFilter { get; set; } = string.Empty;
+
+    public DateTimeOffset? LastUpdatedAt { get; set; }
+    public string LastUpdatedBy { get; set; } = string.Empty;
 
     public List<WorkOrderEntry> MoResults { get; } = new();
     public List<StationInfo> StationList { get; } = new();
