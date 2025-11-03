@@ -4,6 +4,7 @@
 @inject DocumentCatalogService DocumentCatalog
 @inject NavigationManager Navigation
 @inject ILogger<WepAppOIWI_Digital.Components.Pages.DocumentViewer> Logger
+@inject IJSRuntime JSRuntime
 
 <PageTitle>ดูเอกสาร OI/WI</PageTitle>
 
@@ -57,8 +58,10 @@ else
 
     @if (canPreviewInline && !string.IsNullOrEmpty(previewSource))
     {
-        <div class="document-preview-frame border rounded overflow-hidden">
-            <iframe src="@previewSource" title="ตัวอย่างเอกสาร"></iframe>
+        <div class="document-preview-frame border rounded">
+            <div id="@pdfContainerId" class="pdfjs-viewer">
+                <div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
+            </div>
         </div>
         <p class="text-muted small mt-2">
             หากไฟล์ไม่แสดงผลในตัวอย่าง กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
@@ -83,6 +86,10 @@ else
     private string? previewSource;
     private string? downloadSource;
     private bool canPreviewInline;
+    private bool pendingPdfRender;
+    private int pdfRenderAttempts;
+    private readonly string pdfContainerId = $"pdfjs-viewer-{System.Guid.NewGuid():N}";
+    private const int MaxPdfRenderAttempts = 3;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -93,6 +100,8 @@ else
         previewSource = null;
         downloadSource = null;
         canPreviewInline = false;
+        pendingPdfRender = false;
+        pdfRenderAttempts = 0;
 
         if (!DocumentCatalogService.TryDecodeDocumentToken(Token, out var normalizedPath))
         {
@@ -121,6 +130,8 @@ else
             previewSource = $"/documents/preview/{Uri.EscapeDataString(Token)}";
             downloadSource = $"/documents/download/{Uri.EscapeDataString(Token)}";
             canPreviewInline = string.Equals(fileHandle.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase);
+            pendingPdfRender = canPreviewInline && !string.IsNullOrEmpty(previewSource);
+            pdfRenderAttempts = 0;
         }
         catch (OperationCanceledException)
         {
@@ -134,6 +145,38 @@ else
         finally
         {
             isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!isLoading && pendingPdfRender && !string.IsNullOrEmpty(previewSource))
+        {
+            pendingPdfRender = false;
+
+            try
+            {
+                pdfRenderAttempts++;
+                await JSRuntime.InvokeVoidAsync("pdfViewer.renderPdf", previewSource, pdfContainerId);
+            }
+            catch (JSException jsEx)
+            {
+                Logger.LogError(jsEx, "Failed to render PDF preview for '{DocumentPath}'", document?.FileName);
+                if (pdfRenderAttempts < MaxPdfRenderAttempts)
+                {
+                    pendingPdfRender = true;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Unexpected error while rendering PDF preview for '{DocumentPath}'", document?.FileName);
+                if (pdfRenderAttempts < MaxPdfRenderAttempts)
+                {
+                    pendingPdfRender = true;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
         }
     }
 
