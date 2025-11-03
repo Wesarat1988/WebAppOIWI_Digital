@@ -31,7 +31,7 @@ else
                     <p class="card-subtitle text-muted small mb-0">อัปเดตล่าสุด: @FormatTimestamp(document.UpdatedAt)</p>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
-                    <a class="btn btn-primary" href="@viewerSource" target="_blank" rel="noopener">
+                    <a class="btn btn-primary" href="@(downloadSource ?? "#")" target="_blank" rel="noopener" download="@fileHandle?.FileName">
                         ⬇️ ดาวน์โหลดไฟล์
                     </a>
                     <button type="button" class="btn btn-secondary" @onclick="NavigateHome">
@@ -55,12 +55,21 @@ else
         </div>
     </div>
 
-    <div class="border rounded overflow-hidden" style="min-height: 70vh;">
-        <iframe src="@viewerSource" title="ตัวอย่างเอกสาร" class="w-100 h-100 border-0"></iframe>
-    </div>
-    <p class="text-muted small mt-2">
-        หากไฟล์ไม่แสดงผลในตัวอย่าง กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
-    </p>
+    @if (canPreviewInline && !string.IsNullOrEmpty(previewSource))
+    {
+        <div class="border rounded overflow-hidden" style="min-height: 70vh;">
+            <iframe src="@previewSource" title="ตัวอย่างเอกสาร" class="w-100 h-100 border-0"></iframe>
+        </div>
+        <p class="text-muted small mt-2">
+            หากไฟล์ไม่แสดงผลในตัวอย่าง กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
+        </p>
+    }
+    else
+    {
+        <div class="alert alert-info" role="alert">
+            ยังไม่รองรับการแสดงตัวอย่างไฟล์ประเภทนี้ในหน้าเว็บ กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
+        </div>
+    }
 }
 
 @code {
@@ -71,7 +80,9 @@ else
     private string? errorMessage;
     private DocumentRecord? document;
     private DocumentCatalogService.DocumentFileHandle? fileHandle;
-    private string? viewerSource;
+    private string? previewSource;
+    private string? downloadSource;
+    private bool canPreviewInline;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -79,7 +90,9 @@ else
         errorMessage = null;
         document = null;
         fileHandle = null;
-        viewerSource = null;
+        previewSource = null;
+        downloadSource = null;
+        canPreviewInline = false;
 
         if (!DocumentCatalogService.TryDecodeDocumentToken(Token, out var normalizedPath))
         {
@@ -105,7 +118,9 @@ else
                 return;
             }
 
-            viewerSource = $"/documents/file/{Uri.EscapeDataString(Token)}";
+            previewSource = $"/documents/preview/{Uri.EscapeDataString(Token)}";
+            downloadSource = $"/documents/download/{Uri.EscapeDataString(Token)}";
+            canPreviewInline = string.Equals(fileHandle.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase);
         }
         catch (OperationCanceledException)
         {
