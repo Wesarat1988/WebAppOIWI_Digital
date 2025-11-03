@@ -112,7 +112,7 @@ public sealed class DocumentCatalogService
 
                 manifestFiles.Add(normalizedRelativePath);
 
-                var fileSystemRelativePath = normalizedRelativePath.Replace('/', Path.DirectorySeparatorChar);
+                var fileSystemRelativePath = normalizedRelativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
                 var fullPath = Path.Combine(_documentsDirectory, fileSystemRelativePath);
                 var fileInfo = new FileInfo(fullPath);
 
@@ -236,14 +236,16 @@ public sealed class DocumentCatalogService
             ? DefaultRelativePath
             : _options.RelativePath!;
 
-        var sanitizedRelative = relativePath.Trim('/').Replace("\\", "/");
-        var segments = normalizedRelativePath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var sanitizedRelative = relativePath.Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Replace(Path.DirectorySeparatorChar.ToString(), Path.AltDirectorySeparatorChar.ToString());
+        var segments = normalizedRelativePath.Split(Path.AltDirectorySeparatorChar,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (segments.Length == 0)
         {
             return null;
         }
 
-        var encoded = string.Join('/', segments.Select(Uri.EscapeDataString));
+        var encoded = string.Join(Path.AltDirectorySeparatorChar, segments.Select(Uri.EscapeDataString));
 
         if (string.IsNullOrEmpty(sanitizedRelative))
         {
@@ -290,7 +292,7 @@ public sealed class DocumentCatalogService
 
         candidate = candidate
             .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            .Replace('\', '/');
+            .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
         if (string.IsNullOrWhiteSpace(candidate) || candidate.StartsWith("../", StringComparison.Ordinal) || candidate == "..")
         {
