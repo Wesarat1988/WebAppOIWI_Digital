@@ -6,7 +6,17 @@
 <PageTitle>Home</PageTitle>
 
 <h1 class="mb-3">📄 รายการเอกสาร OI/WI</h1>
-<p class="text-muted mb-4">ข้อมูลนี้ดึงมาจากเอกสารที่เก็บไว้บน Server Local</p>
+<p class="text-muted mb-2">ข้อมูลนี้ดึงมาจากเอกสารที่เก็บไว้บน Server Local</p>
+
+@if (!string.IsNullOrWhiteSpace(activeDirectoryPath))
+{
+    <p class="small text-muted mb-2">โฟลเดอร์ที่กำลังใช้งาน: <code>@activeDirectoryPath</code></p>
+}
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <div class="@statusAlertClass" role="alert">@statusMessage</div>
+}
 
 @if (!string.IsNullOrEmpty(errorMessage))
 {
@@ -70,8 +80,12 @@ else
 
 @code {
     private readonly List<DocumentRecord> documents = new();
+    private DocumentCatalogService.DocumentCatalogContext catalogContext = DocumentCatalogService.DocumentCatalogContext.Uninitialized;
     private bool isLoading = true;
     private string? errorMessage;
+    private string? activeDirectoryPath;
+    private string? statusAlertClass;
+    private string? statusMessage;
 
     protected override async Task OnInitializedAsync()
     {
@@ -85,6 +99,8 @@ else
             var result = await DocumentCatalog.GetDocumentsAsync();
             documents.Clear();
             documents.AddRange(result);
+            catalogContext = DocumentCatalog.GetCatalogContext();
+            UpdateCatalogStatus(catalogContext);
         }
         catch (Exception ex)
         {
@@ -106,4 +122,63 @@ else
         => timestamp.HasValue
             ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
             : "-";
+
+    private void UpdateCatalogStatus(DocumentCatalogService.DocumentCatalogContext context)
+    {
+        activeDirectoryPath = string.Empty;
+        statusAlertClass = null;
+        statusMessage = null;
+
+        var primaryPath = string.IsNullOrWhiteSpace(context.RequestedAbsolutePath)
+            ? null
+            : context.RequestedAbsolutePath;
+
+        var fallbackPath = string.IsNullOrWhiteSpace(context.RelativePhysicalPath)
+            ? null
+            : context.RelativePhysicalPath;
+
+        if (!string.IsNullOrWhiteSpace(context.ActiveRootPath))
+        {
+            activeDirectoryPath = context.ActiveRootPath;
+        }
+        else if (!string.IsNullOrWhiteSpace(primaryPath))
+        {
+            activeDirectoryPath = primaryPath;
+        }
+        else if (!string.IsNullOrWhiteSpace(fallbackPath))
+        {
+            activeDirectoryPath = fallbackPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(context.ConnectionErrorMessage))
+        {
+            statusAlertClass = "alert alert-danger";
+            statusMessage = $"ไม่สามารถเชื่อมต่อไปยังโฟลเดอร์หลักได้: {context.ConnectionErrorMessage}";
+            return;
+        }
+
+        if (context.IsFallback && !string.IsNullOrWhiteSpace(primaryPath))
+        {
+            statusAlertClass = "alert alert-warning";
+            statusMessage = $"ไม่พบโฟลเดอร์ \"{primaryPath}\" จึงแสดงข้อมูลจาก \"{fallbackPath ?? "ตัวอย่าง"}\" แทน";
+            return;
+        }
+
+        if (!context.RootExists)
+        {
+            statusAlertClass = "alert alert-warning";
+            if (!string.IsNullOrWhiteSpace(primaryPath))
+            {
+                statusMessage = $"ไม่พบโฟลเดอร์ \"{primaryPath}\" กรุณาตรวจสอบค่า DocumentCatalog.AbsolutePath ในไฟล์ appsettings";
+            }
+            else if (!string.IsNullOrWhiteSpace(fallbackPath))
+            {
+                statusMessage = $"ไม่พบโฟลเดอร์ \"{fallbackPath}\" กรุณาตรวจสอบค่า DocumentCatalog.RelativePath หรือสร้างโฟลเดอร์ดังกล่าว";
+            }
+            else
+            {
+                statusMessage = "ยังไม่ได้กำหนดโฟลเดอร์สำหรับเก็บเอกสาร OI/WI";
+            }
+        }
+    }
 }

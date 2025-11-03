@@ -16,6 +16,10 @@ public sealed class DocumentCatalogOptions
     public string? RelativePath { get; set; }
     public string? AbsolutePath { get; set; }
     public string ManifestFileName { get; set; } = "index.json";
+    public bool EnableNetworkConnection { get; set; } = true;
+    public string? NetworkUserName { get; set; }
+    public string? NetworkPassword { get; set; }
+    public string? NetworkDomain { get; set; }
 }
 
 public sealed record DocumentRecord(
@@ -31,12 +35,15 @@ public sealed record DocumentRecord(
     public string? LinkUrl { get; init; }
 }
 
-public sealed class DocumentCatalogService
+public sealed class DocumentCatalogService : IDisposable
 {
     private readonly IWebHostEnvironment _environment;
     private readonly ILogger<DocumentCatalogService> _logger;
     private readonly DocumentCatalogOptions _options;
-    private readonly string _documentsDirectory;
+    private readonly string? _configuredAbsolutePath;
+    private readonly RelativeDirectorySettings _relativeSettings;
+    private readonly NetworkShareConnector? _networkConnector;
+    private readonly object _networkConnectionLock = new();
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -49,6 +56,9 @@ public sealed class DocumentCatalogService
     private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(1);
     private readonly object _cacheLock = new();
 
+    private DocumentCatalogContext _currentContext = DocumentCatalogContext.Uninitialized;
+    private string? _connectionError;
+
     public DocumentCatalogService(
         IWebHostEnvironment environment,
         IOptions<DocumentCatalogOptions> options,
@@ -58,7 +68,9 @@ public sealed class DocumentCatalogService
         _logger = logger;
         _options = options.Value;
 
-        _documentsDirectory = ResolveDocumentsDirectory();
+        _configuredAbsolutePath = ResolveAbsoluteDirectory();
+        _relativeSettings = ResolveRelativeDirectory();
+        _networkConnector = NetworkShareConnector.TryCreate(_configuredAbsolutePath, _options, logger);
     }
 
     public async Task<IReadOnlyList<DocumentRecord>> GetDocumentsAsync(CancellationToken cancellationToken = default)
@@ -87,15 +99,31 @@ public sealed class DocumentCatalogService
         return records;
     }
 
+    public DocumentCatalogContext GetCatalogContext()
+        => Volatile.Read(ref _currentContext);
+
     private async Task<IReadOnlyList<DocumentRecord>> LoadDocumentsAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(_documentsDirectory) || !Directory.Exists(_documentsDirectory))
+        EnsureNetworkShareConnection();
+
+        var context = ResolveActiveContext();
+        Volatile.Write(ref _currentContext, context);
+
+        if (!context.RootExists)
         {
-            _logger.LogInformation("Document directory '{Directory}' does not exist.", _documentsDirectory);
+            if (!string.IsNullOrWhiteSpace(context.ActiveRootPath))
+            {
+                _logger.LogWarning("Document directory '{Directory}' does not exist.", context.ActiveRootPath);
+            }
+            else
+            {
+                _logger.LogWarning("Document directory is not configured.");
+            }
+
             return Array.Empty<DocumentRecord>();
         }
 
-        var manifestRecords = await TryLoadManifestAsync(cancellationToken).ConfigureAwait(false);
+        var manifestRecords = await TryLoadManifestAsync(context.ActiveRootPath!, cancellationToken).ConfigureAwait(false);
         var manifestFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var documents = new List<DocumentRecord>();
@@ -104,7 +132,7 @@ public sealed class DocumentCatalogService
         {
             foreach (var entry in manifestRecords)
             {
-                var normalizedRelativePath = NormalizeRelativePath(entry.FileName);
+                var normalizedRelativePath = NormalizeRelativePath(entry.FileName, context.ActiveRootPath!);
                 if (string.IsNullOrEmpty(normalizedRelativePath))
                 {
                     continue;
@@ -113,16 +141,16 @@ public sealed class DocumentCatalogService
                 manifestFiles.Add(normalizedRelativePath);
 
                 var fileSystemRelativePath = normalizedRelativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-                var fullPath = Path.Combine(_documentsDirectory, fileSystemRelativePath);
+                var fullPath = Path.Combine(context.ActiveRootPath!, fileSystemRelativePath);
                 var fileInfo = new FileInfo(fullPath);
 
-                documents.Add(CreateRecord(entry, fileInfo, normalizedRelativePath));
+                documents.Add(CreateRecord(context, entry, fileInfo, normalizedRelativePath));
             }
         }
 
-        foreach (var filePath in EnumerateDocumentFiles())
+        foreach (var filePath in EnumerateDocumentFiles(context.ActiveRootPath!))
         {
-            var normalizedRelativePath = NormalizeRelativePath(Path.GetRelativePath(_documentsDirectory, filePath));
+            var normalizedRelativePath = NormalizeRelativePath(Path.GetRelativePath(context.ActiveRootPath!, filePath), context.ActiveRootPath!);
             if (string.IsNullOrEmpty(normalizedRelativePath))
             {
                 continue;
@@ -139,7 +167,7 @@ public sealed class DocumentCatalogService
             }
 
             var fileInfo = new FileInfo(filePath);
-            documents.Add(CreateRecord(fileInfo, normalizedRelativePath));
+            documents.Add(CreateRecord(context, fileInfo, normalizedRelativePath));
         }
 
         return documents
@@ -148,11 +176,11 @@ public sealed class DocumentCatalogService
             .ToList();
     }
 
-    private async Task<IReadOnlyList<DocumentManifestEntry>?> TryLoadManifestAsync(CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<DocumentManifestEntry>?> TryLoadManifestAsync(string rootDirectory, CancellationToken cancellationToken)
     {
         try
         {
-            var manifestPath = Path.Combine(_documentsDirectory, _options.ManifestFileName);
+            var manifestPath = Path.Combine(rootDirectory, _options.ManifestFileName);
             if (!File.Exists(manifestPath))
             {
                 return null;
@@ -171,7 +199,7 @@ public sealed class DocumentCatalogService
         }
     }
 
-    private DocumentRecord CreateRecord(DocumentManifestEntry entry, FileInfo fileInfo, string normalizedRelativePath)
+    private DocumentRecord CreateRecord(DocumentCatalogContext context, DocumentManifestEntry entry, FileInfo fileInfo, string normalizedRelativePath)
     {
         var updatedAt = entry.UpdatedAt;
 
@@ -194,11 +222,11 @@ public sealed class DocumentCatalogService
             updatedAt,
             NormalizeMetadata(entry.UploadedBy))
         {
-            LinkUrl = BuildDocumentLink(normalizedRelativePath, fileInfo.FullName)
+            LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
         };
     }
 
-    private DocumentRecord CreateRecord(FileInfo fileInfo, string normalizedRelativePath)
+    private DocumentRecord CreateRecord(DocumentCatalogContext context, FileInfo fileInfo, string normalizedRelativePath)
     {
         var updatedAt = fileInfo.Exists
             ? new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero)
@@ -216,13 +244,13 @@ public sealed class DocumentCatalogService
             "-"
         )
         {
-            LinkUrl = BuildDocumentLink(normalizedRelativePath, fileInfo.FullName)
+            LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
         };
     }
 
-    private string? BuildDocumentLink(string normalizedRelativePath, string fullPath)
+    private string? BuildDocumentLink(DocumentCatalogContext context, string normalizedRelativePath, string fullPath)
     {
-        if (!string.IsNullOrWhiteSpace(_options.AbsolutePath))
+        if (context.LinkKind == CatalogLinkKind.Absolute)
         {
             if (Uri.TryCreate(fullPath, UriKind.Absolute, out var absoluteUri))
             {
@@ -232,12 +260,9 @@ public sealed class DocumentCatalogService
             return null;
         }
 
-        var relativePath = string.IsNullOrWhiteSpace(_options.RelativePath)
-            ? DefaultRelativePath
-            : _options.RelativePath!;
+        var relativePrefix = (context.RelativeRequestPrefix ?? string.Empty)
+            .Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-        var sanitizedRelative = relativePath.Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            .Replace(Path.DirectorySeparatorChar.ToString(), Path.AltDirectorySeparatorChar.ToString());
         var segments = normalizedRelativePath.Split(Path.AltDirectorySeparatorChar,
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (segments.Length == 0)
@@ -247,29 +272,29 @@ public sealed class DocumentCatalogService
 
         var encoded = string.Join(Path.AltDirectorySeparatorChar, segments.Select(Uri.EscapeDataString));
 
-        if (string.IsNullOrEmpty(sanitizedRelative))
+        if (string.IsNullOrEmpty(relativePrefix))
         {
             return $"/{encoded}";
         }
 
-        return $"/{sanitizedRelative}/{encoded}";
+        return $"/{relativePrefix}/{encoded}";
     }
 
-    private IEnumerable<string> EnumerateDocumentFiles()
+    private IEnumerable<string> EnumerateDocumentFiles(string rootDirectory)
     {
         try
         {
-            return Directory.EnumerateFiles(_documentsDirectory, "*", SearchOption.AllDirectories)
+            return Directory.EnumerateFiles(rootDirectory, "*", SearchOption.AllDirectories)
                 .ToList();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to enumerate document files under '{Directory}'.", _documentsDirectory);
+            _logger.LogError(ex, "Failed to enumerate document files under '{Directory}'.", rootDirectory);
             return Array.Empty<string>();
         }
     }
 
-    private string? NormalizeRelativePath(string? path)
+    private string? NormalizeRelativePath(string? path, string rootDirectory)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -282,7 +307,7 @@ public sealed class DocumentCatalogService
         {
             if (Path.IsPathRooted(candidate))
             {
-                candidate = Path.GetRelativePath(_documentsDirectory, candidate);
+                candidate = Path.GetRelativePath(rootDirectory, candidate);
             }
         }
         catch
@@ -305,28 +330,153 @@ public sealed class DocumentCatalogService
     private static string NormalizeMetadata(string? value)
         => string.IsNullOrWhiteSpace(value) ? "-" : value!;
 
-    private string ResolveDocumentsDirectory()
+    private DocumentCatalogContext ResolveActiveContext()
     {
-        if (!string.IsNullOrWhiteSpace(_options.AbsolutePath))
+        var absolutePath = _configuredAbsolutePath;
+        var relativePhysical = _relativeSettings.PhysicalPath;
+        var relativeExists = Directory.Exists(relativePhysical);
+
+        if (!string.IsNullOrWhiteSpace(absolutePath))
         {
-            if (Path.IsPathRooted(_options.AbsolutePath))
+            var absoluteExists = Directory.Exists(absolutePath);
+
+            if (absoluteExists)
             {
-                return _options.AbsolutePath;
+                return new DocumentCatalogContext(
+                    ActiveRootPath: absolutePath,
+                    RootExists: true,
+                    LinkKind: CatalogLinkKind.Absolute,
+                    IsFallback: false,
+                    RequestedAbsolutePath: absolutePath,
+                    RelativeRequestPrefix: _relativeSettings.RequestPrefix,
+                    RelativePhysicalPath: relativePhysical,
+                    ConnectionErrorMessage: _connectionError);
             }
 
-            var contentRoot = _environment.ContentRootPath ?? AppContext.BaseDirectory;
-            return Path.Combine(contentRoot, _options.AbsolutePath);
+            if (relativeExists)
+            {
+                return new DocumentCatalogContext(
+                    ActiveRootPath: relativePhysical,
+                    RootExists: true,
+                    LinkKind: CatalogLinkKind.Relative,
+                    IsFallback: true,
+                    RequestedAbsolutePath: absolutePath,
+                    RelativeRequestPrefix: _relativeSettings.RequestPrefix,
+                    RelativePhysicalPath: relativePhysical,
+                    ConnectionErrorMessage: _connectionError);
+            }
+
+            return new DocumentCatalogContext(
+                ActiveRootPath: absolutePath,
+                RootExists: false,
+                LinkKind: CatalogLinkKind.Absolute,
+                IsFallback: false,
+                RequestedAbsolutePath: absolutePath,
+                RelativeRequestPrefix: _relativeSettings.RequestPrefix,
+                RelativePhysicalPath: relativePhysical,
+                ConnectionErrorMessage: _connectionError);
         }
 
+        return new DocumentCatalogContext(
+            ActiveRootPath: relativePhysical,
+            RootExists: relativeExists,
+            LinkKind: CatalogLinkKind.Relative,
+            IsFallback: false,
+            RequestedAbsolutePath: null,
+            RelativeRequestPrefix: _relativeSettings.RequestPrefix,
+            RelativePhysicalPath: relativePhysical,
+            ConnectionErrorMessage: _connectionError);
+    }
+
+    private string? ResolveAbsoluteDirectory()
+    {
+        var absolute = _options.AbsolutePath;
+        if (string.IsNullOrWhiteSpace(absolute))
+        {
+            return null;
+        }
+
+        var trimmed = absolute.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return null;
+        }
+
+        if (Path.IsPathRooted(trimmed))
+        {
+            return trimmed;
+        }
+
+        var contentRoot = _environment.ContentRootPath ?? AppContext.BaseDirectory;
+        return Path.Combine(contentRoot, trimmed);
+    }
+
+    private RelativeDirectorySettings ResolveRelativeDirectory()
+    {
         var basePath = _environment.WebRootPath ?? _environment.ContentRootPath ?? AppContext.BaseDirectory;
         var relative = string.IsNullOrWhiteSpace(_options.RelativePath)
             ? DefaultRelativePath
             : _options.RelativePath!;
 
-        return Path.Combine(basePath, relative);
+        var trimmed = relative.Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, ' ');
+        var physical = string.IsNullOrEmpty(trimmed)
+            ? basePath
+            : Path.Combine(basePath, trimmed.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar));
+
+        var requestPrefix = trimmed.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        return new RelativeDirectorySettings(physical, requestPrefix);
     }
 
     private const string DefaultRelativePath = "oiwi-documents";
+
+    private void EnsureNetworkShareConnection()
+    {
+        if (!_options.EnableNetworkConnection)
+        {
+            _connectionError = null;
+            return;
+        }
+
+        if (_networkConnector is null)
+        {
+            _connectionError = null;
+            return;
+        }
+
+        lock (_networkConnectionLock)
+        {
+            if (_networkConnector.EnsureConnected())
+            {
+                _connectionError = null;
+            }
+            else
+            {
+                _connectionError = _networkConnector.LastErrorMessage;
+            }
+        }
+    }
+
+    public enum CatalogLinkKind
+    {
+        Relative,
+        Absolute
+    }
+
+    public sealed record DocumentCatalogContext(
+        string? ActiveRootPath,
+        bool RootExists,
+        CatalogLinkKind LinkKind,
+        bool IsFallback,
+        string? RequestedAbsolutePath,
+        string? RelativeRequestPrefix,
+        string? RelativePhysicalPath,
+        string? ConnectionErrorMessage)
+    {
+        public static DocumentCatalogContext Uninitialized { get; } = new("", false, CatalogLinkKind.Relative, false, null, null, null, null);
+    }
+
+    private sealed record RelativeDirectorySettings(string PhysicalPath, string RequestPrefix);
 
     private sealed record DocumentManifest
     {
@@ -342,5 +492,10 @@ public sealed class DocumentCatalogService
         public string? Model { get; init; }
         public string? UploadedBy { get; init; }
         public DateTimeOffset? UpdatedAt { get; init; }
+    }
+
+    public void Dispose()
+    {
+        _networkConnector?.Dispose();
     }
 }
