@@ -1,10 +1,16 @@
 using WepAppOIWI_Digital.Components;
+using WepAppOIWI_Digital.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Http;
 using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
+builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
+builder.Services.AddSingleton<DocumentCatalogService>();
 
 // DI: HttpClient ÊÓËÃÑº¤ÍÁâ¾à¹¹µì
 builder.Services.AddScoped<HttpClient>(sp =>
@@ -31,6 +37,22 @@ if (!app.Environment.IsDevelopment())
 
 app.UseStaticFiles();
 app.UseAntiforgery();
+
+app.MapGet("/documents/file/{token}", async Task<IResult> (string token, DocumentCatalogService catalog, CancellationToken cancellationToken) =>
+{
+    if (!DocumentCatalogService.TryDecodeDocumentToken(token, out var normalizedPath))
+    {
+        return Results.BadRequest();
+    }
+
+    var handle = await catalog.TryGetDocumentFileAsync(normalizedPath, cancellationToken);
+    if (handle is null)
+    {
+        return Results.NotFound();
+    }
+
+    return Results.File(handle.PhysicalPath, handle.ContentType, handle.FileName, enableRangeProcessing: true);
+});
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
