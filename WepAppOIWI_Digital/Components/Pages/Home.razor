@@ -1,7 +1,401 @@
-﻿@page "/"
+@page "/"
+@rendermode InteractiveServer
+@inject DocumentCatalogService DocumentCatalog
+@inject ILogger<WepAppOIWI_Digital.Components.Pages.Home> Logger
 
 <PageTitle>Home</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="d-flex flex-wrap align-items-center justify-content-between mb-3">
+    <div>
+        <h1 class="mb-1">📄 รายการเอกสาร OI/WI</h1>
+        <p class="text-muted mb-0">ข้อมูลนี้ดึงมาจากเอกสารที่เก็บไว้บน Server Local</p>
+    </div>
+    <NavLink class="btn btn-primary mt-2 mt-sm-0" href="/documents/new">
+        ➕ เพิ่มเอกสาร OI/WI
+    </NavLink>
+</div>
 
-Welcome to your new app.
+<div class="card mb-3 shadow-sm">
+    <div class="card-header pb-0">
+        <ul class="nav nav-tabs card-header-tabs">
+            <li class="nav-item">
+                <a class="nav-link active" id="search-tab" data-bs-toggle="tab" href="#searchTab" role="tab" aria-controls="searchTab" aria-selected="true">
+                    🔎 ค้นหาข้อมูล
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body tab-content pt-3">
+        <div class="tab-pane fade show active" id="searchTab" role="tabpanel" aria-labelledby="search-tab">
+            <div class="row g-2 align-items-center">
+                <div class="col-12 col-md-6">
+                    <label class="form-label visually-hidden" for="documentSearch">ค้นหาเอกสาร</label>
+                    <input id="documentSearch"
+                           class="form-control"
+                           placeholder="พิมพ์คำค้นหา เช่น ชื่อเอกสาร Line หรือ Model"
+                           @bind="searchTerm"
+                           @bind:event="oninput" />
+                </div>
+                <div class="col-auto">
+                    <button type="button"
+                            class="btn btn-outline-secondary"
+                            @onclick="ClearAllFilters"
+                            disabled="@IsClearDisabled()">
+                        ล้างการค้นหา
+                    </button>
+                </div>
+                <div class="col-12">
+                    <small class="text-muted">
+                        ระบบจะค้นหาจาก ชื่อเอกสาร, Line, Station, Model, ผู้บันทึก และ Comment
+                    </small>
+                </div>
+            </div>
+            <div class="row g-2 mt-3">
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="lineFilter">Line</label>
+                    <select id="lineFilter" class="form-select" @bind="selectedLine">
+                        <option value="">ทุก Line</option>
+                        @foreach (var line in GetAvailableLines())
+                        {
+                            <option value="@line">@line</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="stationFilter">Station</label>
+                    <select id="stationFilter" class="form-select" @bind="selectedStation">
+                        <option value="">ทุก Station</option>
+                        @foreach (var station in GetAvailableStations())
+                        {
+                            <option value="@station">@station</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="modelFilter">Model</label>
+                    <select id="modelFilter" class="form-select" @bind="selectedModel">
+                        <option value="">ทุก Model</option>
+                        @foreach (var model in GetAvailableModels())
+                        {
+                            <option value="@model">@model</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="uploaderFilter">ผู้บันทึก</label>
+                    <select id="uploaderFilter" class="form-select" @bind="selectedUploader">
+                        <option value="">ทุกผู้บันทึก</option>
+                        @foreach (var uploader in GetAvailableUploaders())
+                        {
+                            <option value="@uploader">@uploader</option>
+                        }
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@{ var filteredDocuments = GetFilteredDocuments(); }
+
+@if (!string.IsNullOrWhiteSpace(activeDirectoryPath))
+{
+    <p class="small text-muted mb-2">โฟลเดอร์ที่กำลังใช้งาน: <code>@activeDirectoryPath</code></p>
+}
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <div class="@statusAlertClass" role="alert">@statusMessage</div>
+}
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">@errorMessage</div>
+}
+else if (isLoading)
+{
+    <p class="text-muted">กำลังโหลดข้อมูลเอกสาร...</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col" style="width: 70px;">No.</th>
+                    <th scope="col">OI/WI Name</th>
+                    <th scope="col">Line</th>
+                    <th scope="col">Station</th>
+                    <th scope="col">Model</th>
+                    <th scope="col">Time</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Comment</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (filteredDocuments.Count == 0)
+                {
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            @(documents.Count == 0
+                                ? "ยังไม่มีไฟล์สำหรับแสดงผล"
+                                : "ไม่พบเอกสารที่ตรงกับคำค้นหา")
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    @for (var index = 0; index < filteredDocuments.Count; index++)
+                    {
+                        var document = filteredDocuments[index];
+                        var viewerUrl = BuildViewerUrl(document);
+                        <tr>
+                            <td>@(index + 1)</td>
+                            <td>
+                                @if (!string.IsNullOrEmpty(viewerUrl))
+                                {
+                                    <a href="@viewerUrl" target="_blank" rel="noopener">@document.DisplayName</a>
+                                }
+                                else if (!string.IsNullOrEmpty(document.LinkUrl))
+                                {
+                                    <a href="@document.LinkUrl" target="_blank" rel="noopener">@document.DisplayName</a>
+                                }
+                                else
+                                {
+                                    @document.DisplayName
+                                }
+                            </td>
+                            <td>@(DisplayOrDash(document.Line))</td>
+                            <td>@(DisplayOrDash(document.Station))</td>
+                            <td>@(DisplayOrDash(document.Model))</td>
+                            <td>@FormatTimestamp(document.UpdatedAt)</td>
+                            <td>@(DisplayOrDash(document.UploadedBy))</td>
+                            <td>@(DisplayOrDash(document.Comment))</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private readonly List<DocumentRecord> documents = new();
+    private string searchTerm = string.Empty;
+    private string selectedLine = string.Empty;
+    private string selectedStation = string.Empty;
+    private string selectedModel = string.Empty;
+    private string selectedUploader = string.Empty;
+    private DocumentCatalogService.DocumentCatalogContext catalogContext = DocumentCatalogService.DocumentCatalogContext.Uninitialized;
+    private bool isLoading = true;
+    private string? errorMessage;
+    private string? activeDirectoryPath;
+    private string? statusAlertClass;
+    private string? statusMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDocumentsAsync();
+    }
+
+    private async Task LoadDocumentsAsync()
+    {
+        try
+        {
+            var result = await DocumentCatalog.GetDocumentsAsync();
+            documents.Clear();
+            documents.AddRange(result);
+            catalogContext = DocumentCatalog.GetCatalogContext();
+            UpdateCatalogStatus(catalogContext);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load OI/WI documents from the server file system.");
+            errorMessage = "ไม่สามารถโหลดรายการเอกสารได้ กรุณาลองใหม่อีกครั้ง";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static string DisplayOrDash(string? value)
+        => string.IsNullOrWhiteSpace(value) || value == "-"
+            ? "-"
+            : value;
+
+    private static string FormatTimestamp(DateTimeOffset? timestamp)
+        => timestamp.HasValue
+            ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "-";
+
+    private string? BuildViewerUrl(DocumentRecord document)
+    {
+        if (string.IsNullOrWhiteSpace(document.FileName))
+        {
+            return null;
+        }
+
+        try
+        {
+            var token = DocumentCatalogService.EncodeDocumentToken(document.FileName);
+            return $"/documents/viewer/{Uri.EscapeDataString(token)}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to build viewer link for document '{DocumentName}'.", document.FileName);
+            return document.LinkUrl;
+        }
+    }
+
+    private IReadOnlyList<DocumentRecord> GetFilteredDocuments()
+    {
+        IEnumerable<DocumentRecord> query = documents;
+
+        if (!string.IsNullOrWhiteSpace(selectedLine))
+        {
+            query = query.Where(document => string.Equals(NormalizeValue(document.Line), selectedLine, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedStation))
+        {
+            query = query.Where(document => string.Equals(NormalizeValue(document.Station), selectedStation, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedModel))
+        {
+            query = query.Where(document => string.Equals(NormalizeValue(document.Model), selectedModel, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedUploader))
+        {
+            query = query.Where(document => string.Equals(NormalizeValue(document.UploadedBy), selectedUploader, StringComparison.OrdinalIgnoreCase));
+        }
+
+        var keyword = searchTerm.Trim();
+
+        if (!string.IsNullOrWhiteSpace(keyword))
+        {
+            query = query.Where(document => MatchesKeyword(document, keyword));
+        }
+
+        return query.ToList();
+    }
+
+    private static bool MatchesKeyword(DocumentRecord document, string keyword)
+        => ContainsKeyword(document.DisplayName, keyword)
+            || ContainsKeyword(document.Line, keyword)
+            || ContainsKeyword(document.Station, keyword)
+            || ContainsKeyword(document.Model, keyword)
+            || ContainsKeyword(document.UploadedBy, keyword)
+            || ContainsKeyword(document.Comment, keyword);
+
+    private static bool ContainsKeyword(string? source, string keyword)
+        => !string.IsNullOrWhiteSpace(source)
+            && source.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private void ClearAllFilters()
+    {
+        searchTerm = string.Empty;
+        selectedLine = string.Empty;
+        selectedStation = string.Empty;
+        selectedModel = string.Empty;
+        selectedUploader = string.Empty;
+    }
+
+    private bool IsClearDisabled()
+        => string.IsNullOrWhiteSpace(searchTerm)
+            && string.IsNullOrWhiteSpace(selectedLine)
+            && string.IsNullOrWhiteSpace(selectedStation)
+            && string.IsNullOrWhiteSpace(selectedModel)
+            && string.IsNullOrWhiteSpace(selectedUploader);
+
+    private IEnumerable<string> GetAvailableLines()
+        => GetDistinctValues(document => document.Line);
+
+    private IEnumerable<string> GetAvailableStations()
+        => GetDistinctValues(document => document.Station);
+
+    private IEnumerable<string> GetAvailableModels()
+        => GetDistinctValues(document => document.Model);
+
+    private IEnumerable<string> GetAvailableUploaders()
+        => GetDistinctValues(document => document.UploadedBy);
+
+    private IEnumerable<string> GetDistinctValues(Func<DocumentRecord, string?> selector)
+        => documents
+            .Select(selector)
+            .Select(NormalizeValue)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.CurrentCultureIgnoreCase);
+
+    private static string? NormalizeValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value == "-")
+        {
+            return null;
+        }
+
+        return value.Trim();
+    }
+
+    private void UpdateCatalogStatus(DocumentCatalogService.DocumentCatalogContext context)
+    {
+        activeDirectoryPath = string.Empty;
+        statusAlertClass = null;
+        statusMessage = null;
+
+        var primaryPath = string.IsNullOrWhiteSpace(context.RequestedAbsolutePath)
+            ? null
+            : context.RequestedAbsolutePath;
+
+        var fallbackPath = string.IsNullOrWhiteSpace(context.RelativePhysicalPath)
+            ? null
+            : context.RelativePhysicalPath;
+
+        if (!string.IsNullOrWhiteSpace(context.ActiveRootPath))
+        {
+            activeDirectoryPath = context.ActiveRootPath;
+        }
+        else if (!string.IsNullOrWhiteSpace(primaryPath))
+        {
+            activeDirectoryPath = primaryPath;
+        }
+        else if (!string.IsNullOrWhiteSpace(fallbackPath))
+        {
+            activeDirectoryPath = fallbackPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(context.ConnectionErrorMessage))
+        {
+            statusAlertClass = "alert alert-danger";
+            statusMessage = $"ไม่สามารถเชื่อมต่อไปยังโฟลเดอร์หลักได้: {context.ConnectionErrorMessage}";
+            return;
+        }
+
+        if (context.IsFallback && !string.IsNullOrWhiteSpace(primaryPath))
+        {
+            statusAlertClass = "alert alert-warning";
+            statusMessage = $"ไม่พบโฟลเดอร์ \"{primaryPath}\" จึงแสดงข้อมูลจาก \"{fallbackPath ?? "ตัวอย่าง"}\" แทน";
+            return;
+        }
+
+        if (!context.RootExists)
+        {
+            statusAlertClass = "alert alert-warning";
+            if (!string.IsNullOrWhiteSpace(primaryPath))
+            {
+                statusMessage = $"ไม่พบโฟลเดอร์ \"{primaryPath}\" กรุณาตรวจสอบค่า DocumentCatalog.AbsolutePath ในไฟล์ appsettings";
+            }
+            else if (!string.IsNullOrWhiteSpace(fallbackPath))
+            {
+                statusMessage = $"ไม่พบโฟลเดอร์ \"{fallbackPath}\" กรุณาตรวจสอบค่า DocumentCatalog.RelativePath หรือสร้างโฟลเดอร์ดังกล่าว";
+            }
+            else
+            {
+                statusMessage = "ยังไม่ได้กำหนดโฟลเดอร์สำหรับเก็บเอกสาร OI/WI";
+            }
+        }
+    }
+}
