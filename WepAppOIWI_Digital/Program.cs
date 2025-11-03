@@ -1,10 +1,13 @@
 using WepAppOIWI_Digital.Components;
+using WepAppOIWI_Digital.Services;
 using Microsoft.AspNetCore.Components;
 using System.Net.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
+builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
+builder.Services.AddSingleton<DocumentCatalogService>();
 
 // DI: HttpClient ÊÓËÃÑº¤ÍÁâ¾à¹¹µì
 builder.Services.AddScoped<HttpClient>(sp =>
