@@ -1,10 +1,17 @@
 using WepAppOIWI_Digital.Components;
+using WepAppOIWI_Digital.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Http;
 using System.Net.Http;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
+builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
+builder.Services.AddSingleton<DocumentCatalogService>();
 
 // DI: HttpClient ÊÓËÃÑº¤ÍÁâ¾à¹¹µì
 builder.Services.AddScoped<HttpClient>(sp =>
@@ -32,6 +39,15 @@ if (!app.Environment.IsDevelopment())
 app.UseStaticFiles();
 app.UseAntiforgery();
 
+app.MapGet("/documents/preview/{token}", (HttpContext context, string token, DocumentCatalogService catalog, CancellationToken cancellationToken)
+    => ServeDocumentAsync(context, token, catalog, cancellationToken, inline: true));
+
+app.MapGet("/documents/download/{token}", (string token, DocumentCatalogService catalog, CancellationToken cancellationToken)
+    => ServeDocumentAsync(null, token, catalog, cancellationToken, inline: false));
+
+app.MapGet("/documents/file/{token}", (HttpContext context, string token, DocumentCatalogService catalog, CancellationToken cancellationToken)
+    => ServeDocumentAsync(context, token, catalog, cancellationToken, inline: true));
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
@@ -50,3 +66,30 @@ app.Use(async (ctx, next) =>
 });
 
 app.Run();
+
+static async Task<IResult> ServeDocumentAsync(HttpContext? context, string token, DocumentCatalogService catalog, CancellationToken cancellationToken, bool inline)
+{
+    if (!DocumentCatalogService.TryDecodeDocumentToken(token, out var normalizedPath))
+    {
+        return Results.BadRequest();
+    }
+
+    var handle = await catalog.TryGetDocumentFileAsync(normalizedPath, cancellationToken);
+    if (handle is null)
+    {
+        return Results.NotFound();
+    }
+
+    if (inline)
+    {
+        if (context is not null && !string.IsNullOrEmpty(handle.FileName))
+        {
+            var encodedFileName = Uri.EscapeDataString(handle.FileName);
+            context.Response.Headers[HeaderNames.ContentDisposition] = $"inline; filename*=UTF-8''{encodedFileName}";
+        }
+
+        return Results.File(handle.PhysicalPath, handle.ContentType, enableRangeProcessing: true);
+    }
+
+    return Results.File(handle.PhysicalPath, handle.ContentType, handle.FileName, enableRangeProcessing: true);
+}
