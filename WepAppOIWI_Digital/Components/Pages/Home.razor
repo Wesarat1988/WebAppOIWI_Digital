@@ -15,6 +15,45 @@
     </NavLink>
 </div>
 
+<div class="card mb-3 shadow-sm">
+    <div class="card-header pb-0">
+        <ul class="nav nav-tabs card-header-tabs">
+            <li class="nav-item">
+                <a class="nav-link active" id="search-tab" data-bs-toggle="tab" href="#searchTab" role="tab" aria-controls="searchTab" aria-selected="true">
+                    🔎 ค้นหาข้อมูล
+                </a>
+            </li>
+        </ul>
+    </div>
+    <div class="card-body tab-content pt-3">
+        <div class="tab-pane fade show active" id="searchTab" role="tabpanel" aria-labelledby="search-tab">
+            <div class="row g-2 align-items-center">
+                <div class="col-12 col-md-6">
+                    <label class="form-label visually-hidden" for="documentSearch">ค้นหาเอกสาร</label>
+                    <input id="documentSearch"
+                           class="form-control"
+                           placeholder="พิมพ์คำค้นหา เช่น ชื่อเอกสาร Line หรือ Model"
+                           @bind="searchTerm"
+                           @bind:event="oninput" />
+                </div>
+                <div class="col-auto">
+                    <button type="button"
+                            class="btn btn-outline-secondary"
+                            @onclick="ClearSearch"
+                            disabled="@string.IsNullOrWhiteSpace(searchTerm)">
+                        ล้างการค้นหา
+                    </button>
+                </div>
+                <div class="col-12">
+                    <small class="text-muted">
+                        ระบบจะค้นหาจาก ชื่อเอกสาร, Line, Station, Model, ผู้บันทึก และ Comment
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 @if (!string.IsNullOrWhiteSpace(activeDirectoryPath))
 {
     <p class="small text-muted mb-2">โฟลเดอร์ที่กำลังใช้งาน: <code>@activeDirectoryPath</code></p>
@@ -35,6 +74,8 @@ else if (isLoading)
 }
 else
 {
+    @{ var filteredDocuments = GetFilteredDocuments(); }
+
     <div class="table-responsive">
         <table class="table table-striped align-middle">
             <thead class="table-light">
@@ -50,17 +91,21 @@ else
                 </tr>
             </thead>
             <tbody>
-                @if (documents.Count == 0)
+                @if (filteredDocuments.Count == 0)
                 {
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">ยังไม่มีไฟล์สำหรับแสดงผล</td>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            @(documents.Count == 0
+                                ? "ยังไม่มีไฟล์สำหรับแสดงผล"
+                                : "ไม่พบเอกสารที่ตรงกับคำค้นหา")
+                        </td>
                     </tr>
                 }
                 else
                 {
-                    @for (var index = 0; index < documents.Count; index++)
+                    @for (var index = 0; index < filteredDocuments.Count; index++)
                     {
-                        var document = documents[index];
+                        var document = filteredDocuments[index];
                         <tr>
                             <td>@(index + 1)</td>
                             <td>
@@ -97,6 +142,7 @@ else
 
 @code {
     private readonly List<DocumentRecord> documents = new();
+    private string searchTerm = string.Empty;
     private DocumentCatalogService.DocumentCatalogContext catalogContext = DocumentCatalogService.DocumentCatalogContext.Uninitialized;
     private bool isLoading = true;
     private string? errorMessage;
@@ -157,6 +203,42 @@ else
             Logger.LogWarning(ex, "Failed to build viewer link for document '{DocumentName}'.", document.FileName);
             return document.LinkUrl;
         }
+    }
+
+    private IReadOnlyList<DocumentRecord> GetFilteredDocuments()
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            return documents;
+        }
+
+        var keyword = searchTerm.Trim();
+
+        if (keyword.Length == 0)
+        {
+            return documents;
+        }
+
+        return documents
+            .Where(document => MatchesKeyword(document, keyword))
+            .ToList();
+    }
+
+    private static bool MatchesKeyword(DocumentRecord document, string keyword)
+        => ContainsKeyword(document.DisplayName, keyword)
+            || ContainsKeyword(document.Line, keyword)
+            || ContainsKeyword(document.Station, keyword)
+            || ContainsKeyword(document.Model, keyword)
+            || ContainsKeyword(document.UploadedBy, keyword)
+            || ContainsKeyword(document.Comment, keyword);
+
+    private static bool ContainsKeyword(string? source, string keyword)
+        => !string.IsNullOrWhiteSpace(source)
+            && source.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private void ClearSearch()
+    {
+        searchTerm = string.Empty;
     }
 
     private void UpdateCatalogStatus(DocumentCatalogService.DocumentCatalogContext context)
