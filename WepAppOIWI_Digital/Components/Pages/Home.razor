@@ -39,8 +39,8 @@
                 <div class="col-auto">
                     <button type="button"
                             class="btn btn-outline-secondary"
-                            @onclick="ClearSearch"
-                            disabled="@string.IsNullOrWhiteSpace(searchTerm)">
+                            @onclick="ClearAllFilters"
+                            disabled="@IsClearDisabled()">
                         ล้างการค้นหา
                     </button>
                 </div>
@@ -48,6 +48,48 @@
                     <small class="text-muted">
                         ระบบจะค้นหาจาก ชื่อเอกสาร, Line, Station, Model, ผู้บันทึก และ Comment
                     </small>
+                </div>
+            </div>
+            <div class="row g-2 mt-3">
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="lineFilter">Line</label>
+                    <select id="lineFilter" class="form-select" @bind="selectedLine">
+                        <option value="">ทุก Line</option>
+                        @foreach (var line in GetAvailableLines())
+                        {
+                            <option value="@line">@line</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="stationFilter">Station</label>
+                    <select id="stationFilter" class="form-select" @bind="selectedStation">
+                        <option value="">ทุก Station</option>
+                        @foreach (var station in GetAvailableStations())
+                        {
+                            <option value="@station">@station</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="modelFilter">Model</label>
+                    <select id="modelFilter" class="form-select" @bind="selectedModel">
+                        <option value="">ทุก Model</option>
+                        @foreach (var model in GetAvailableModels())
+                        {
+                            <option value="@model">@model</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
+                    <label class="form-label" for="uploaderFilter">ผู้บันทึก</label>
+                    <select id="uploaderFilter" class="form-select" @bind="selectedUploader">
+                        <option value="">ทุกผู้บันทึก</option>
+                        @foreach (var uploader in GetAvailableUploaders())
+                        {
+                            <option value="@uploader">@uploader</option>
+                        }
+                    </select>
                 </div>
             </div>
         </div>
@@ -140,6 +182,10 @@ else
 @code {
     private readonly List<DocumentRecord> documents = new();
     private string searchTerm = string.Empty;
+    private string selectedLine = string.Empty;
+    private string selectedStation = string.Empty;
+    private string selectedModel = string.Empty;
+    private string selectedUploader = string.Empty;
     private DocumentCatalogService.DocumentCatalogContext catalogContext = DocumentCatalogService.DocumentCatalogContext.Uninitialized;
     private bool isLoading = true;
     private string? errorMessage;
@@ -204,21 +250,36 @@ else
 
     private IReadOnlyList<DocumentRecord> GetFilteredDocuments()
     {
-        if (string.IsNullOrWhiteSpace(searchTerm))
+        IEnumerable<DocumentRecord> query = documents;
+
+        if (!string.IsNullOrWhiteSpace(selectedLine))
         {
-            return documents;
+            query = query.Where(document => string.Equals(NormalizeValue(document.Line), selectedLine, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedStation))
+        {
+            query = query.Where(document => string.Equals(NormalizeValue(document.Station), selectedStation, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedModel))
+        {
+            query = query.Where(document => string.Equals(NormalizeValue(document.Model), selectedModel, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedUploader))
+        {
+            query = query.Where(document => string.Equals(NormalizeValue(document.UploadedBy), selectedUploader, StringComparison.OrdinalIgnoreCase));
         }
 
         var keyword = searchTerm.Trim();
 
-        if (keyword.Length == 0)
+        if (!string.IsNullOrWhiteSpace(keyword))
         {
-            return documents;
+            query = query.Where(document => MatchesKeyword(document, keyword));
         }
 
-        return documents
-            .Where(document => MatchesKeyword(document, keyword))
-            .ToList();
+        return query.ToList();
     }
 
     private static bool MatchesKeyword(DocumentRecord document, string keyword)
@@ -233,9 +294,50 @@ else
         => !string.IsNullOrWhiteSpace(source)
             && source.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
 
-    private void ClearSearch()
+    private void ClearAllFilters()
     {
         searchTerm = string.Empty;
+        selectedLine = string.Empty;
+        selectedStation = string.Empty;
+        selectedModel = string.Empty;
+        selectedUploader = string.Empty;
+    }
+
+    private bool IsClearDisabled()
+        => string.IsNullOrWhiteSpace(searchTerm)
+            && string.IsNullOrWhiteSpace(selectedLine)
+            && string.IsNullOrWhiteSpace(selectedStation)
+            && string.IsNullOrWhiteSpace(selectedModel)
+            && string.IsNullOrWhiteSpace(selectedUploader);
+
+    private IEnumerable<string> GetAvailableLines()
+        => GetDistinctValues(document => document.Line);
+
+    private IEnumerable<string> GetAvailableStations()
+        => GetDistinctValues(document => document.Station);
+
+    private IEnumerable<string> GetAvailableModels()
+        => GetDistinctValues(document => document.Model);
+
+    private IEnumerable<string> GetAvailableUploaders()
+        => GetDistinctValues(document => document.UploadedBy);
+
+    private IEnumerable<string> GetDistinctValues(Func<DocumentRecord, string?> selector)
+        => documents
+            .Select(selector)
+            .Select(NormalizeValue)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.CurrentCultureIgnoreCase);
+
+    private static string? NormalizeValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value == "-")
+        {
+            return null;
+        }
+
+        return value.Trim();
     }
 
     private void UpdateCatalogStatus(DocumentCatalogService.DocumentCatalogContext context)
