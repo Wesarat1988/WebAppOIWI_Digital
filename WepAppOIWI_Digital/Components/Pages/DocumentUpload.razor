@@ -61,7 +61,7 @@ else
         <label class="form-label">ประเภทเอกสาร</label>
         <InputSelect class="form-select"
                      @bind-Value="SelectedDocumentType"
-                     @bind-Value:event="onchange">
+                     @bind-Value:event="oninput">
             @foreach (var documentType in DocumentNumbering.KnownTypes)
             {
                 <option value="@documentType">@documentType</option>
@@ -282,7 +282,20 @@ else
     private string SelectedDocumentType
     {
         get => selectedDocumentType;
-        set => _ = HandleDocumentTypeChangedAsync(value);
+        set
+        {
+            var normalized = NormalizeDocumentTypeOrDefault(value);
+            if (string.Equals(selectedDocumentType, normalized, StringComparison.Ordinal)) return;
+
+            // อัปเดตสถานะ (รวมถึง formModel) ให้เสร็จทันที
+            ApplySelectedDocumentType(normalized);
+
+            // เรนเดอร์ใหม่ทันทีเพื่อให้ disabled เปลี่ยนเป็น false ทันทีเมื่อเลือก WI
+            InvokeAsync(StateHasChanged);
+
+            // ค่อยไปโหลดเลขตัวอย่างแบบ async (ไม่บล็อค UI)
+            _ = UpdateDocumentNumberPreviewAsync();
+        }
     }
 
     private async Task HandleDocumentTypeChangedAsync(string? value)
@@ -413,7 +426,7 @@ else
     }
 
     private bool IsWiSelected
-        => string.Equals(formModel.DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase);
+        => string.Equals(selectedDocumentType, DocumentNumbering.DocumentTypeWi, StringComparison.OrdinalIgnoreCase);
 
     private sealed class UploadFormModel : IValidatableObject
     {
