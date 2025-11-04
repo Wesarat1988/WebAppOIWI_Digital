@@ -9,22 +9,40 @@
 
 <h1 class="mb-2">➕ เพิ่มเอกสาร OI/WI</h1>
 
-@if (isLoadingDocumentNumber)
+@if (isLoadingDocumentNumbers)
 {
     <div class="alert alert-secondary d-inline-flex align-items-center gap-2" role="status">
-        <span>กำลังคำนวณเลขเอกสารสำหรับประเภท @CurrentDocumentTypeLabel...</span>
+        <span>กำลังคำนวณเลขเอกสารสำหรับประเภท OI และ WI...</span>
     </div>
 }
-else if (!string.IsNullOrEmpty(nextDocumentCode))
+else
 {
-    <div class="alert alert-info d-inline-flex align-items-center gap-2" role="status">
-        <span>เลขเอกสารถัดไป (@CurrentDocumentTypeLabel):</span>
-        <strong>@nextDocumentCode</strong>
+    if (!string.IsNullOrEmpty(documentNumberError))
+    {
+        <div class="alert alert-warning" role="alert">@documentNumberError</div>
+    }
+
+    <div class="row g-3 mb-3">
+        @foreach (var documentType in DocumentNumbering.KnownTypes)
+        {
+            var label = ResolveDocumentTypeLabel(documentType);
+            var previewCode = GetDocumentCodeForType(documentType);
+
+            <div class="col-md-6">
+                <div class="@GetDocumentTypeAlertClass(documentType)" role="status">
+                    <span>เลขเอกสารถัดไป (@label):</span>
+                    @if (!string.IsNullOrEmpty(previewCode))
+                    {
+                        <strong>@previewCode</strong>
+                    }
+                    else
+                    {
+                        <span class="text-muted">ไม่พร้อมใช้งาน</span>
+                    }
+                </div>
+            </div>
+        }
     </div>
-}
-else if (!string.IsNullOrEmpty(documentNumberError))
-{
-    <div class="alert alert-warning" role="alert">@documentNumberError</div>
 }
 
 <p class="text-muted">แนบไฟล์และกรอกข้อมูลเพื่อเพิ่มลงในรายการเอกสาร</p>
@@ -129,20 +147,17 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     private string? statusCssClass;
     private string? successViewerUrl;
     private bool isSubmitting;
-    private string? nextDocumentCode;
+    private readonly Dictionary<string, string?> nextDocumentCodes = new(StringComparer.OrdinalIgnoreCase);
     private string? documentNumberError;
-    private bool isLoadingDocumentNumber;
+    private bool isLoadingDocumentNumbers;
     private string? lastAssignedDocumentCode;
     private string selectedDocumentType = DocumentNumbering.DocumentTypeOi;
-    private string currentDocumentTypeLabel = DocumentNumbering.DocumentTypeOi;
     private int documentNumberRequestId;
-
-    private string CurrentDocumentTypeLabel => currentDocumentTypeLabel;
 
     protected override async Task OnInitializedAsync()
     {
         ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
-        await UpdateDocumentNumberPreviewAsync();
+        await UpdateDocumentNumberPreviewAsync(notifyStart: false);
     }
 
     private async Task HandleValidSubmit()
@@ -263,43 +278,65 @@ else if (!string.IsNullOrEmpty(documentNumberError))
         }
 
         ApplySelectedDocumentType(normalized);
-        documentNumberError = null;
-        nextDocumentCode = null;
-        isLoadingDocumentNumber = true;
-
-        await InvokeAsync(StateHasChanged);
         await UpdateDocumentNumberPreviewAsync();
     }
 
-    private async Task UpdateDocumentNumberPreviewAsync()
+    private async Task UpdateDocumentNumberPreviewAsync(bool notifyStart = true)
     {
         var requestId = System.Threading.Interlocked.Increment(ref documentNumberRequestId);
         documentNumberError = null;
-        nextDocumentCode = null;
-        var normalizedType = NormalizeDocumentTypeOrDefault(selectedDocumentType);
-        ApplySelectedDocumentType(normalizedType);
+        nextDocumentCodes.Clear();
+        ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(selectedDocumentType));
 
-        isLoadingDocumentNumber = true;
+        isLoadingDocumentNumbers = true;
+
+        if (notifyStart)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
 
         try
         {
-            var preview = await DocumentUploader.GetNextDocumentCodeAsync(selectedDocumentType);
+            var failedTypes = new List<string>();
+
+            foreach (var documentType in DocumentNumbering.KnownTypes)
+            {
+                var normalizedType = NormalizeDocumentTypeOrDefault(documentType);
+                var preview = await DocumentUploader.GetNextDocumentCodeAsync(normalizedType);
+
+                if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(preview))
+                {
+                    nextDocumentCodes[normalizedType] = preview;
+                }
+                else
+                {
+                    failedTypes.Add(normalizedType);
+                }
+            }
 
             if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
             {
                 return;
             }
 
-            nextDocumentCode = preview;
-
-            if (string.IsNullOrEmpty(nextDocumentCode))
+            if (failedTypes.Count == DocumentNumbering.KnownTypes.Count)
             {
                 documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาตรวจสอบการตั้งค่าโฟลเดอร์";
+            }
+            else if (failedTypes.Count > 0)
+            {
+                var labels = failedTypes.Select(ResolveDocumentTypeLabel);
+                documentNumberError = $"ไม่สามารถคำนวณเลขเอกสารถัดไปสำหรับประเภท: {string.Join(", ", labels)}";
             }
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to compute next document number for type {DocumentType}.", normalizedType);
+            Logger.LogError(ex, "Failed to compute next document numbers for known types.");
 
             if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
             {
@@ -312,18 +349,30 @@ else if (!string.IsNullOrEmpty(documentNumberError))
         {
             if (requestId == System.Threading.Volatile.Read(ref documentNumberRequestId))
             {
-                isLoadingDocumentNumber = false;
+                isLoadingDocumentNumbers = false;
+                await InvokeAsync(StateHasChanged);
             }
         }
+    }
 
-        await InvokeAsync(StateHasChanged);
+    private string? GetDocumentCodeForType(string documentType)
+    {
+        var normalized = NormalizeDocumentTypeOrDefault(documentType);
+        return nextDocumentCodes.TryGetValue(normalized, out var code) ? code : null;
+    }
+
+    private string GetDocumentTypeAlertClass(string documentType)
+    {
+        var normalized = NormalizeDocumentTypeOrDefault(documentType);
+        var isSelected = string.Equals(selectedDocumentType, normalized, StringComparison.OrdinalIgnoreCase);
+        var tone = isSelected ? "alert-primary" : "alert-info";
+        return $"alert {tone} d-inline-flex align-items-center gap-2";
     }
 
     private void ApplySelectedDocumentType(string newType)
     {
         selectedDocumentType = newType;
         formModel.DocumentType = newType;
-        currentDocumentTypeLabel = ResolveDocumentTypeLabel(newType);
     }
 
     private static string ResolveDocumentTypeLabel(string? value)
