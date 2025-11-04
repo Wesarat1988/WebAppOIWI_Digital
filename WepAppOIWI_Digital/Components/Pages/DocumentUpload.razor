@@ -96,7 +96,7 @@ else
         <InputText class="form-control"
                    placeholder="ใส่ Machine name สำหรับเอกสาร WI"
                    @bind-Value="formModel.MachineName"
-                   Disabled="@(!IsWiSelected)" />
+                   disabled="@(!IsWiSelected)" />
         <ValidationMessage For="() => formModel.MachineName" />
         @if (!IsWiSelected)
         {
