@@ -70,6 +70,12 @@ public sealed class DocumentUploadService
                 return DocumentUploadResult.Failed("กรุณาเลือกประเภทเอกสารให้ถูกต้อง (OI หรือ WI)");
             }
 
+            if (string.Equals(normalizedDocumentType, DocumentNumbering.DocumentTypeWi, StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(request.MachineName))
+            {
+                return DocumentUploadResult.Failed("กรุณากรอก Machine name สำหรับเอกสาร WI");
+            }
+
             var sanitizedFileName = SanitizeFileName(request.OriginalFileName);
             if (string.IsNullOrWhiteSpace(sanitizedFileName))
             {
@@ -166,6 +172,7 @@ public sealed class DocumentUploadService
             Line = request.Line?.Trim(),
             Station = request.Station?.Trim(),
             Model = request.Model?.Trim(),
+            MachineName = request.MachineName?.Trim(),
             UploadedBy = request.UploadedBy?.Trim(),
             Comment = request.Comment?.Trim(),
             UpdatedAt = request.UploadedAt,
@@ -361,6 +368,7 @@ public sealed record DocumentUploadRequest(
     string? Line,
     string? Station,
     string? Model,
+    string? MachineName,
     string? UploadedBy,
     string? Comment,
     string OriginalFileName,
@@ -388,6 +396,7 @@ internal sealed class ManifestEntry
     public string? Line { get; set; }
     public string? Station { get; set; }
     public string? Model { get; set; }
+    public string? MachineName { get; set; }
     public string? UploadedBy { get; set; }
     public string? Comment { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }

@@ -46,7 +46,7 @@
                 </div>
                 <div class="col-12">
                     <small class="text-muted">
-                        ระบบจะค้นหาจาก ชื่อเอกสาร, Line, Station, Model, ผู้บันทึก และ Comment
+                        ระบบจะค้นหาจาก ชื่อเอกสาร, Line, Station, Model, Machine, ผู้บันทึก และ Comment
                     </small>
                 </div>
             </div>
@@ -138,6 +138,7 @@ else
                     <th scope="col">Line</th>
                     <th scope="col">Station</th>
                     <th scope="col">Model</th>
+                    <th scope="col">Machine</th>
                     <th scope="col">Time</th>
                     <th scope="col">Name</th>
                     <th scope="col">Comment</th>
@@ -147,7 +148,7 @@ else
                 @if (filteredDocuments.Count == 0)
                 {
                     <tr>
-                        <td colspan="8" class="text-center text-muted py-4">
+                        <td colspan="10" class="text-center text-muted py-4">
                             @(documents.Count == 0
                                 ? "ยังไม่มีไฟล์สำหรับแสดงผล"
                                 : "ไม่พบเอกสารที่ตรงกับคำค้นหา")
@@ -180,6 +181,7 @@ else
                             <td>@(DisplayOrDash(document.Line))</td>
                             <td>@(DisplayOrDash(document.Station))</td>
                             <td>@(DisplayOrDash(document.Model))</td>
+                            <td>@(DisplayOrDash(document.Machine))</td>
                             <td>@FormatTimestamp(document.UpdatedAt)</td>
                             <td>@(DisplayOrDash(document.UploadedBy))</td>
                             <td>@(DisplayOrDash(document.Comment))</td>
@@ -308,6 +310,7 @@ else
             || ContainsKeyword(document.Line, keyword)
             || ContainsKeyword(document.Station, keyword)
             || ContainsKeyword(document.Model, keyword)
+            || ContainsKeyword(document.Machine, keyword)
             || ContainsKeyword(document.UploadedBy, keyword)
             || ContainsKeyword(document.Comment, keyword)
             || ContainsKeyword(document.DocumentType, keyword)

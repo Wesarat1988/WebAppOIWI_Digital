@@ -90,6 +90,19 @@ else
         </div>
     </div>
 
+    @if (IsWiSelected)
+    {
+        <div class="mb-3 mt-3">
+            <label class="form-label">Machine name</label>
+            <InputText class="form-control" @bind-Value="formModel.MachineName" />
+            <ValidationMessage For="() => formModel.MachineName" />
+            @if (!string.IsNullOrEmpty(machineNameError))
+            {
+                <div class="text-danger">@machineNameError</div>
+            }
+        </div>
+    }
+
     <div class="mb-3 mt-3">
         <label class="form-label">ชื่อผู้ Upload / Update</label>
         <InputText class="form-control" @bind-Value="formModel.UploadedBy" />
@@ -147,6 +160,7 @@ else
     private string? statusCssClass;
     private string? successViewerUrl;
     private bool isSubmitting;
+    private string? machineNameError;
     private readonly Dictionary<string, string?> nextDocumentCodes = new(StringComparer.OrdinalIgnoreCase);
     private string? documentNumberError;
     private bool isLoadingDocumentNumbers;
@@ -163,10 +177,20 @@ else
     private async Task HandleValidSubmit()
     {
         fileError = null;
+        machineNameError = null;
         statusMessage = null;
         statusCssClass = null;
         successViewerUrl = null;
         lastAssignedDocumentCode = null;
+
+        var normalizedDocumentType = NormalizeDocumentTypeOrDefault(formModel.DocumentType);
+
+        if (string.Equals(normalizedDocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(formModel.MachineName))
+        {
+            machineNameError = "กรุณากรอก Machine name สำหรับเอกสาร WI";
+            return;
+        }
 
         if (selectedFile is null)
         {
@@ -182,10 +206,11 @@ else
 
             var request = new DocumentUploadRequest(
                 DisplayName: formModel.DisplayName!,
-                DocumentType: formModel.DocumentType!,
+                DocumentType: normalizedDocumentType,
                 Line: formModel.Line,
                 Station: formModel.Station,
                 Model: formModel.Model,
+                MachineName: formModel.MachineName,
                 UploadedBy: formModel.UploadedBy,
                 Comment: formModel.Comment,
                 OriginalFileName: selectedFile.Name,
@@ -373,6 +398,13 @@ else
     {
         selectedDocumentType = newType;
         formModel.DocumentType = newType;
+
+        machineNameError = null;
+
+        if (!IsWiSelected)
+        {
+            formModel.MachineName = null;
+        }
     }
 
     private static string ResolveDocumentTypeLabel(string? value)
@@ -389,6 +421,9 @@ else
 
         return normalized;
     }
+
+    private bool IsWiSelected
+        => string.Equals(selectedDocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase);
 
     private sealed class UploadFormModel
     {
@@ -408,6 +443,9 @@ else
         [StringLength(100, ErrorMessage = "Model ต้องไม่เกิน 100 ตัวอักษร")]
         public string? Model { get; set; }
 
+        [StringLength(100, ErrorMessage = "Machine name ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? MachineName { get; set; }
+
         [StringLength(100, ErrorMessage = "ชื่อผู้ Upload ต้องไม่เกิน 100 ตัวอักษร")]
         public string? UploadedBy { get; set; }
 
@@ -421,6 +459,7 @@ else
             Line = null;
             Station = null;
             Model = null;
+            MachineName = null;
             UploadedBy = null;
             Comment = null;
         }

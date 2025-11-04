@@ -31,6 +31,7 @@ public sealed record DocumentRecord(
     string Line,
     string Station,
     string Model,
+    string Machine,
     DateTimeOffset? UpdatedAt,
     string UploadedBy,
     string Comment,
@@ -338,6 +339,7 @@ public sealed class DocumentCatalogService : IDisposable
             NormalizeMetadata(entry.Line),
             NormalizeMetadata(entry.Station),
             NormalizeMetadata(entry.Model),
+            NormalizeMetadata(entry.MachineName),
             updatedAt,
             NormalizeMetadata(entry.UploadedBy),
             NormalizeMetadata(entry.Comment),
@@ -360,6 +362,7 @@ public sealed class DocumentCatalogService : IDisposable
         return new DocumentRecord(
             normalizedRelativePath,
             displayName,
+            "-",
             "-",
             "-",
             "-",
@@ -649,6 +652,7 @@ public sealed class DocumentCatalogService : IDisposable
         public string? Line { get; init; }
         public string? Station { get; init; }
         public string? Model { get; init; }
+        public string? MachineName { get; init; }
         public string? UploadedBy { get; init; }
         public string? Comment { get; init; }
         public DateTimeOffset? UpdatedAt { get; init; }
