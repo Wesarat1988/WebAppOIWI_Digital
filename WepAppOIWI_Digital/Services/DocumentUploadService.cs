@@ -82,7 +82,36 @@ public sealed class DocumentUploadService
                 return DocumentUploadResult.Failed("ไม่สามารถระบุชื่อไฟล์ได้");
             }
 
-            var destinationPath = ResolveDestinationPath(rootPath, sanitizedFileName);
+            var manifestPath = Path.Combine(rootPath, GetManifestFileName());
+            var manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+
+            int? preferredSequence = null;
+            string? documentCode = null;
+
+            if (!string.IsNullOrEmpty(normalizedDocumentType))
+            {
+                preferredSequence = CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+                documentCode = DocumentNumbering.FormatCode(normalizedDocumentType, preferredSequence);
+            }
+
+            var destinationRoot = rootPath;
+
+            if (!string.IsNullOrWhiteSpace(documentCode))
+            {
+                destinationRoot = Path.Combine(rootPath, documentCode);
+
+                try
+                {
+                    Directory.CreateDirectory(destinationRoot);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to ensure document folder '{Folder}' exists before uploading.", destinationRoot);
+                    return DocumentUploadResult.Failed("ไม่สามารถสร้างโฟลเดอร์สำหรับเลขเอกสารนี้ได้");
+                }
+            }
+
+            var destinationPath = ResolveDestinationPath(destinationRoot, sanitizedFileName);
 
             try
             {
@@ -100,10 +129,18 @@ public sealed class DocumentUploadService
                 return DocumentUploadResult.Failed("ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่อีกครั้ง");
             }
 
-            var relativeFileName = Path.GetFileName(destinationPath)
+            var relativeFileName = Path.GetRelativePath(rootPath, destinationPath)
                 .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-            var manifestUpdateResult = await UpdateManifestAsync(rootPath, relativeFileName, request, normalizedDocumentType, cancellationToken).ConfigureAwait(false);
+            var manifestUpdateResult = await UpdateManifestAsync(
+                    manifestPath,
+                    manifest,
+                    relativeFileName,
+                    request,
+                    normalizedDocumentType,
+                    preferredSequence,
+                    cancellationToken)
+                .ConfigureAwait(false);
             if (!manifestUpdateResult.Succeeded)
             {
                 return DocumentUploadResult.Failed("บันทึกไฟล์สำเร็จ แต่ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
@@ -160,11 +197,15 @@ public sealed class DocumentUploadService
         }
     }
 
-    private async Task<ManifestUpdateResult> UpdateManifestAsync(string rootPath, string relativeFileName, DocumentUploadRequest request, string normalizedDocumentType, CancellationToken cancellationToken)
+    private async Task<ManifestUpdateResult> UpdateManifestAsync(
+        string manifestPath,
+        ManifestDocument manifest,
+        string relativeFileName,
+        DocumentUploadRequest request,
+        string normalizedDocumentType,
+        int? preferredSequence,
+        CancellationToken cancellationToken)
     {
-        var manifestPath = Path.Combine(rootPath, GetManifestFileName());
-        var manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
-
         var entry = new ManifestEntry
         {
             FileName = relativeFileName,
@@ -182,32 +223,39 @@ public sealed class DocumentUploadService
         var existingIndex = manifest.Documents.FindIndex(d => string.Equals(d.FileName, relativeFileName, StringComparison.OrdinalIgnoreCase));
         ManifestEntry? existingEntry = existingIndex >= 0 ? manifest.Documents[existingIndex] : null;
 
+        int? resolvedSequence = preferredSequence;
+
         if (existingEntry is not null)
         {
             var existingType = DocumentNumbering.NormalizeType(existingEntry.DocumentType);
 
             if (string.Equals(existingType, normalizedDocumentType, StringComparison.OrdinalIgnoreCase))
             {
-                entry.SequenceNumber = existingEntry.SequenceNumber;
+                resolvedSequence = existingEntry.SequenceNumber;
 
-                if (entry.SequenceNumber is null || entry.SequenceNumber <= 0)
+                if (resolvedSequence is null || resolvedSequence <= 0)
                 {
-                    entry.SequenceNumber = CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+                    resolvedSequence = CalculateNextSequence(manifest.Documents, normalizedDocumentType);
                 }
             }
             else
             {
-                entry.SequenceNumber = string.IsNullOrEmpty(normalizedDocumentType)
+                resolvedSequence = string.IsNullOrEmpty(normalizedDocumentType)
                     ? existingEntry.SequenceNumber
                     : CalculateNextSequence(manifest.Documents, normalizedDocumentType);
             }
         }
         else
         {
-            entry.SequenceNumber = string.IsNullOrEmpty(normalizedDocumentType)
-                ? null
-                : CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+            if (resolvedSequence is null)
+            {
+                resolvedSequence = string.IsNullOrEmpty(normalizedDocumentType)
+                    ? null
+                    : CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+            }
         }
+
+        entry.SequenceNumber = resolvedSequence;
 
         if (existingIndex >= 0)
         {
