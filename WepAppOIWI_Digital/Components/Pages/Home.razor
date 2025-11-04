@@ -52,6 +52,16 @@
             </div>
             <div class="row g-2 mt-3">
                 <div class="col-12 col-md-3">
+                    <label class="form-label" for="typeFilter">ประเภทเอกสาร</label>
+                    <select id="typeFilter" class="form-select" @bind="selectedDocumentType">
+                        <option value="">ทุกประเภท</option>
+                        @foreach (var docType in GetAvailableDocumentTypes())
+                        {
+                            <option value="@docType">@docType</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-3">
                     <label class="form-label" for="lineFilter">Line</label>
                     <select id="lineFilter" class="form-select" @bind="selectedLine">
                         <option value="">ทุก Line</option>
@@ -123,6 +133,7 @@ else
             <thead class="table-light">
                 <tr>
                     <th scope="col" style="width: 70px;">No.</th>
+                    <th scope="col" style="width: 160px;">เลขเอกสาร</th>
                     <th scope="col">OI/WI Name</th>
                     <th scope="col">Line</th>
                     <th scope="col">Station</th>
@@ -151,6 +162,7 @@ else
                         var viewerUrl = BuildViewerUrl(document);
                         <tr>
                             <td>@(index + 1)</td>
+                            <td>@(DisplayOrDash(document.DocumentCode))</td>
                             <td>
                                 @if (!string.IsNullOrEmpty(viewerUrl))
                                 {
@@ -182,6 +194,7 @@ else
 @code {
     private readonly List<DocumentRecord> documents = new();
     private string searchTerm = string.Empty;
+    private string selectedDocumentType = string.Empty;
     private string selectedLine = string.Empty;
     private string selectedStation = string.Empty;
     private string selectedModel = string.Empty;
@@ -252,6 +265,14 @@ else
     {
         IEnumerable<DocumentRecord> query = documents;
 
+        if (!string.IsNullOrWhiteSpace(selectedDocumentType))
+        {
+            query = query.Where(document => string.Equals(
+                NormalizeValue(document.DocumentType),
+                selectedDocumentType,
+                StringComparison.OrdinalIgnoreCase));
+        }
+
         if (!string.IsNullOrWhiteSpace(selectedLine))
         {
             query = query.Where(document => string.Equals(NormalizeValue(document.Line), selectedLine, StringComparison.OrdinalIgnoreCase));
@@ -288,7 +309,9 @@ else
             || ContainsKeyword(document.Station, keyword)
             || ContainsKeyword(document.Model, keyword)
             || ContainsKeyword(document.UploadedBy, keyword)
-            || ContainsKeyword(document.Comment, keyword);
+            || ContainsKeyword(document.Comment, keyword)
+            || ContainsKeyword(document.DocumentType, keyword)
+            || ContainsKeyword(document.DocumentCode, keyword);
 
     private static bool ContainsKeyword(string? source, string keyword)
         => !string.IsNullOrWhiteSpace(source)
@@ -297,6 +320,7 @@ else
     private void ClearAllFilters()
     {
         searchTerm = string.Empty;
+        selectedDocumentType = string.Empty;
         selectedLine = string.Empty;
         selectedStation = string.Empty;
         selectedModel = string.Empty;
@@ -305,6 +329,7 @@ else
 
     private bool IsClearDisabled()
         => string.IsNullOrWhiteSpace(searchTerm)
+            && string.IsNullOrWhiteSpace(selectedDocumentType)
             && string.IsNullOrWhiteSpace(selectedLine)
             && string.IsNullOrWhiteSpace(selectedStation)
             && string.IsNullOrWhiteSpace(selectedModel)
@@ -321,6 +346,9 @@ else
 
     private IEnumerable<string> GetAvailableUploaders()
         => GetDistinctValues(document => document.UploadedBy);
+
+    private IEnumerable<string> GetAvailableDocumentTypes()
+        => GetDistinctValues(document => document.DocumentType);
 
     private IEnumerable<string> GetDistinctValues(Func<DocumentRecord, string?> selector)
         => documents

@@ -7,7 +7,26 @@
 
 <PageTitle>เพิ่มเอกสาร OI/WI</PageTitle>
 
-<h1 class="mb-3">➕ เพิ่มเอกสาร OI/WI</h1>
+<h1 class="mb-2">➕ เพิ่มเอกสาร OI/WI</h1>
+
+@if (isLoadingDocumentNumber)
+{
+    <div class="alert alert-secondary d-inline-flex align-items-center gap-2" role="status">
+        <span>กำลังคำนวณเลขเอกสารสำหรับประเภท @formModel.DocumentType...</span>
+    </div>
+}
+else if (!string.IsNullOrEmpty(nextDocumentCode))
+{
+    <div class="alert alert-info d-inline-flex align-items-center gap-2" role="status">
+        <span>เลขเอกสารถัดไป:</span>
+        <strong>@nextDocumentCode</strong>
+    </div>
+}
+else if (!string.IsNullOrEmpty(documentNumberError))
+{
+    <div class="alert alert-warning" role="alert">@documentNumberError</div>
+}
+
 <p class="text-muted">แนบไฟล์และกรอกข้อมูลเพื่อเพิ่มลงในรายการเอกสาร</p>
 
 @if (!string.IsNullOrEmpty(statusMessage))
@@ -18,6 +37,20 @@
 <EditForm Model="formModel" OnValidSubmit="HandleValidSubmit">
     <DataAnnotationsValidator />
     <ValidationSummary />
+
+    <div class="mb-3">
+        <label class="form-label">ประเภทเอกสาร</label>
+        <InputSelect class="form-select"
+                     Value="@formModel.DocumentType"
+                     ValueChanged="HandleDocumentTypeChanged"
+                     ValueExpression="() => formModel.DocumentType">
+            @foreach (var documentType in DocumentNumbering.KnownTypes)
+            {
+                <option value="@documentType">@documentType</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="() => formModel.DocumentType" />
+    </div>
 
     <div class="mb-3">
         <label class="form-label">OI/WI Name</label>
@@ -76,6 +109,10 @@
 {
     <div class="alert alert-info mt-4">
         <div>📄 เพิ่มเอกสารเรียบร้อยแล้ว</div>
+        @if (!string.IsNullOrEmpty(lastAssignedDocumentCode))
+        {
+            <div class="fw-bold">เลขเอกสาร: @lastAssignedDocumentCode</div>
+        }
         <div>
             <a class="alert-link" href="@successViewerUrl" target="_blank" rel="noopener">เปิดดูเอกสาร</a>
             หรือ <a class="alert-link" href="/">กลับไปหน้า Home</a>
@@ -93,6 +130,15 @@
     private string? statusCssClass;
     private string? successViewerUrl;
     private bool isSubmitting;
+    private string? nextDocumentCode;
+    private string? documentNumberError;
+    private bool isLoadingDocumentNumber;
+    private string? lastAssignedDocumentCode;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await UpdateDocumentNumberPreviewAsync();
+    }
 
     private async Task HandleValidSubmit()
     {
@@ -100,6 +146,7 @@
         statusMessage = null;
         statusCssClass = null;
         successViewerUrl = null;
+        lastAssignedDocumentCode = null;
 
         if (selectedFile is null)
         {
@@ -115,6 +162,7 @@
 
             var request = new DocumentUploadRequest(
                 DisplayName: formModel.DisplayName!,
+                DocumentType: formModel.DocumentType!,
                 Line: formModel.Line,
                 Station: formModel.Station,
                 Model: formModel.Model,
@@ -135,6 +183,7 @@
 
             statusMessage = "บันทึกเอกสารเรียบร้อย";
             statusCssClass = "alert alert-success";
+            lastAssignedDocumentCode = result.DocumentCode;
 
             if (!string.IsNullOrWhiteSpace(result.NormalizedPath))
             {
@@ -152,6 +201,8 @@
             formModel.Reset();
             selectedFile = null;
             selectedFileName = null;
+
+            await UpdateDocumentNumberPreviewAsync();
         }
         catch (IOException ex)
         {
@@ -190,11 +241,57 @@
         Navigation.NavigateTo("/");
     }
 
+    private async Task HandleDocumentTypeChanged(string? documentType)
+    {
+        var normalized = DocumentNumbering.NormalizeType(documentType);
+        formModel.DocumentType = DocumentNumbering.IsKnownType(normalized)
+            ? normalized
+            : DocumentNumbering.DocumentTypeOi;
+
+        await UpdateDocumentNumberPreviewAsync();
+    }
+
+    private async Task UpdateDocumentNumberPreviewAsync()
+    {
+        documentNumberError = null;
+        nextDocumentCode = null;
+
+        var documentType = formModel.DocumentType;
+        if (string.IsNullOrWhiteSpace(documentType))
+        {
+            return;
+        }
+
+        isLoadingDocumentNumber = true;
+
+        try
+        {
+            nextDocumentCode = await DocumentUploader.GetNextDocumentCodeAsync(documentType);
+
+            if (string.IsNullOrEmpty(nextDocumentCode))
+            {
+                documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาตรวจสอบการตั้งค่าโฟลเดอร์";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to compute next document number for type {DocumentType}.", documentType);
+            documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาลองใหม่";
+        }
+        finally
+        {
+            isLoadingDocumentNumber = false;
+        }
+    }
+
     private sealed class UploadFormModel
     {
         [Required(ErrorMessage = "กรุณากรอกชื่อเอกสาร")]
         [StringLength(200, ErrorMessage = "ชื่อเอกสารต้องไม่เกิน 200 ตัวอักษร")]
         public string? DisplayName { get; set; }
+
+        [Required(ErrorMessage = "กรุณาเลือกประเภทเอกสาร")]
+        public string? DocumentType { get; set; } = DocumentNumbering.DocumentTypeOi;
 
         [StringLength(100, ErrorMessage = "Line ต้องไม่เกิน 100 ตัวอักษร")]
         public string? Line { get; set; }
@@ -214,6 +311,7 @@
         public void Reset()
         {
             DisplayName = null;
+            DocumentType = DocumentNumbering.DocumentTypeOi;
             Line = null;
             Station = null;
             Model = null;

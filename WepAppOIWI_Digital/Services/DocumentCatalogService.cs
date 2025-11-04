@@ -33,7 +33,10 @@ public sealed record DocumentRecord(
     string Model,
     DateTimeOffset? UpdatedAt,
     string UploadedBy,
-    string Comment
+    string Comment,
+    string DocumentType,
+    int? SequenceNumber,
+    string? DocumentCode
 )
 {
     public string? LinkUrl { get; init; }
@@ -322,6 +325,13 @@ public sealed class DocumentCatalogService : IDisposable
             ? fallbackDisplayName
             : entry.DisplayName!;
 
+        var normalizedDocumentType = DocumentNumbering.NormalizeType(entry.DocumentType);
+        var displayDocumentType = string.IsNullOrEmpty(normalizedDocumentType)
+            ? "-"
+            : normalizedDocumentType;
+        var sequenceNumber = entry.SequenceNumber;
+        var documentCode = DocumentNumbering.FormatCode(normalizedDocumentType, sequenceNumber);
+
         return new DocumentRecord(
             normalizedRelativePath,
             string.IsNullOrWhiteSpace(displayName) ? fallbackDisplayName : displayName,
@@ -330,7 +340,10 @@ public sealed class DocumentCatalogService : IDisposable
             NormalizeMetadata(entry.Model),
             updatedAt,
             NormalizeMetadata(entry.UploadedBy),
-            NormalizeMetadata(entry.Comment))
+            NormalizeMetadata(entry.Comment),
+            displayDocumentType,
+            sequenceNumber,
+            documentCode)
         {
             LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
         };
@@ -352,7 +365,10 @@ public sealed class DocumentCatalogService : IDisposable
             "-",
             updatedAt,
             "-",
-            "-"
+            "-",
+            "-",
+            null,
+            null
         )
         {
             LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
@@ -636,6 +652,8 @@ public sealed class DocumentCatalogService : IDisposable
         public string? UploadedBy { get; init; }
         public string? Comment { get; init; }
         public DateTimeOffset? UpdatedAt { get; init; }
+        public string? DocumentType { get; init; }
+        public int? SequenceNumber { get; init; }
     }
 
     public void Dispose()

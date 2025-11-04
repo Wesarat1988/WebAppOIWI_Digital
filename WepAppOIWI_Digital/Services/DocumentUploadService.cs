@@ -63,6 +63,13 @@ public sealed class DocumentUploadService
                 return DocumentUploadResult.Failed("ไม่สามารถสร้างหรือเข้าถึงโฟลเดอร์ปลายทางได้");
             }
 
+            var normalizedDocumentType = DocumentNumbering.NormalizeType(request.DocumentType);
+
+            if (!DocumentNumbering.IsKnownType(normalizedDocumentType))
+            {
+                return DocumentUploadResult.Failed("กรุณาเลือกประเภทเอกสารให้ถูกต้อง (OI หรือ WI)");
+            }
+
             var sanitizedFileName = SanitizeFileName(request.OriginalFileName);
             if (string.IsNullOrWhiteSpace(sanitizedFileName))
             {
@@ -90,15 +97,19 @@ public sealed class DocumentUploadService
             var relativeFileName = Path.GetFileName(destinationPath)
                 .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
-            var manifestUpdateResult = await UpdateManifestAsync(rootPath, relativeFileName, request, cancellationToken).ConfigureAwait(false);
-            if (!manifestUpdateResult)
+            var manifestUpdateResult = await UpdateManifestAsync(rootPath, relativeFileName, request, normalizedDocumentType, cancellationToken).ConfigureAwait(false);
+            if (!manifestUpdateResult.Succeeded)
             {
                 return DocumentUploadResult.Failed("บันทึกไฟล์สำเร็จ แต่ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
             }
 
             _catalogService.InvalidateCache();
 
-            return DocumentUploadResult.Success(relativeFileName);
+            return DocumentUploadResult.Success(
+                normalizedPath: relativeFileName,
+                documentType: manifestUpdateResult.DocumentType,
+                sequenceNumber: manifestUpdateResult.SequenceNumber,
+                documentCode: manifestUpdateResult.DocumentCode);
         }
         finally
         {
@@ -106,13 +117,46 @@ public sealed class DocumentUploadService
         }
     }
 
-    private async Task<bool> UpdateManifestAsync(string rootPath, string relativeFileName, DocumentUploadRequest request, CancellationToken cancellationToken)
+    public async Task<string?> GetNextDocumentCodeAsync(string? documentType, CancellationToken cancellationToken = default)
     {
-        var manifestFileName = string.IsNullOrWhiteSpace(_options.ManifestFileName)
-            ? "index.json"
-            : _options.ManifestFileName;
+        var normalizedType = DocumentNumbering.NormalizeType(documentType);
 
-        var manifestPath = Path.Combine(rootPath, manifestFileName);
+        if (!DocumentNumbering.IsKnownType(normalizedType))
+        {
+            return null;
+        }
+
+        await _uploadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var context = await _catalogService.EnsureCatalogContextAsync(cancellationToken).ConfigureAwait(false);
+            var rootPath = context.ActiveRootPath;
+
+            if (string.IsNullOrWhiteSpace(rootPath))
+            {
+                return null;
+            }
+
+            var manifestPath = Path.Combine(rootPath, GetManifestFileName());
+            var manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+
+            var nextSequence = CalculateNextSequence(manifest.Documents, normalizedType);
+            return DocumentNumbering.FormatCode(normalizedType, nextSequence);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to preview next document code for type {DocumentType}.", documentType);
+            return null;
+        }
+        finally
+        {
+            _uploadLock.Release();
+        }
+    }
+
+    private async Task<ManifestUpdateResult> UpdateManifestAsync(string rootPath, string relativeFileName, DocumentUploadRequest request, string normalizedDocumentType, CancellationToken cancellationToken)
+    {
+        var manifestPath = Path.Combine(rootPath, GetManifestFileName());
         var manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
 
         var entry = new ManifestEntry
@@ -124,10 +168,40 @@ public sealed class DocumentUploadService
             Model = request.Model?.Trim(),
             UploadedBy = request.UploadedBy?.Trim(),
             Comment = request.Comment?.Trim(),
-            UpdatedAt = request.UploadedAt
+            UpdatedAt = request.UploadedAt,
+            DocumentType = string.IsNullOrEmpty(normalizedDocumentType) ? null : normalizedDocumentType
         };
 
         var existingIndex = manifest.Documents.FindIndex(d => string.Equals(d.FileName, relativeFileName, StringComparison.OrdinalIgnoreCase));
+        ManifestEntry? existingEntry = existingIndex >= 0 ? manifest.Documents[existingIndex] : null;
+
+        if (existingEntry is not null)
+        {
+            var existingType = DocumentNumbering.NormalizeType(existingEntry.DocumentType);
+
+            if (string.Equals(existingType, normalizedDocumentType, StringComparison.OrdinalIgnoreCase))
+            {
+                entry.SequenceNumber = existingEntry.SequenceNumber;
+
+                if (entry.SequenceNumber is null || entry.SequenceNumber <= 0)
+                {
+                    entry.SequenceNumber = CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+                }
+            }
+            else
+            {
+                entry.SequenceNumber = string.IsNullOrEmpty(normalizedDocumentType)
+                    ? existingEntry.SequenceNumber
+                    : CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+            }
+        }
+        else
+        {
+            entry.SequenceNumber = string.IsNullOrEmpty(normalizedDocumentType)
+                ? null
+                : CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+        }
+
         if (existingIndex >= 0)
         {
             manifest.Documents[existingIndex] = entry;
@@ -137,18 +211,18 @@ public sealed class DocumentUploadService
             manifest.Documents.Add(entry);
         }
 
-        manifest.Documents.Sort((a, b) => string.Compare(a.FileName, b.FileName, StringComparison.OrdinalIgnoreCase));
+        manifest.Documents.Sort(CompareManifestEntries);
 
         try
         {
             await using var stream = File.Create(manifestPath);
             await JsonSerializer.SerializeAsync(stream, manifest, _serializerOptions, cancellationToken).ConfigureAwait(false);
-            return true;
+            return ManifestUpdateResult.Success(entry.DocumentType, entry.SequenceNumber);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to write manifest '{Manifest}'.", manifestPath);
-            return false;
+            return ManifestUpdateResult.Failure(entry.DocumentType, entry.SequenceNumber);
         }
     }
 
@@ -203,10 +277,87 @@ public sealed class DocumentUploadService
 
         return sanitized.Replace(' ', '_');
     }
+
+    private string GetManifestFileName()
+        => string.IsNullOrWhiteSpace(_options.ManifestFileName)
+            ? "index.json"
+            : _options.ManifestFileName!;
+
+    private static int CalculateNextSequence(IReadOnlyCollection<ManifestEntry> entries, string normalizedDocumentType)
+    {
+        var max = 0;
+
+        foreach (var entry in entries)
+        {
+            if (entry is null)
+            {
+                continue;
+            }
+
+            var entryType = DocumentNumbering.NormalizeType(entry.DocumentType);
+            if (!string.Equals(entryType, normalizedDocumentType, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (entry.SequenceNumber is > 0)
+            {
+                max = Math.Max(max, entry.SequenceNumber.Value);
+            }
+        }
+
+        return max + 1;
+    }
+
+    private static int CompareManifestEntries(ManifestEntry? left, ManifestEntry? right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return 0;
+        }
+
+        if (left is null)
+        {
+            return 1;
+        }
+
+        if (right is null)
+        {
+            return -1;
+        }
+
+        var leftType = DocumentNumbering.NormalizeType(left.DocumentType);
+        var rightType = DocumentNumbering.NormalizeType(right.DocumentType);
+        var typeComparison = string.Compare(leftType, rightType, StringComparison.OrdinalIgnoreCase);
+        if (typeComparison != 0)
+        {
+            return typeComparison;
+        }
+
+        var leftSequence = left.SequenceNumber ?? int.MaxValue;
+        var rightSequence = right.SequenceNumber ?? int.MaxValue;
+        var sequenceComparison = leftSequence.CompareTo(rightSequence);
+        if (sequenceComparison != 0)
+        {
+            return sequenceComparison;
+        }
+
+        return string.Compare(left.DisplayName, right.DisplayName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record ManifestUpdateResult(bool Succeeded, string? DocumentType, int? SequenceNumber, string? DocumentCode)
+    {
+        public static ManifestUpdateResult Success(string? documentType, int? sequenceNumber)
+            => new(true, documentType, sequenceNumber, DocumentNumbering.FormatCode(documentType, sequenceNumber));
+
+        public static ManifestUpdateResult Failure(string? documentType, int? sequenceNumber)
+            => new(false, documentType, sequenceNumber, DocumentNumbering.FormatCode(documentType, sequenceNumber));
+    }
 }
 
 public sealed record DocumentUploadRequest(
     string DisplayName,
+    string DocumentType,
     string? Line,
     string? Station,
     string? Model,
@@ -216,13 +367,13 @@ public sealed record DocumentUploadRequest(
     Stream Content,
     DateTimeOffset UploadedAt);
 
-public sealed record DocumentUploadResult(bool Succeeded, string? NormalizedPath, string? ErrorMessage)
+public sealed record DocumentUploadResult(bool Succeeded, string? NormalizedPath, string? ErrorMessage, string? DocumentType, int? SequenceNumber, string? DocumentCode)
 {
-    public static DocumentUploadResult Success(string normalizedPath)
-        => new(true, normalizedPath, null);
+    public static DocumentUploadResult Success(string normalizedPath, string? documentType, int? sequenceNumber, string? documentCode)
+        => new(true, normalizedPath, null, documentType, sequenceNumber, documentCode);
 
     public static DocumentUploadResult Failed(string error)
-        => new(false, null, error);
+        => new(false, null, error, null, null, null);
 }
 
 internal sealed class ManifestDocument
@@ -240,4 +391,6 @@ internal sealed class ManifestEntry
     public string? UploadedBy { get; set; }
     public string? Comment { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
+    public string? DocumentType { get; set; }
+    public int? SequenceNumber { get; set; }
 }
