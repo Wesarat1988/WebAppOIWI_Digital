@@ -96,7 +96,7 @@ else
         <InputText class="form-control"
                    placeholder="ใส่ Machine name สำหรับเอกสาร WI"
                    @bind-Value="formModel.MachineName"
-                   disabled="@(!IsWiSelected)" />
+                   Disabled="@(!IsWiSelected)" />
         <ValidationMessage For="() => formModel.MachineName" />
         @if (!IsWiSelected)
         {
@@ -413,7 +413,7 @@ else
     }
 
     private bool IsWiSelected
-        => string.Equals(selectedDocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase);
+        => string.Equals(formModel.DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase);
 
     private sealed class UploadFormModel : IValidatableObject
     {
