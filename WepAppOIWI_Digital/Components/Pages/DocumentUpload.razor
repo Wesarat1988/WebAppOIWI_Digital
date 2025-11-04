@@ -133,13 +133,14 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     private string? documentNumberError;
     private bool isLoadingDocumentNumber;
     private string? lastAssignedDocumentCode;
-    private string? currentDocumentTypeLabel;
+    private string selectedDocumentType = DocumentNumbering.DocumentTypeOi;
 
-    private string CurrentDocumentTypeLabel => ResolveDocumentTypeLabel(currentDocumentTypeLabel);
+    private string CurrentDocumentTypeLabel => ResolveDocumentTypeLabel(selectedDocumentType);
 
     protected override async Task OnInitializedAsync()
     {
-        currentDocumentTypeLabel = ResolveDocumentTypeLabel(formModel.DocumentType);
+        selectedDocumentType = NormalizeDocumentTypeOrDefault(formModel.DocumentType);
+        formModel.DocumentType = selectedDocumentType;
         await UpdateDocumentNumberPreviewAsync();
     }
 
@@ -205,7 +206,8 @@ else if (!string.IsNullOrEmpty(documentNumberError))
             selectedFile = null;
             selectedFileName = null;
 
-            currentDocumentTypeLabel = ResolveDocumentTypeLabel(formModel.DocumentType);
+            selectedDocumentType = NormalizeDocumentTypeOrDefault(formModel.DocumentType);
+            formModel.DocumentType = selectedDocumentType;
             await UpdateDocumentNumberPreviewAsync();
         }
         catch (IOException ex)
@@ -247,15 +249,18 @@ else if (!string.IsNullOrEmpty(documentNumberError))
 
     private string SelectedDocumentType
     {
-        get => formModel.DocumentType ?? DocumentNumbering.DocumentTypeOi;
+        get => selectedDocumentType;
         set
         {
-            var normalized = DocumentNumbering.NormalizeType(value);
-            formModel.DocumentType = DocumentNumbering.IsKnownType(normalized)
-                ? normalized
-                : DocumentNumbering.DocumentTypeOi;
+            var normalized = NormalizeDocumentTypeOrDefault(value);
 
-            currentDocumentTypeLabel = ResolveDocumentTypeLabel(formModel.DocumentType);
+            if (string.Equals(selectedDocumentType, normalized, System.StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            selectedDocumentType = normalized;
+            formModel.DocumentType = selectedDocumentType;
             _ = InvokeAsync(UpdateDocumentNumberPreviewAsync);
         }
     }
@@ -264,20 +269,14 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     {
         documentNumberError = null;
         nextDocumentCode = null;
-
-        var documentType = formModel.DocumentType;
-        if (string.IsNullOrWhiteSpace(documentType))
-        {
-            currentDocumentTypeLabel = ResolveDocumentTypeLabel(documentType);
-            return;
-        }
+        selectedDocumentType = NormalizeDocumentTypeOrDefault(selectedDocumentType);
+        formModel.DocumentType = selectedDocumentType;
 
         isLoadingDocumentNumber = true;
-        currentDocumentTypeLabel = ResolveDocumentTypeLabel(documentType);
 
         try
         {
-            nextDocumentCode = await DocumentUploader.GetNextDocumentCodeAsync(documentType);
+            nextDocumentCode = await DocumentUploader.GetNextDocumentCodeAsync(selectedDocumentType);
 
             if (string.IsNullOrEmpty(nextDocumentCode))
             {
@@ -286,7 +285,7 @@ else if (!string.IsNullOrEmpty(documentNumberError))
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to compute next document number for type {DocumentType}.", documentType);
+            Logger.LogError(ex, "Failed to compute next document number for type {DocumentType}.", selectedDocumentType);
             documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาลองใหม่";
         }
         finally
@@ -296,9 +295,13 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     }
 
     private static string ResolveDocumentTypeLabel(string? value)
+        => NormalizeDocumentTypeOrDefault(value);
+
+    private static string NormalizeDocumentTypeOrDefault(string? value)
     {
         var normalized = DocumentNumbering.NormalizeType(value);
-        if (string.IsNullOrWhiteSpace(normalized))
+
+        if (!DocumentNumbering.IsKnownType(normalized))
         {
             return DocumentNumbering.DocumentTypeOi;
         }
