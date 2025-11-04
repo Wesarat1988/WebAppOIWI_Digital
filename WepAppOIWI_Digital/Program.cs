@@ -2,12 +2,19 @@ using WepAppOIWI_Digital.Components;
 using WepAppOIWI_Digital.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Net.Http.Headers;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsDevelopment())
+{
+    // Disable hosting startup injection so dotnet-watch's browser refresh script isn't wired up
+    builder.WebHost.UseSetting(WebHostDefaults.HostingStartupAssembliesKey, string.Empty);
+}
 
 builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
 builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
