@@ -1,5 +1,6 @@
 @page "/documents/new"
 @rendermode InteractiveServer
+@using System.Collections.Generic
 @using System.ComponentModel.DataAnnotations
 @inject DocumentUploadService DocumentUploader
 @inject NavigationManager Navigation
@@ -90,18 +91,18 @@ else
         </div>
     </div>
 
-    @if (IsWiSelected)
-    {
-        <div class="mb-3 mt-3">
-            <label class="form-label">Machine name</label>
-            <InputText class="form-control" @bind-Value="formModel.MachineName" />
-            <ValidationMessage For="() => formModel.MachineName" />
-            @if (!string.IsNullOrEmpty(machineNameError))
-            {
-                <div class="text-danger">@machineNameError</div>
-            }
-        </div>
-    }
+    <div class="mb-3 mt-3">
+        <label class="form-label">Machine name <span class="text-muted">(ระบุเมื่อเป็นเอกสารประเภท WI)</span></label>
+        <InputText class="form-control"
+                   placeholder="ใส่ Machine name สำหรับเอกสาร WI"
+                   @bind-Value="formModel.MachineName"
+                   disabled="@(!IsWiSelected)" />
+        <ValidationMessage For="() => formModel.MachineName" />
+        @if (!IsWiSelected)
+        {
+            <div class="form-text">เลือกประเภทเอกสารเป็น WI เพื่อกรอก Machine name</div>
+        }
+    </div>
 
     <div class="mb-3 mt-3">
         <label class="form-label">ชื่อผู้ Upload / Update</label>
@@ -160,7 +161,6 @@ else
     private string? statusCssClass;
     private string? successViewerUrl;
     private bool isSubmitting;
-    private string? machineNameError;
     private readonly Dictionary<string, string?> nextDocumentCodes = new(StringComparer.OrdinalIgnoreCase);
     private string? documentNumberError;
     private bool isLoadingDocumentNumbers;
@@ -177,20 +177,12 @@ else
     private async Task HandleValidSubmit()
     {
         fileError = null;
-        machineNameError = null;
         statusMessage = null;
         statusCssClass = null;
         successViewerUrl = null;
         lastAssignedDocumentCode = null;
 
         var normalizedDocumentType = NormalizeDocumentTypeOrDefault(formModel.DocumentType);
-
-        if (string.Equals(normalizedDocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
-            && string.IsNullOrWhiteSpace(formModel.MachineName))
-        {
-            machineNameError = "กรุณากรอก Machine name สำหรับเอกสาร WI";
-            return;
-        }
 
         if (selectedFile is null)
         {
@@ -399,8 +391,6 @@ else
         selectedDocumentType = newType;
         formModel.DocumentType = newType;
 
-        machineNameError = null;
-
         if (!IsWiSelected)
         {
             formModel.MachineName = null;
@@ -425,7 +415,7 @@ else
     private bool IsWiSelected
         => string.Equals(selectedDocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase);
 
-    private sealed class UploadFormModel
+    private sealed class UploadFormModel : IValidatableObject
     {
         [Required(ErrorMessage = "กรุณากรอกชื่อเอกสาร")]
         [StringLength(200, ErrorMessage = "ชื่อเอกสารต้องไม่เกิน 200 ตัวอักษร")]
@@ -462,6 +452,17 @@ else
             MachineName = null;
             UploadedBy = null;
             Comment = null;
+        }
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (string.Equals(DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(MachineName))
+            {
+                yield return new ValidationResult(
+                    "กรุณากรอก Machine name สำหรับเอกสาร WI",
+                    new[] { nameof(MachineName) });
+            }
         }
     }
 }
