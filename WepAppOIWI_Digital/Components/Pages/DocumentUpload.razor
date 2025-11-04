@@ -134,14 +134,14 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     private bool isLoadingDocumentNumber;
     private string? lastAssignedDocumentCode;
     private string selectedDocumentType = DocumentNumbering.DocumentTypeOi;
+    private string currentDocumentTypeLabel = DocumentNumbering.DocumentTypeOi;
     private int documentNumberRequestId;
 
-    private string CurrentDocumentTypeLabel => ResolveDocumentTypeLabel(selectedDocumentType);
+    private string CurrentDocumentTypeLabel => currentDocumentTypeLabel;
 
     protected override async Task OnInitializedAsync()
     {
-        selectedDocumentType = NormalizeDocumentTypeOrDefault(formModel.DocumentType);
-        formModel.DocumentType = selectedDocumentType;
+        ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
         await UpdateDocumentNumberPreviewAsync();
     }
 
@@ -207,8 +207,7 @@ else if (!string.IsNullOrEmpty(documentNumberError))
             selectedFile = null;
             selectedFileName = null;
 
-            selectedDocumentType = NormalizeDocumentTypeOrDefault(formModel.DocumentType);
-            formModel.DocumentType = selectedDocumentType;
+            ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
             await UpdateDocumentNumberPreviewAsync();
         }
         catch (IOException ex)
@@ -260,8 +259,7 @@ else if (!string.IsNullOrEmpty(documentNumberError))
                 return;
             }
 
-            selectedDocumentType = normalized;
-            formModel.DocumentType = selectedDocumentType;
+            ApplySelectedDocumentType(normalized);
             _ = InvokeAsync(UpdateDocumentNumberPreviewAsync);
         }
     }
@@ -272,8 +270,7 @@ else if (!string.IsNullOrEmpty(documentNumberError))
         documentNumberError = null;
         nextDocumentCode = null;
         var normalizedType = NormalizeDocumentTypeOrDefault(selectedDocumentType);
-        selectedDocumentType = normalizedType;
-        formModel.DocumentType = selectedDocumentType;
+        ApplySelectedDocumentType(normalizedType);
 
         isLoadingDocumentNumber = true;
 
@@ -311,6 +308,13 @@ else if (!string.IsNullOrEmpty(documentNumberError))
                 isLoadingDocumentNumber = false;
             }
         }
+    }
+
+    private void ApplySelectedDocumentType(string newType)
+    {
+        selectedDocumentType = newType;
+        formModel.DocumentType = newType;
+        currentDocumentTypeLabel = ResolveDocumentTypeLabel(newType);
     }
 
     private static string ResolveDocumentTypeLabel(string? value)
