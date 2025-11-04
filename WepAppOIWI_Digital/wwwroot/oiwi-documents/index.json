@@ -1,0 +1,30 @@
+{
+  "documents": [
+    {
+      "fileName": "Sample-OI-Alpha.txt",
+      "displayName": "OI Alpha",
+      "line": "L01",
+      "station": "ST-A1",
+      "model": "Model-A",
+      "machineName": "Machine-A",
+      "uploadedBy": "EMP001",
+      "comment": "เอกสารตัวอย่าง OI สำหรับทดสอบ",
+      "updatedAt": "2024-05-01T09:30:00+07:00",
+      "documentType": "OI",
+      "sequenceNumber": 1
+    },
+    {
+      "fileName": "Sample-WI-Beta.txt",
+      "displayName": "WI Beta",
+      "line": "L02",
+      "station": "ST-B3",
+      "model": "Model-B",
+      "machineName": "Machine-B",
+      "uploadedBy": "EMP002",
+      "comment": "WI Beta สำหรับไลน์ประกอบ",
+      "updatedAt": "2024-05-05T14:15:00+07:00",
+      "documentType": "WI",
+      "sequenceNumber": 1
+    }
+  ]
+}

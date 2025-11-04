@@ -1,0 +1,467 @@
+@page "/documents/new"
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@inject DocumentUploadService DocumentUploader
+@inject NavigationManager Navigation
+@inject ILogger<WepAppOIWI_Digital.Components.Pages.DocumentUpload> Logger
+
+<PageTitle>เพิ่มเอกสาร OI/WI</PageTitle>
+
+<h1 class="mb-2">➕ เพิ่มเอกสาร OI/WI</h1>
+
+@if (isLoadingDocumentNumbers)
+{
+    <div class="alert alert-secondary d-inline-flex align-items-center gap-2" role="status">
+        <span>กำลังคำนวณเลขเอกสารสำหรับประเภท OI และ WI...</span>
+    </div>
+}
+else
+{
+    if (!string.IsNullOrEmpty(documentNumberError))
+    {
+        <div class="alert alert-warning" role="alert">@documentNumberError</div>
+    }
+
+    <div class="row g-3 mb-3">
+        @foreach (var documentType in DocumentNumbering.KnownTypes)
+        {
+            var label = ResolveDocumentTypeLabel(documentType);
+            var previewCode = GetDocumentCodeForType(documentType);
+
+            <div class="col-md-6">
+                <div class="@GetDocumentTypeAlertClass(documentType)" role="status">
+                    <span>เลขเอกสารถัดไป (@label):</span>
+                    @if (!string.IsNullOrEmpty(previewCode))
+                    {
+                        <strong>@previewCode</strong>
+                    }
+                    else
+                    {
+                        <span class="text-muted">ไม่พร้อมใช้งาน</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<p class="text-muted">แนบไฟล์และกรอกข้อมูลเพื่อเพิ่มลงในรายการเอกสาร</p>
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <div class="@statusCssClass" role="alert">@statusMessage</div>
+}
+
+<EditForm Model="formModel" OnValidSubmit="HandleValidSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label class="form-label">ประเภทเอกสาร</label>
+        <InputSelect class="form-select"
+                     @bind-Value="SelectedDocumentType"
+                     @bind-Value:event="onchange">
+            @foreach (var documentType in DocumentNumbering.KnownTypes)
+            {
+                <option value="@documentType">@documentType</option>
+            }
+        </InputSelect>
+        <ValidationMessage For="() => formModel.DocumentType" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">OI/WI Name</label>
+        <InputText class="form-control" @bind-Value="formModel.DisplayName" />
+        <ValidationMessage For="() => formModel.DisplayName" />
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-4">
+            <label class="form-label">Line</label>
+            <InputText class="form-control" @bind-Value="formModel.Line" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Station</label>
+            <InputText class="form-control" @bind-Value="formModel.Station" />
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Model</label>
+            <InputText class="form-control" @bind-Value="formModel.Model" />
+        </div>
+    </div>
+
+    @if (IsWiSelected)
+    {
+        <div class="mb-3 mt-3">
+            <label class="form-label">Machine name</label>
+            <InputText class="form-control" @bind-Value="formModel.MachineName" />
+            <ValidationMessage For="() => formModel.MachineName" />
+            @if (!string.IsNullOrEmpty(machineNameError))
+            {
+                <div class="text-danger">@machineNameError</div>
+            }
+        </div>
+    }
+
+    <div class="mb-3 mt-3">
+        <label class="form-label">ชื่อผู้ Upload / Update</label>
+        <InputText class="form-control" @bind-Value="formModel.UploadedBy" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Comment</label>
+        <InputTextArea class="form-control" @bind-Value="formModel.Comment" rows="3" />
+        <ValidationMessage For="() => formModel.Comment" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">เลือกไฟล์</label>
+        <InputFile OnChange="HandleFileSelected" />
+        @if (!string.IsNullOrEmpty(selectedFileName))
+        {
+            <div class="form-text">ไฟล์ที่เลือก: @selectedFileName</div>
+        }
+        @if (!string.IsNullOrEmpty(fileError))
+        {
+            <div class="text-danger">@fileError</div>
+        }
+    </div>
+
+    <div class="d-flex align-items-center">
+        <button type="submit" class="btn btn-primary" disabled="@(isSubmitting || selectedFile is null)">
+            @(isSubmitting ? "กำลังบันทึก..." : "บันทึก")
+        </button>
+        <button type="button" class="btn btn-outline-secondary ms-2" @onclick="NavigateHome">ยกเลิก</button>
+    </div>
+</EditForm>
+
+@if (!string.IsNullOrEmpty(successViewerUrl))
+{
+    <div class="alert alert-info mt-4">
+        <div>📄 เพิ่มเอกสารเรียบร้อยแล้ว</div>
+        @if (!string.IsNullOrEmpty(lastAssignedDocumentCode))
+        {
+            <div class="fw-bold">เลขเอกสาร: @lastAssignedDocumentCode</div>
+        }
+        <div>
+            <a class="alert-link" href="@successViewerUrl" target="_blank" rel="noopener">เปิดดูเอกสาร</a>
+            หรือ <a class="alert-link" href="/">กลับไปหน้า Home</a>
+        </div>
+    </div>
+}
+
+@code {
+    private const long MaxFileSize = 200 * 1024 * 1024;
+    private readonly UploadFormModel formModel = new();
+    private IBrowserFile? selectedFile;
+    private string? selectedFileName;
+    private string? fileError;
+    private string? statusMessage;
+    private string? statusCssClass;
+    private string? successViewerUrl;
+    private bool isSubmitting;
+    private string? machineNameError;
+    private readonly Dictionary<string, string?> nextDocumentCodes = new(StringComparer.OrdinalIgnoreCase);
+    private string? documentNumberError;
+    private bool isLoadingDocumentNumbers;
+    private string? lastAssignedDocumentCode;
+    private string selectedDocumentType = DocumentNumbering.DocumentTypeOi;
+    private int documentNumberRequestId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
+        await UpdateDocumentNumberPreviewAsync(notifyStart: false);
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        fileError = null;
+        machineNameError = null;
+        statusMessage = null;
+        statusCssClass = null;
+        successViewerUrl = null;
+        lastAssignedDocumentCode = null;
+
+        var normalizedDocumentType = NormalizeDocumentTypeOrDefault(formModel.DocumentType);
+
+        if (string.Equals(normalizedDocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(formModel.MachineName))
+        {
+            machineNameError = "กรุณากรอก Machine name สำหรับเอกสาร WI";
+            return;
+        }
+
+        if (selectedFile is null)
+        {
+            fileError = "กรุณาเลือกไฟล์ที่ต้องการอัปโหลด";
+            return;
+        }
+
+        isSubmitting = true;
+
+        try
+        {
+            await using var stream = selectedFile.OpenReadStream(MaxFileSize);
+
+            var request = new DocumentUploadRequest(
+                DisplayName: formModel.DisplayName!,
+                DocumentType: normalizedDocumentType,
+                Line: formModel.Line,
+                Station: formModel.Station,
+                Model: formModel.Model,
+                MachineName: formModel.MachineName,
+                UploadedBy: formModel.UploadedBy,
+                Comment: formModel.Comment,
+                OriginalFileName: selectedFile.Name,
+                Content: stream,
+                UploadedAt: DateTimeOffset.UtcNow);
+
+            var result = await DocumentUploader.UploadAsync(request);
+
+            if (!result.Succeeded)
+            {
+                statusMessage = result.ErrorMessage ?? "เกิดข้อผิดพลาดระหว่างการบันทึกข้อมูล";
+                statusCssClass = "alert alert-danger";
+                return;
+            }
+
+            statusMessage = "บันทึกเอกสารเรียบร้อย";
+            statusCssClass = "alert alert-success";
+            lastAssignedDocumentCode = result.DocumentCode;
+
+            if (!string.IsNullOrWhiteSpace(result.NormalizedPath))
+            {
+                try
+                {
+                    var token = DocumentCatalogService.EncodeDocumentToken(result.NormalizedPath);
+                    successViewerUrl = $"/documents/viewer/{Uri.EscapeDataString(token)}";
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to build viewer link for the uploaded document '{Document}'.", result.NormalizedPath);
+                }
+            }
+
+            formModel.Reset();
+            selectedFile = null;
+            selectedFileName = null;
+
+            ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
+            await UpdateDocumentNumberPreviewAsync();
+        }
+        catch (IOException ex)
+        {
+            Logger.LogError(ex, "Failed to upload document due to I/O error.");
+            statusMessage = "ไม่สามารถอ่านไฟล์ได้ กรุณาลองใหม่";
+            statusCssClass = "alert alert-danger";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error while uploading document.");
+            statusMessage = "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง";
+            statusCssClass = "alert alert-danger";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs args)
+    {
+        fileError = null;
+        selectedFile = args.File;
+        selectedFileName = selectedFile?.Name;
+
+        if (selectedFile is not null && selectedFile.Size > MaxFileSize)
+        {
+            fileError = $"ไฟล์มีขนาดใหญ่เกิน {MaxFileSize / (1024 * 1024)} MB";
+            selectedFile = null;
+            selectedFileName = null;
+        }
+    }
+
+    private void NavigateHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
+    private string SelectedDocumentType
+    {
+        get => selectedDocumentType;
+        set => _ = HandleDocumentTypeChangedAsync(value);
+    }
+
+    private async Task HandleDocumentTypeChangedAsync(string? value)
+    {
+        var normalized = NormalizeDocumentTypeOrDefault(value);
+
+        if (string.Equals(selectedDocumentType, normalized, System.StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        ApplySelectedDocumentType(normalized);
+        await UpdateDocumentNumberPreviewAsync();
+    }
+
+    private async Task UpdateDocumentNumberPreviewAsync(bool notifyStart = true)
+    {
+        var requestId = System.Threading.Interlocked.Increment(ref documentNumberRequestId);
+        documentNumberError = null;
+        nextDocumentCodes.Clear();
+        ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(selectedDocumentType));
+
+        isLoadingDocumentNumbers = true;
+
+        if (notifyStart)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+
+        try
+        {
+            var failedTypes = new List<string>();
+
+            foreach (var documentType in DocumentNumbering.KnownTypes)
+            {
+                var normalizedType = NormalizeDocumentTypeOrDefault(documentType);
+                var preview = await DocumentUploader.GetNextDocumentCodeAsync(normalizedType);
+
+                if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(preview))
+                {
+                    nextDocumentCodes[normalizedType] = preview;
+                }
+                else
+                {
+                    failedTypes.Add(normalizedType);
+                }
+            }
+
+            if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
+            {
+                return;
+            }
+
+            if (failedTypes.Count == DocumentNumbering.KnownTypes.Count)
+            {
+                documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาตรวจสอบการตั้งค่าโฟลเดอร์";
+            }
+            else if (failedTypes.Count > 0)
+            {
+                var labels = failedTypes.Select(ResolveDocumentTypeLabel);
+                documentNumberError = $"ไม่สามารถคำนวณเลขเอกสารถัดไปสำหรับประเภท: {string.Join(", ", labels)}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to compute next document numbers for known types.");
+
+            if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
+            {
+                return;
+            }
+
+            documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาลองใหม่";
+        }
+        finally
+        {
+            if (requestId == System.Threading.Volatile.Read(ref documentNumberRequestId))
+            {
+                isLoadingDocumentNumbers = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private string? GetDocumentCodeForType(string documentType)
+    {
+        var normalized = NormalizeDocumentTypeOrDefault(documentType);
+        return nextDocumentCodes.TryGetValue(normalized, out var code) ? code : null;
+    }
+
+    private string GetDocumentTypeAlertClass(string documentType)
+    {
+        var normalized = NormalizeDocumentTypeOrDefault(documentType);
+        var isSelected = string.Equals(selectedDocumentType, normalized, StringComparison.OrdinalIgnoreCase);
+        var tone = isSelected ? "alert-primary" : "alert-info";
+        return $"alert {tone} d-inline-flex align-items-center gap-2";
+    }
+
+    private void ApplySelectedDocumentType(string newType)
+    {
+        selectedDocumentType = newType;
+        formModel.DocumentType = newType;
+
+        machineNameError = null;
+
+        if (!IsWiSelected)
+        {
+            formModel.MachineName = null;
+        }
+    }
+
+    private static string ResolveDocumentTypeLabel(string? value)
+        => NormalizeDocumentTypeOrDefault(value);
+
+    private static string NormalizeDocumentTypeOrDefault(string? value)
+    {
+        var normalized = DocumentNumbering.NormalizeType(value);
+
+        if (!DocumentNumbering.IsKnownType(normalized))
+        {
+            return DocumentNumbering.DocumentTypeOi;
+        }
+
+        return normalized;
+    }
+
+    private bool IsWiSelected
+        => string.Equals(selectedDocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase);
+
+    private sealed class UploadFormModel
+    {
+        [Required(ErrorMessage = "กรุณากรอกชื่อเอกสาร")]
+        [StringLength(200, ErrorMessage = "ชื่อเอกสารต้องไม่เกิน 200 ตัวอักษร")]
+        public string? DisplayName { get; set; }
+
+        [Required(ErrorMessage = "กรุณาเลือกประเภทเอกสาร")]
+        public string? DocumentType { get; set; } = DocumentNumbering.DocumentTypeOi;
+
+        [StringLength(100, ErrorMessage = "Line ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? Line { get; set; }
+
+        [StringLength(100, ErrorMessage = "Station ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? Station { get; set; }
+
+        [StringLength(100, ErrorMessage = "Model ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? Model { get; set; }
+
+        [StringLength(100, ErrorMessage = "Machine name ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? MachineName { get; set; }
+
+        [StringLength(100, ErrorMessage = "ชื่อผู้ Upload ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? UploadedBy { get; set; }
+
+        [StringLength(500, ErrorMessage = "Comment ต้องไม่เกิน 500 ตัวอักษร")]
+        public string? Comment { get; set; }
+
+        public void Reset()
+        {
+            DisplayName = null;
+            DocumentType = DocumentNumbering.DocumentTypeOi;
+            Line = null;
+            Station = null;
+            Model = null;
+            MachineName = null;
+            UploadedBy = null;
+            Comment = null;
+        }
+    }
+}
