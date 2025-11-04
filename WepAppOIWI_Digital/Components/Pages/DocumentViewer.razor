@@ -1,0 +1,203 @@
+@page "/documents/viewer/{Token}"
+@rendermode InteractiveServer
+@using System.Linq
+@inject DocumentCatalogService DocumentCatalog
+@inject NavigationManager Navigation
+@inject ILogger<WepAppOIWI_Digital.Components.Pages.DocumentViewer> Logger
+@inject IJSRuntime JSRuntime
+
+<PageTitle>ดูเอกสาร OI/WI</PageTitle>
+
+<h1 class="mb-3">👁️‍🗨️ ดูเอกสาร OI/WI</h1>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">@errorMessage</div>
+}
+else if (isLoading)
+{
+    <p class="text-muted">กำลังโหลดไฟล์...</p>
+}
+else if (document is null || fileHandle is null)
+{
+    <div class="alert alert-warning" role="alert">ไม่พบไฟล์ที่ต้องการแสดง</div>
+}
+else
+{
+    <div class="card mb-3 shadow-sm">
+        <div class="card-body">
+            <div class="d-flex justify-content-between flex-wrap gap-2">
+                <div>
+                    <h2 class="card-title h4 mb-1">@document.DisplayName</h2>
+                    <p class="card-subtitle text-muted small mb-0">อัปเดตล่าสุด: @FormatTimestamp(document.UpdatedAt)</p>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <a class="btn btn-primary" href="@(downloadSource ?? "#")" target="_blank" rel="noopener" download="@fileHandle?.FileName">
+                        ⬇️ ดาวน์โหลดไฟล์
+                    </a>
+                    <button type="button" class="btn btn-secondary" @onclick="NavigateHome">
+                        ⬅️ กลับหน้าหลัก
+                    </button>
+                </div>
+            </div>
+            <hr />
+            <dl class="row mb-0">
+                <dt class="col-sm-3">ประเภทเอกสาร</dt>
+                <dd class="col-sm-9">@DisplayOrDash(document.DocumentType)</dd>
+                <dt class="col-sm-3">เลขเอกสาร</dt>
+                <dd class="col-sm-9">@DisplayOrDash(document.DocumentCode)</dd>
+                <dt class="col-sm-3">Line</dt>
+                <dd class="col-sm-9">@DisplayOrDash(document.Line)</dd>
+                <dt class="col-sm-3">Station</dt>
+                <dd class="col-sm-9">@DisplayOrDash(document.Station)</dd>
+                <dt class="col-sm-3">Model</dt>
+                <dd class="col-sm-9">@DisplayOrDash(document.Model)</dd>
+                <dt class="col-sm-3">Machine name</dt>
+                <dd class="col-sm-9">@DisplayOrDash(document.Machine)</dd>
+                <dt class="col-sm-3">ผู้บันทึก</dt>
+                <dd class="col-sm-9">@DisplayOrDash(document.UploadedBy)</dd>
+                <dt class="col-sm-3">Comment</dt>
+                <dd class="col-sm-9">@DisplayOrDash(document.Comment)</dd>
+                <dt class="col-sm-3">ประเภทไฟล์</dt>
+                <dd class="col-sm-9">@fileHandle.ContentType</dd>
+            </dl>
+        </div>
+    </div>
+
+    @if (canPreviewInline && !string.IsNullOrEmpty(previewSource))
+    {
+        <div class="document-preview-frame border rounded">
+            <div id="@pdfContainerId" class="pdfjs-viewer">
+                <div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
+            </div>
+        </div>
+        <p class="text-muted small mt-2">
+            หากไฟล์ไม่แสดงผลในตัวอย่าง กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
+        </p>
+    }
+    else
+    {
+        <div class="alert alert-info" role="alert">
+            ยังไม่รองรับการแสดงตัวอย่างไฟล์ประเภทนี้ในหน้าเว็บ กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
+        </div>
+    }
+}
+
+@code {
+    [Parameter]
+    public string Token { get; set; } = string.Empty;
+
+    private bool isLoading = true;
+    private string? errorMessage;
+    private DocumentRecord? document;
+    private DocumentCatalogService.DocumentFileHandle? fileHandle;
+    private string? previewSource;
+    private string? downloadSource;
+    private bool canPreviewInline;
+    private bool pendingPdfRender;
+    private int pdfRenderAttempts;
+    private readonly string pdfContainerId = $"pdfjs-viewer-{System.Guid.NewGuid():N}";
+    private const int MaxPdfRenderAttempts = 3;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+        document = null;
+        fileHandle = null;
+        previewSource = null;
+        downloadSource = null;
+        canPreviewInline = false;
+        pendingPdfRender = false;
+        pdfRenderAttempts = 0;
+
+        if (!DocumentCatalogService.TryDecodeDocumentToken(Token, out var normalizedPath))
+        {
+            errorMessage = "ไม่สามารถเปิดไฟล์นี้ได้";
+            isLoading = false;
+            return;
+        }
+
+        try
+        {
+            var records = await DocumentCatalog.GetDocumentsAsync();
+            document = records.FirstOrDefault(r => string.Equals(r.FileName, normalizedPath, StringComparison.OrdinalIgnoreCase));
+            if (document is null)
+            {
+                errorMessage = "ไม่พบไฟล์ที่คุณต้องการดู";
+                return;
+            }
+
+            fileHandle = await DocumentCatalog.TryGetDocumentFileAsync(normalizedPath);
+            if (fileHandle is null)
+            {
+                errorMessage = "ไม่สามารถเข้าถึงไฟล์นี้ได้";
+                return;
+            }
+
+            previewSource = $"/documents/preview/{Uri.EscapeDataString(Token)}";
+            downloadSource = $"/documents/download/{Uri.EscapeDataString(Token)}";
+            canPreviewInline = string.Equals(fileHandle.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase);
+            pendingPdfRender = canPreviewInline && !string.IsNullOrEmpty(previewSource);
+            pdfRenderAttempts = 0;
+        }
+        catch (OperationCanceledException)
+        {
+            errorMessage = "การเปิดไฟล์ถูกยกเลิก";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to open document '{DocumentPath}'", normalizedPath);
+            errorMessage = "เกิดข้อผิดพลาดขณะเปิดไฟล์ กรุณาลองใหม่อีกครั้ง";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!isLoading && pendingPdfRender && !string.IsNullOrEmpty(previewSource))
+        {
+            pendingPdfRender = false;
+
+            try
+            {
+                pdfRenderAttempts++;
+                await JSRuntime.InvokeVoidAsync("pdfViewer.renderPdf", previewSource, pdfContainerId);
+            }
+            catch (JSException jsEx)
+            {
+                Logger.LogError(jsEx, "Failed to render PDF preview for '{DocumentPath}'", document?.FileName);
+                if (pdfRenderAttempts < MaxPdfRenderAttempts)
+                {
+                    pendingPdfRender = true;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Unexpected error while rendering PDF preview for '{DocumentPath}'", document?.FileName);
+                if (pdfRenderAttempts < MaxPdfRenderAttempts)
+                {
+                    pendingPdfRender = true;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+    }
+
+    private static string DisplayOrDash(string? value)
+        => string.IsNullOrWhiteSpace(value) || value == "-"
+            ? "-"
+            : value!;
+
+    private static string FormatTimestamp(DateTimeOffset? timestamp)
+        => timestamp.HasValue
+            ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "-";
+
+    private void NavigateHome()
+        => Navigation.NavigateTo("/");
+}
