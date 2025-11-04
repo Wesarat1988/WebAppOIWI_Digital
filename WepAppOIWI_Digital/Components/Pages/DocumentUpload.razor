@@ -134,10 +134,9 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     private bool isLoadingDocumentNumber;
     private string? lastAssignedDocumentCode;
     private string selectedDocumentType = DocumentNumbering.DocumentTypeOi;
-    private string currentDocumentTypeLabel = DocumentNumbering.DocumentTypeOi;
     private int documentNumberRequestId;
 
-    private string CurrentDocumentTypeLabel => currentDocumentTypeLabel;
+    private string CurrentDocumentTypeLabel => ResolveDocumentTypeLabel(selectedDocumentType);
 
     protected override async Task OnInitializedAsync()
     {
@@ -314,7 +313,6 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     {
         selectedDocumentType = newType;
         formModel.DocumentType = newType;
-        currentDocumentTypeLabel = ResolveDocumentTypeLabel(newType);
     }
 
     private static string ResolveDocumentTypeLabel(string? value)
