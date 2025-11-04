@@ -12,13 +12,13 @@
 @if (isLoadingDocumentNumber)
 {
     <div class="alert alert-secondary d-inline-flex align-items-center gap-2" role="status">
-        <span>กำลังคำนวณเลขเอกสารสำหรับประเภท @formModel.DocumentType...</span>
+        <span>กำลังคำนวณเลขเอกสารสำหรับประเภท @CurrentDocumentTypeLabel...</span>
     </div>
 }
 else if (!string.IsNullOrEmpty(nextDocumentCode))
 {
     <div class="alert alert-info d-inline-flex align-items-center gap-2" role="status">
-        <span>เลขเอกสารถัดไป:</span>
+        <span>เลขเอกสารถัดไป (@CurrentDocumentTypeLabel):</span>
         <strong>@nextDocumentCode</strong>
     </div>
 }
@@ -133,9 +133,13 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     private string? documentNumberError;
     private bool isLoadingDocumentNumber;
     private string? lastAssignedDocumentCode;
+    private string? currentDocumentTypeLabel;
+
+    private string CurrentDocumentTypeLabel => ResolveDocumentTypeLabel(currentDocumentTypeLabel);
 
     protected override async Task OnInitializedAsync()
     {
+        currentDocumentTypeLabel = ResolveDocumentTypeLabel(formModel.DocumentType);
         await UpdateDocumentNumberPreviewAsync();
     }
 
@@ -201,6 +205,7 @@ else if (!string.IsNullOrEmpty(documentNumberError))
             selectedFile = null;
             selectedFileName = null;
 
+            currentDocumentTypeLabel = ResolveDocumentTypeLabel(formModel.DocumentType);
             await UpdateDocumentNumberPreviewAsync();
         }
         catch (IOException ex)
@@ -250,6 +255,7 @@ else if (!string.IsNullOrEmpty(documentNumberError))
                 ? normalized
                 : DocumentNumbering.DocumentTypeOi;
 
+            currentDocumentTypeLabel = ResolveDocumentTypeLabel(formModel.DocumentType);
             _ = InvokeAsync(UpdateDocumentNumberPreviewAsync);
         }
     }
@@ -262,10 +268,12 @@ else if (!string.IsNullOrEmpty(documentNumberError))
         var documentType = formModel.DocumentType;
         if (string.IsNullOrWhiteSpace(documentType))
         {
+            currentDocumentTypeLabel = ResolveDocumentTypeLabel(documentType);
             return;
         }
 
         isLoadingDocumentNumber = true;
+        currentDocumentTypeLabel = ResolveDocumentTypeLabel(documentType);
 
         try
         {
@@ -285,6 +293,17 @@ else if (!string.IsNullOrEmpty(documentNumberError))
         {
             isLoadingDocumentNumber = false;
         }
+    }
+
+    private static string ResolveDocumentTypeLabel(string? value)
+    {
+        var normalized = DocumentNumbering.NormalizeType(value);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return DocumentNumbering.DocumentTypeOi;
+        }
+
+        return normalized;
     }
 
     private sealed class UploadFormModel
