@@ -134,6 +134,7 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     private bool isLoadingDocumentNumber;
     private string? lastAssignedDocumentCode;
     private string selectedDocumentType = DocumentNumbering.DocumentTypeOi;
+    private int documentNumberRequestId;
 
     private string CurrentDocumentTypeLabel => ResolveDocumentTypeLabel(selectedDocumentType);
 
@@ -267,16 +268,25 @@ else if (!string.IsNullOrEmpty(documentNumberError))
 
     private async Task UpdateDocumentNumberPreviewAsync()
     {
+        var requestId = System.Threading.Interlocked.Increment(ref documentNumberRequestId);
         documentNumberError = null;
         nextDocumentCode = null;
-        selectedDocumentType = NormalizeDocumentTypeOrDefault(selectedDocumentType);
+        var normalizedType = NormalizeDocumentTypeOrDefault(selectedDocumentType);
+        selectedDocumentType = normalizedType;
         formModel.DocumentType = selectedDocumentType;
 
         isLoadingDocumentNumber = true;
 
         try
         {
-            nextDocumentCode = await DocumentUploader.GetNextDocumentCodeAsync(selectedDocumentType);
+            var preview = await DocumentUploader.GetNextDocumentCodeAsync(selectedDocumentType);
+
+            if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
+            {
+                return;
+            }
+
+            nextDocumentCode = preview;
 
             if (string.IsNullOrEmpty(nextDocumentCode))
             {
@@ -285,12 +295,21 @@ else if (!string.IsNullOrEmpty(documentNumberError))
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to compute next document number for type {DocumentType}.", selectedDocumentType);
+            Logger.LogError(ex, "Failed to compute next document number for type {DocumentType}.", normalizedType);
+
+            if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
+            {
+                return;
+            }
+
             documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาลองใหม่";
         }
         finally
         {
-            isLoadingDocumentNumber = false;
+            if (requestId == System.Threading.Volatile.Read(ref documentNumberRequestId))
+            {
+                isLoadingDocumentNumber = false;
+            }
         }
     }
 
