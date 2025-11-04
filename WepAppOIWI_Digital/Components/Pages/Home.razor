@@ -28,7 +28,7 @@
     <div class="card-body tab-content pt-3">
         <div class="tab-pane fade show active" id="searchTab" role="tabpanel" aria-labelledby="search-tab">
             <div class="row g-2 align-items-center">
-                <div class="col-12 col-md-6">
+                <div class="col-12 col-lg-6">
                     <label class="form-label visually-hidden" for="documentSearch">ค้นหาเอกสาร</label>
                     <input id="documentSearch"
                            class="form-control"
@@ -36,7 +36,15 @@
                            @bind="searchTerm"
                            @bind:event="oninput" />
                 </div>
-                <div class="col-auto">
+                <div class="col-auto d-flex align-items-center gap-2">
+                    <button type="button"
+                            class="btn btn-outline-secondary"
+                            data-bs-toggle="modal"
+                            data-bs-target="#filterModal"
+                            title="ตัวกรองเพิ่มเติม">
+                        <span aria-hidden="true">⚙️</span>
+                        <span class="visually-hidden">เปิดตัวกรองเพิ่มเติม</span>
+                    </button>
                     <button type="button"
                             class="btn btn-outline-secondary"
                             @onclick="ClearAllFilters"
@@ -50,57 +58,80 @@
                     </small>
                 </div>
             </div>
-            <div class="row g-2 mt-3">
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="typeFilter">ประเภทเอกสาร</label>
-                    <select id="typeFilter" class="form-select" @bind="selectedDocumentType">
-                        <option value="">ทุกประเภท</option>
-                        @foreach (var docType in GetAvailableDocumentTypes())
-                        {
-                            <option value="@docType">@docType</option>
-                        }
-                    </select>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="filterModal" tabindex="-1" aria-labelledby="filterModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="filterModalLabel">ตัวกรองเพิ่มเติม</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="container-fluid">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6 col-lg-4">
+                            <label class="form-label" for="typeFilter">ประเภทเอกสาร</label>
+                            <select id="typeFilter" class="form-select" @bind="selectedDocumentType">
+                                <option value="">ทุกประเภท</option>
+                                @foreach (var docType in GetAvailableDocumentTypes())
+                                {
+                                    <option value="@docType">@docType</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-4">
+                            <label class="form-label" for="lineFilter">Line</label>
+                            <select id="lineFilter" class="form-select" @bind="selectedLine">
+                                <option value="">ทุก Line</option>
+                                @foreach (var line in GetAvailableLines())
+                                {
+                                    <option value="@line">@line</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-4">
+                            <label class="form-label" for="stationFilter">Station</label>
+                            <select id="stationFilter" class="form-select" @bind="selectedStation">
+                                <option value="">ทุก Station</option>
+                                @foreach (var station in GetAvailableStations())
+                                {
+                                    <option value="@station">@station</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-4">
+                            <label class="form-label" for="modelFilter">Model</label>
+                            <select id="modelFilter" class="form-select" @bind="selectedModel">
+                                <option value="">ทุก Model</option>
+                                @foreach (var model in GetAvailableModels())
+                                {
+                                    <option value="@model">@model</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-4">
+                            <label class="form-label" for="uploaderFilter">ผู้บันทึก</label>
+                            <select id="uploaderFilter" class="form-select" @bind="selectedUploader">
+                                <option value="">ทุกผู้บันทึก</option>
+                                @foreach (var uploader in GetAvailableUploaders())
+                                {
+                                    <option value="@uploader">@uploader</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
                 </div>
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="lineFilter">Line</label>
-                    <select id="lineFilter" class="form-select" @bind="selectedLine">
-                        <option value="">ทุก Line</option>
-                        @foreach (var line in GetAvailableLines())
-                        {
-                            <option value="@line">@line</option>
-                        }
-                    </select>
-                </div>
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="stationFilter">Station</label>
-                    <select id="stationFilter" class="form-select" @bind="selectedStation">
-                        <option value="">ทุก Station</option>
-                        @foreach (var station in GetAvailableStations())
-                        {
-                            <option value="@station">@station</option>
-                        }
-                    </select>
-                </div>
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="modelFilter">Model</label>
-                    <select id="modelFilter" class="form-select" @bind="selectedModel">
-                        <option value="">ทุก Model</option>
-                        @foreach (var model in GetAvailableModels())
-                        {
-                            <option value="@model">@model</option>
-                        }
-                    </select>
-                </div>
-                <div class="col-12 col-md-3">
-                    <label class="form-label" for="uploaderFilter">ผู้บันทึก</label>
-                    <select id="uploaderFilter" class="form-select" @bind="selectedUploader">
-                        <option value="">ทุกผู้บันทึก</option>
-                        @foreach (var uploader in GetAvailableUploaders())
-                        {
-                            <option value="@uploader">@uploader</option>
-                        }
-                    </select>
-                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" @onclick="ClearAllFilters">
+                    ล้างตัวกรองทั้งหมด
+                </button>
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
+                    ปิดหน้าต่าง
+                </button>
             </div>
         </div>
     </div>
