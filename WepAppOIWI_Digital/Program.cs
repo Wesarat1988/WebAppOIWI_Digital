@@ -3,10 +3,18 @@ using WepAppOIWI_Digital.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Net.Http.Headers;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+
+var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+if (string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase))
+{
+    // Disable hosting startup injection so dotnet-watch's browser refresh script isn't wired up
+    Environment.SetEnvironmentVariable(WebHostDefaults.HostingStartupAssembliesKey, string.Empty);
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
