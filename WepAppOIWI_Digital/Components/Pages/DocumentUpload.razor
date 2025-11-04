@@ -61,7 +61,7 @@ else
         <label class="form-label">ประเภทเอกสาร</label>
         <InputSelect class="form-select"
                      @bind-Value="SelectedDocumentType"
-                     @bind-Value:event="oninput">
+                     @bind-Value:event="onchange">
             @foreach (var documentType in DocumentNumbering.KnownTypes)
             {
                 <option value="@documentType">@documentType</option>
@@ -96,7 +96,7 @@ else
         <InputText class="form-control"
                    placeholder="ใส่ Machine name สำหรับเอกสาร WI"
                    @bind-Value="formModel.MachineName"
-                   disabled="@(!IsWiSelected)" />
+                   disabled="@(!IsWiSelected ? string.Empty : null)" />
         <ValidationMessage For="() => formModel.MachineName" />
         @if (!IsWiSelected)
         {
@@ -282,20 +282,7 @@ else
     private string SelectedDocumentType
     {
         get => selectedDocumentType;
-        set
-        {
-            var normalized = NormalizeDocumentTypeOrDefault(value);
-            if (string.Equals(selectedDocumentType, normalized, StringComparison.Ordinal)) return;
-
-            // อัปเดตสถานะ (รวมถึง formModel) ให้เสร็จทันที
-            ApplySelectedDocumentType(normalized);
-
-            // เรนเดอร์ใหม่ทันทีเพื่อให้ disabled เปลี่ยนเป็น false ทันทีเมื่อเลือก WI
-            InvokeAsync(StateHasChanged);
-
-            // ค่อยไปโหลดเลขตัวอย่างแบบ async (ไม่บล็อค UI)
-            _ = UpdateDocumentNumberPreviewAsync();
-        }
+        set => _ = HandleDocumentTypeChangedAsync(value);
     }
 
     private async Task HandleDocumentTypeChangedAsync(string? value)
@@ -426,7 +413,7 @@ else
     }
 
     private bool IsWiSelected
-        => string.Equals(selectedDocumentType, DocumentNumbering.DocumentTypeWi, StringComparison.OrdinalIgnoreCase);
+        => string.Equals(formModel.DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase);
 
     private sealed class UploadFormModel : IValidatableObject
     {

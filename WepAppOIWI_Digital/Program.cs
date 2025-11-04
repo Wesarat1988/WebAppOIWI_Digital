@@ -37,6 +37,21 @@ if (!app.Environment.IsDevelopment())
 
 // app.UseHttpsRedirection(); // »Ô´¶éÒÂÑ§ãªé http
 
+// Disable the browser refresh script to avoid certificate prompts when running without HTTPS
+app.Use(async (ctx, next) =>
+{
+    var path = ctx.Request.Path.Value ?? string.Empty;
+    if (path.Contains("/_framework/aspnetcore-browser-refresh.js", StringComparison.OrdinalIgnoreCase)
+        || path.Contains("aspnetcore-browser-refresh.js", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        await ctx.Response.WriteAsync("// browser-refresh disabled");
+        return;
+    }
+
+    await next();
+});
+
 app.UseStaticFiles();
 app.UseAntiforgery();
 
@@ -51,20 +66,6 @@ app.MapGet("/documents/file/{token}", (HttpContext context, string token, Docume
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
-
-// kill browser refresh ...
-app.Use(async (ctx, next) =>
-{
-    var path = ctx.Request.Path.Value ?? "";
-    if (path.Contains("/_framework/aspnetcore-browser-refresh.js", StringComparison.OrdinalIgnoreCase)
-        || path.Contains("aspnetcore-browser-refresh.js", StringComparison.OrdinalIgnoreCase))
-    {
-        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-        await ctx.Response.WriteAsync("// browser-refresh disabled");
-        return;
-    }
-    await next();
-});
 
 app.Run();
 
