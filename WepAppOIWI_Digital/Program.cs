@@ -2,10 +2,20 @@ using WepAppOIWI_Digital.Components;
 using WepAppOIWI_Digital.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Net.Http.Headers;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Net.Http.Headers;
+
+var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+if (string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase))
+{
+    // Disable hosting startup injection so dotnet-watch's browser refresh script isn't wired up
+    var hostingStartupEnvVar = $"ASPNETCORE_{WebHostDefaults.HostingStartupAssembliesKey.ToUpperInvariant()}";
+    Environment.SetEnvironmentVariable(hostingStartupEnvVar, string.Empty);
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,6 +47,21 @@ if (!app.Environment.IsDevelopment())
 
 // app.UseHttpsRedirection(); // »Ô´¶éÒÂÑ§ãªé http
 
+// Disable the browser refresh script to avoid certificate prompts when running without HTTPS
+app.Use(async (ctx, next) =>
+{
+    var path = ctx.Request.Path.Value ?? string.Empty;
+    if (path.Contains("/_framework/aspnetcore-browser-refresh.js", StringComparison.OrdinalIgnoreCase)
+        || path.Contains("aspnetcore-browser-refresh.js", StringComparison.OrdinalIgnoreCase))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        await ctx.Response.WriteAsync("// browser-refresh disabled");
+        return;
+    }
+
+    await next();
+});
+
 app.UseStaticFiles();
 app.UseAntiforgery();
 
@@ -51,20 +76,6 @@ app.MapGet("/documents/file/{token}", (HttpContext context, string token, Docume
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
-
-// kill browser refresh ...
-app.Use(async (ctx, next) =>
-{
-    var path = ctx.Request.Path.Value ?? "";
-    if (path.Contains("/_framework/aspnetcore-browser-refresh.js", StringComparison.OrdinalIgnoreCase)
-        || path.Contains("aspnetcore-browser-refresh.js", StringComparison.OrdinalIgnoreCase))
-    {
-        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-        await ctx.Response.WriteAsync("// browser-refresh disabled");
-        return;
-    }
-    await next();
-});
 
 app.Run();
 

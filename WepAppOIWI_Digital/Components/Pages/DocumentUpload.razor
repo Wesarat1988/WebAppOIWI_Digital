@@ -95,13 +95,8 @@ else
         <label class="form-label">Machine name <span class="text-muted">(ระบุเมื่อเป็นเอกสารประเภท WI)</span></label>
         <InputText class="form-control"
                    placeholder="ใส่ Machine name สำหรับเอกสาร WI"
-                   @bind-Value="formModel.MachineName"
-                   disabled="@(!IsWiSelected)" />
+                   @bind-Value="formModel.MachineName" />
         <ValidationMessage For="() => formModel.MachineName" />
-        @if (!IsWiSelected)
-        {
-            <div class="form-text">เลือกประเภทเอกสารเป็น WI เพื่อกรอก Machine name</div>
-        }
     </div>
 
     <div class="mb-3 mt-3">
@@ -390,11 +385,6 @@ else
     {
         selectedDocumentType = newType;
         formModel.DocumentType = newType;
-
-        if (!IsWiSelected)
-        {
-            formModel.MachineName = null;
-        }
     }
 
     private static string ResolveDocumentTypeLabel(string? value)
@@ -411,9 +401,6 @@ else
 
         return normalized;
     }
-
-    private bool IsWiSelected
-        => string.Equals(formModel.DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase);
 
     private sealed class UploadFormModel : IValidatableObject
     {
