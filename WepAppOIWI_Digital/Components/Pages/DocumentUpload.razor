@@ -41,9 +41,8 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     <div class="mb-3">
         <label class="form-label">ประเภทเอกสาร</label>
         <InputSelect class="form-select"
-                     Value="@formModel.DocumentType"
-                     ValueChanged="HandleDocumentTypeChanged"
-                     ValueExpression="() => formModel.DocumentType">
+                     @bind-Value="SelectedDocumentType"
+                     @bind-Value:event="onchange">
             @foreach (var documentType in DocumentNumbering.KnownTypes)
             {
                 <option value="@documentType">@documentType</option>
@@ -241,14 +240,18 @@ else if (!string.IsNullOrEmpty(documentNumberError))
         Navigation.NavigateTo("/");
     }
 
-    private async Task HandleDocumentTypeChanged(string? documentType)
+    private string SelectedDocumentType
     {
-        var normalized = DocumentNumbering.NormalizeType(documentType);
-        formModel.DocumentType = DocumentNumbering.IsKnownType(normalized)
-            ? normalized
-            : DocumentNumbering.DocumentTypeOi;
+        get => formModel.DocumentType ?? DocumentNumbering.DocumentTypeOi;
+        set
+        {
+            var normalized = DocumentNumbering.NormalizeType(value);
+            formModel.DocumentType = DocumentNumbering.IsKnownType(normalized)
+                ? normalized
+                : DocumentNumbering.DocumentTypeOi;
 
-        await UpdateDocumentNumberPreviewAsync();
+            _ = InvokeAsync(UpdateDocumentNumberPreviewAsync);
+        }
     }
 
     private async Task UpdateDocumentNumberPreviewAsync()
