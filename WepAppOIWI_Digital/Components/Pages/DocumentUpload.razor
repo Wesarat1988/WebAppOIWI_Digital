@@ -250,18 +250,25 @@ else if (!string.IsNullOrEmpty(documentNumberError))
     private string SelectedDocumentType
     {
         get => selectedDocumentType;
-        set
+        set => _ = HandleDocumentTypeChangedAsync(value);
+    }
+
+    private async Task HandleDocumentTypeChangedAsync(string? value)
+    {
+        var normalized = NormalizeDocumentTypeOrDefault(value);
+
+        if (string.Equals(selectedDocumentType, normalized, System.StringComparison.Ordinal))
         {
-            var normalized = NormalizeDocumentTypeOrDefault(value);
-
-            if (string.Equals(selectedDocumentType, normalized, System.StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            ApplySelectedDocumentType(normalized);
-            _ = InvokeAsync(UpdateDocumentNumberPreviewAsync);
+            return;
         }
+
+        ApplySelectedDocumentType(normalized);
+        documentNumberError = null;
+        nextDocumentCode = null;
+        isLoadingDocumentNumber = true;
+
+        await InvokeAsync(StateHasChanged);
+        await UpdateDocumentNumberPreviewAsync();
     }
 
     private async Task UpdateDocumentNumberPreviewAsync()
@@ -308,6 +315,8 @@ else if (!string.IsNullOrEmpty(documentNumberError))
                 isLoadingDocumentNumber = false;
             }
         }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private void ApplySelectedDocumentType(string newType)
