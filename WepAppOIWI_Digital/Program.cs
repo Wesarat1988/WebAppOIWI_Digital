@@ -19,6 +19,12 @@ if (string.Equals(environmentName, Environments.Development, StringComparison.Or
 
 var builder = WebApplication.CreateBuilder(args);
 
+if (builder.Environment.IsDevelopment())
+{
+    // Disable hosting startup injection so dotnet-watch's browser refresh script isn't wired up
+    builder.WebHost.UseSetting(WebHostDefaults.HostingStartupAssembliesKey, string.Empty);
+}
+
 builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
 builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
 builder.Services.AddSingleton<DocumentCatalogService>();
