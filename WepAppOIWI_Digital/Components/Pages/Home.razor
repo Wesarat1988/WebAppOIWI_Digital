@@ -176,13 +176,14 @@ else
                     <th scope="col">Time</th>
                     <th scope="col">Name</th>
                     <th scope="col">Comment</th>
+                    <th scope="col" class="text-center" style="width: 140px;">การจัดการ</th>
                 </tr>
             </thead>
             <tbody>
                 @if (filteredDocuments.Count == 0)
                 {
                     <tr>
-                        <td colspan="10" class="text-center text-muted py-4">
+                        <td colspan="11" class="text-center text-muted py-4">
                             @(documents.Count == 0
                                 ? "ยังไม่มีไฟล์สำหรับแสดงผล"
                                 : "ไม่พบเอกสารที่ตรงกับคำค้นหา")
@@ -195,6 +196,7 @@ else
                     {
                         var document = filteredDocuments[index];
                         var viewerUrl = BuildViewerUrl(document);
+                        var editUrl = BuildEditUrl(document);
                         <tr>
                             <td>@(index + 1)</td>
                             <td>@(DisplayOrDash(document.DocumentCode))</td>
@@ -219,6 +221,16 @@ else
                             <td>@FormatTimestamp(document.UpdatedAt)</td>
                             <td>@(DisplayOrDash(document.UploadedBy))</td>
                             <td>@(DisplayOrDash(document.Comment))</td>
+                            <td class="text-center">
+                                @if (!string.IsNullOrEmpty(editUrl))
+                                {
+                                    <NavLink class="btn btn-sm btn-outline-primary" href="@editUrl">แก้ไข</NavLink>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">-</span>
+                                }
+                            </td>
                         </tr>
                     }
                 }
@@ -294,6 +306,25 @@ else
         {
             Logger.LogWarning(ex, "Failed to build viewer link for document '{DocumentName}'.", document.FileName);
             return document.LinkUrl;
+        }
+    }
+
+    private string? BuildEditUrl(DocumentRecord document)
+    {
+        if (string.IsNullOrWhiteSpace(document.FileName))
+        {
+            return null;
+        }
+
+        try
+        {
+            var token = DocumentCatalogService.EncodeDocumentToken(document.FileName);
+            return $"/documents/edit/{Uri.EscapeDataString(token)}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to build edit link for document '{DocumentName}'.", document.FileName);
+            return null;
         }
     }
 

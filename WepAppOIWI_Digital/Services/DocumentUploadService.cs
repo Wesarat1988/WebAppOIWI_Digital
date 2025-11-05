@@ -160,6 +160,132 @@ public sealed class DocumentUploadService
         }
     }
 
+    public async Task<DocumentUpdateResult> UpdateAsync(DocumentUpdateRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request is null)
+        {
+            throw new ArgumentNullException(nameof(request));
+        }
+
+        await _uploadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var normalizedPath = NormalizeManifestPath(request.NormalizedPath);
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                return DocumentUpdateResult.Failed("ไม่พบเอกสารที่ต้องการแก้ไข");
+            }
+
+            var context = await _catalogService.EnsureCatalogContextAsync(cancellationToken).ConfigureAwait(false);
+            var rootPath = context.ActiveRootPath;
+
+            if (string.IsNullOrWhiteSpace(rootPath))
+            {
+                _logger.LogWarning("Cannot update document because the catalog root path is not configured.");
+                return DocumentUpdateResult.Failed("ยังไม่ได้กำหนดโฟลเดอร์สำหรับเก็บเอกสาร OI/WI");
+            }
+
+            var rootFullPath = Path.GetFullPath(rootPath);
+            var manifestPath = Path.Combine(rootPath, GetManifestFileName());
+            var manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+
+            var existingIndex = manifest.Documents.FindIndex(entry =>
+                string.Equals(NormalizeManifestPath(entry.FileName), normalizedPath, StringComparison.OrdinalIgnoreCase));
+
+            if (existingIndex < 0)
+            {
+                return DocumentUpdateResult.Failed("ไม่พบเอกสารที่ต้องการแก้ไข");
+            }
+
+            var existingEntry = manifest.Documents[existingIndex];
+            var existingNormalizedType = DocumentNumbering.NormalizeType(existingEntry.DocumentType);
+            var requestedType = DocumentNumbering.NormalizeType(request.DocumentType);
+
+            if (!string.Equals(existingNormalizedType, requestedType, StringComparison.OrdinalIgnoreCase))
+            {
+                return DocumentUpdateResult.Failed("ไม่สามารถเปลี่ยนประเภทเอกสารได้ในการแก้ไข");
+            }
+
+            var relativeWithSystemSeparators = normalizedPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+            var candidatePath = Path.GetFullPath(Path.Combine(rootFullPath, relativeWithSystemSeparators));
+
+            if (!IsPathWithinRoot(rootFullPath, candidatePath))
+            {
+                _logger.LogWarning("Requested update path '{Path}' is outside of the catalog root '{Root}'.", candidatePath, rootFullPath);
+                return DocumentUpdateResult.Failed("ไม่สามารถแก้ไขไฟล์นอกโฟลเดอร์ที่กำหนดได้");
+            }
+
+            var destinationDirectory = Path.GetDirectoryName(candidatePath);
+            if (!string.IsNullOrEmpty(destinationDirectory))
+            {
+                try
+                {
+                    Directory.CreateDirectory(destinationDirectory);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to ensure destination directory '{Directory}' exists before updating document.", destinationDirectory);
+                    return DocumentUpdateResult.Failed("ไม่สามารถสร้างโฟลเดอร์สำหรับไฟล์ได้");
+                }
+            }
+
+            if (request.Content is not null)
+            {
+                try
+                {
+                    if (request.Content.CanSeek)
+                    {
+                        request.Content.Seek(0, SeekOrigin.Begin);
+                    }
+
+                    await using var targetStream = File.Create(candidatePath);
+                    await request.Content.CopyToAsync(targetStream, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to replace document content at '{Destination}'.", candidatePath);
+                    return DocumentUpdateResult.Failed("ไม่สามารถบันทึกไฟล์ที่แก้ไขได้ กรุณาลองใหม่อีกครั้ง");
+                }
+            }
+
+            var metadataRequest = new DocumentUploadRequest(
+                DisplayName: request.DisplayName!,
+                DocumentType: existingNormalizedType,
+                Line: request.Line,
+                Station: request.Station,
+                Model: request.Model,
+                MachineName: request.MachineName,
+                UploadedBy: request.UploadedBy,
+                Comment: request.Comment,
+                OriginalFileName: Path.GetFileName(candidatePath),
+                Content: Stream.Null,
+                UploadedAt: request.UpdatedAt);
+
+            var manifestUpdateResult = await UpdateManifestAsync(
+                    manifestPath,
+                    manifest,
+                    normalizedPath,
+                    metadataRequest,
+                    existingNormalizedType,
+                    existingEntry.SequenceNumber,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!manifestUpdateResult.Succeeded)
+            {
+                return DocumentUpdateResult.Failed("ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
+            }
+
+            _catalogService.InvalidateCache();
+
+            return DocumentUpdateResult.Success(normalizedPath, manifestUpdateResult.DocumentType, manifestUpdateResult.SequenceNumber, manifestUpdateResult.DocumentCode);
+        }
+        finally
+        {
+            _uploadLock.Release();
+        }
+    }
+
     public async Task<string?> GetNextDocumentCodeAsync(string? documentType, CancellationToken cancellationToken = default)
     {
         var normalizedType = DocumentNumbering.NormalizeType(documentType);
@@ -338,6 +464,37 @@ public sealed class DocumentUploadService
             ? "index.json"
             : _options.ManifestFileName!;
 
+    private static string NormalizeManifestPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        return path
+            .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Trim()
+            .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+    }
+
+    private static bool IsPathWithinRoot(string rootPath, string candidatePath)
+    {
+        if (string.IsNullOrEmpty(rootPath) || string.IsNullOrEmpty(candidatePath))
+        {
+            return false;
+        }
+
+        var normalizedRoot = EnsureTrailingSeparator(Path.GetFullPath(rootPath));
+        var normalizedCandidate = Path.GetFullPath(candidatePath);
+
+        return normalizedCandidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string EnsureTrailingSeparator(string path)
+        => path.EndsWith(Path.DirectorySeparatorChar)
+            ? path
+            : path + Path.DirectorySeparatorChar;
+
     private static int CalculateNextSequence(IReadOnlyCollection<ManifestEntry> entries, string normalizedDocumentType)
     {
         var max = 0;
@@ -429,6 +586,28 @@ public sealed record DocumentUploadResult(bool Succeeded, string? NormalizedPath
         => new(true, normalizedPath, null, documentType, sequenceNumber, documentCode);
 
     public static DocumentUploadResult Failed(string error)
+        => new(false, null, error, null, null, null);
+}
+
+public sealed record DocumentUpdateRequest(
+    string NormalizedPath,
+    string DisplayName,
+    string DocumentType,
+    string? Line,
+    string? Station,
+    string? Model,
+    string? MachineName,
+    string? UploadedBy,
+    string? Comment,
+    Stream? Content,
+    DateTimeOffset UpdatedAt);
+
+public sealed record DocumentUpdateResult(bool Succeeded, string? NormalizedPath, string? ErrorMessage, string? DocumentType, int? SequenceNumber, string? DocumentCode)
+{
+    public static DocumentUpdateResult Success(string normalizedPath, string? documentType, int? sequenceNumber, string? documentCode)
+        => new(true, normalizedPath, null, documentType, sequenceNumber, documentCode);
+
+    public static DocumentUpdateResult Failed(string error)
         => new(false, null, error, null, null, null);
 }
 

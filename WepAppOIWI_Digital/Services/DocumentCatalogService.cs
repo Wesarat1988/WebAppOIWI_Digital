@@ -108,6 +108,26 @@ public sealed class DocumentCatalogService : IDisposable
         return records;
     }
 
+     public async Task<DocumentRecord?> TryGetDocumentAsync(string? normalizedPath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            return null;
+        }
+
+        var comparisonPath = normalizedPath
+            .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Trim();
+
+        var records = await GetDocumentsAsync(cancellationToken).ConfigureAwait(false);
+
+        return records.FirstOrDefault(record =>
+            string.Equals(
+                record.FileName?.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                comparisonPath,
+                StringComparison.OrdinalIgnoreCase));
+    }
+
     public DocumentCatalogContext GetCatalogContext()
         => Volatile.Read(ref _currentContext);
 
