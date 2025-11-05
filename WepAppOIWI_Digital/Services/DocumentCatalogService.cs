@@ -108,7 +108,7 @@ public sealed class DocumentCatalogService : IDisposable
         return records;
     }
 
-    public async Task<DocumentRecord?> TryGetDocumentAsync(string? normalizedPath, CancellationToken cancellationToken = default)
+     public async Task<DocumentRecord?> TryGetDocumentAsync(string? normalizedPath, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(normalizedPath))
         {
