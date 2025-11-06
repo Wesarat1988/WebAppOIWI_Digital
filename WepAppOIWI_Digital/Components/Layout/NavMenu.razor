@@ -1,0 +1,16 @@
+@using Microsoft.AspNetCore.Components.Routing
+
+<nav class="menu" role="navigation" aria-label="Primary">
+    <NavLink href="/" Match="NavLinkMatch.All" class="menu__item">
+        <i class="bi bi-house-door" aria-hidden="true"></i>
+        <span class="menu__text">Home</span>
+    </NavLink>
+    <NavLink href="/counter" class="menu__item">
+        <i class="bi bi-file-earmark-medical" aria-hidden="true"></i>
+        <span class="menu__text">OI/WI</span>
+    </NavLink>
+    <NavLink href="/setup" class="menu__item">
+        <i class="bi bi-gear" aria-hidden="true"></i>
+        <span class="menu__text">Setup</span>
+    </NavLink>
+</nav>
