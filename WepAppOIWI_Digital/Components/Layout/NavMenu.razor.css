@@ -1,0 +1,31 @@
+.menu {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem 0.25rem 1.25rem;
+}
+
+.menu ::deep .menu__item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.75rem;
+    color: inherit;
+    text-decoration: none;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.menu ::deep .menu__item:hover {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+.menu ::deep .menu__item.active {
+    background-color: rgba(255, 255, 255, 0.28);
+    color: #0f172a;
+    font-weight: 600;
+}
+
+.menu ::deep .bi {
+    font-size: 1.1rem;
+}

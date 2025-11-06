@@ -3,7 +3,6 @@
 @using System.Collections.Generic
 @using System.ComponentModel.DataAnnotations
 @inject DocumentUploadService DocumentUploader
-@inject DocumentCatalogService Catalog
 @inject NavigationManager Navigation
 @inject ILogger<WepAppOIWI_Digital.Components.Pages.DocumentUpload> Logger
 
@@ -11,11 +10,10 @@
 
 <h1 class="mb-2">➕ เพิ่มเอกสาร OI/WI</h1>
 
-@* ---- เลขเอกสารถัดไป: แสดงตามประเภทที่เลือกเพียงอันเดียว ---- *@
 @if (isLoadingDocumentNumbers)
 {
     <div class="alert alert-secondary d-inline-flex align-items-center gap-2" role="status">
-        <span>กำลังคำนวณเลขเอกสาร...</span>
+        <span>กำลังคำนวณเลขเอกสารสำหรับประเภท OI และ WI...</span>
     </div>
 }
 else
@@ -25,23 +23,26 @@ else
         <div class="alert alert-warning" role="alert">@documentNumberError</div>
     }
 
-    <div class="d-flex flex-wrap gap-3 mb-3">
-        @{
-            var label = ResolveDocumentTypeLabel(selectedDocumentType);
-            var previewCode = GetDocumentCodeForType(selectedDocumentType);
-        }
+    <div class="row g-3 mb-3">
+        @foreach (var documentType in DocumentNumbering.KnownTypes)
+        {
+            var label = ResolveDocumentTypeLabel(documentType);
+            var previewCode = GetDocumentCodeForType(documentType);
 
-        <span class="badge rounded-pill text-bg-primary px-3 py-2">
-            เลขเอกสารถัดไป (@label):
-            @if (!string.IsNullOrEmpty(previewCode))
-            {
-                <strong>@previewCode</strong>
-            }
-            else
-            {
-                <span class="text-light opacity-75">ไม่พร้อมใช้งาน</span>
-            }
-        </span>
+            <div class="col-md-6">
+                <div class="@GetDocumentTypeAlertClass(documentType)" role="status">
+                    <span>เลขเอกสารถัดไป (@label):</span>
+                    @if (!string.IsNullOrEmpty(previewCode))
+                    {
+                        <strong>@previewCode</strong>
+                    }
+                    else
+                    {
+                        <span class="text-muted">ไม่พร้อมใช้งาน</span>
+                    }
+                </div>
+            </div>
+        }
     </div>
 }
 
@@ -229,18 +230,13 @@ else
                 }
             }
 
-            // เคลียร์ฟอร์ม
             formModel.Reset();
             selectedFile = null;
             selectedFileName = null;
 
-            // โหลดเลขถัดไปใหม่ (ตามประเภทปัจจุบัน)
             ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
             await UpdateDocumentNumberPreviewAsync();
 
-            // ✅ เคลียร์แคชรายการเอกสาร และกลับหน้า Home เพื่อเห็นผลทันที
-            Catalog.InvalidateCache();
-            Navigation.NavigateTo("/", forceLoad: true);
         }
         catch (IOException ex)
         {
@@ -274,7 +270,11 @@ else
         }
     }
 
-    private void NavigateHome() => Navigation.NavigateTo("/");
+    private void NavigateHome()
+    {
+        Navigation.NavigateTo("/");
+    }
+
 
     private string SelectedDocumentType
     {
@@ -311,23 +311,53 @@ else
 
         try
         {
-            // ดึงเฉพาะประเภทที่รู้จัก (ยังคงคำนวณไว้ล่วงหน้าได้ จะได้สลับประเภทแล้วแสดงทันที)
+            var failedTypes = new List<string>();
+
             foreach (var documentType in DocumentNumbering.KnownTypes)
             {
                 var normalizedType = NormalizeDocumentTypeOrDefault(documentType);
                 var preview = await DocumentUploader.GetNextDocumentCodeAsync(normalizedType);
 
                 if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
+                {
                     return;
+                }
 
-                nextDocumentCodes[normalizedType] = preview;
+                if (!string.IsNullOrEmpty(preview))
+                {
+                    nextDocumentCodes[normalizedType] = preview;
+                }
+                else
+                {
+                    failedTypes.Add(normalizedType);
+                }
+            }
+
+            if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
+            {
+                return;
+            }
+
+            if (failedTypes.Count == DocumentNumbering.KnownTypes.Count)
+            {
+                documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาตรวจสอบการตั้งค่าโฟลเดอร์";
+            }
+            else if (failedTypes.Count > 0)
+            {
+                var labels = failedTypes.Select(ResolveDocumentTypeLabel);
+                documentNumberError = $"ไม่สามารถคำนวณเลขเอกสารถัดไปสำหรับประเภท: {string.Join(", ", labels)}";
+
             }
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to compute next document numbers.");
+            Logger.LogError(ex, "Failed to compute next document numbers for known types.");
+
             if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
+            {
                 return;
+            }
+
 
             documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาลองใหม่";
         }
@@ -347,6 +377,15 @@ else
         return nextDocumentCodes.TryGetValue(normalized, out var code) ? code : null;
     }
 
+    private string GetDocumentTypeAlertClass(string documentType)
+    {
+        var normalized = NormalizeDocumentTypeOrDefault(documentType);
+        var isSelected = string.Equals(selectedDocumentType, normalized, StringComparison.OrdinalIgnoreCase);
+        var tone = isSelected ? "alert-primary" : "alert-info";
+        return $"alert {tone} d-inline-flex align-items-center gap-2";
+    }
+
+
     private void ApplySelectedDocumentType(string newType)
     {
         selectedDocumentType = newType;
@@ -359,9 +398,13 @@ else
     private static string NormalizeDocumentTypeOrDefault(string? value)
     {
         var normalized = DocumentNumbering.NormalizeType(value);
-        return DocumentNumbering.IsKnownType(normalized)
-            ? normalized
-            : DocumentNumbering.DocumentTypeOi;
+
+        if (!DocumentNumbering.IsKnownType(normalized))
+        {
+            return DocumentNumbering.DocumentTypeOi;
+        }
+
+        return normalized;
     }
 
     private sealed class UploadFormModel : IValidatableObject
@@ -373,12 +416,24 @@ else
         [Required(ErrorMessage = "กรุณาเลือกประเภทเอกสาร")]
         public string? DocumentType { get; set; } = DocumentNumbering.DocumentTypeOi;
 
-        [StringLength(100)] public string? Line { get; set; }
-        [StringLength(100)] public string? Station { get; set; }
-        [StringLength(100)] public string? Model { get; set; }
-        [StringLength(100)] public string? MachineName { get; set; }
-        [StringLength(100)] public string? UploadedBy { get; set; }
-        [StringLength(500)] public string? Comment { get; set; }
+        [StringLength(100, ErrorMessage = "Line ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? Line { get; set; }
+
+        [StringLength(100, ErrorMessage = "Station ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? Station { get; set; }
+
+        [StringLength(100, ErrorMessage = "Model ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? Model { get; set; }
+
+        [StringLength(100, ErrorMessage = "Machine name ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? MachineName { get; set; }
+
+        [StringLength(100, ErrorMessage = "ชื่อผู้ Upload ต้องไม่เกิน 100 ตัวอักษร")]
+        public string? UploadedBy { get; set; }
+
+        [StringLength(500, ErrorMessage = "Comment ต้องไม่เกิน 500 ตัวอักษร")]
+        public string? Comment { get; set; }
+
 
         public void Reset()
         {
@@ -392,9 +447,9 @@ else
             Comment = null;
         }
 
-        public IEnumerable<ValidationResult> Validate(ValidationContext context)
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            if (string.Equals(DocumentType, DocumentNumbering.DocumentTypeWi, StringComparison.OrdinalIgnoreCase)
+            if (string.Equals(DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
                 && string.IsNullOrWhiteSpace(MachineName))
             {
                 yield return new ValidationResult(

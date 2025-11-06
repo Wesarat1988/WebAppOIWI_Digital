@@ -10,15 +10,9 @@
         <h1 class="mb-1">📄 รายการเอกสาร OI/WI</h1>
         <p class="text-muted mb-0">ข้อมูลนี้ดึงมาจากเอกสารที่เก็บไว้บน Server Local</p>
     </div>
-
-    <div class="d-flex gap-2 mt-2 mt-sm-0">
-        <button type="button" class="btn btn-outline-secondary" @onclick="RefreshNow">
-            รีเฟรช
-        </button>
-        <NavLink class="btn btn-primary" href="/documents/new">
-            ➕ เพิ่มเอกสาร OI/WI
-        </NavLink>
-    </div>
+    <NavLink class="btn btn-primary mt-2 mt-sm-0" href="/documents/new">
+        ➕ เพิ่มเอกสาร OI/WI
+    </NavLink>
 </div>
 
 <div class="card mb-3 shadow-sm">
@@ -500,14 +494,4 @@ else
             }
         }
     }
-
-    private async Task RefreshNow()
-    {
-        DocumentCatalog.InvalidateCache();   // เคลียร์ cache ของ service
-        isLoading = true;
-        StateHasChanged();
-
-        await LoadDocumentsAsync();          // โหลดใหม่จากดิสก์
-    }
-
 }
