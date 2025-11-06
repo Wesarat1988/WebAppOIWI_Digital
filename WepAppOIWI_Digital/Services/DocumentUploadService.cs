@@ -83,7 +83,16 @@ public sealed class DocumentUploadService
             }
 
             var manifestPath = Path.Combine(rootPath, GetManifestFileName());
-            var manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+            ManifestDocument manifest;
+            try
+            {
+                manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+            }
+            catch (DocumentManifestReadException ex)
+            {
+                _logger.LogError(ex, "Cannot upload document because the manifest could not be read.");
+                return DocumentUploadResult.Failed("ไม่สามารถอ่านข้อมูลเอกสารเดิมได้ กรุณาติดต่อผู้ดูแลระบบ");
+            }
 
             int? preferredSequence = null;
             string? documentCode = null;
@@ -95,6 +104,7 @@ public sealed class DocumentUploadService
             }
 
             var destinationRoot = rootPath;
+            var createdDocumentDirectory = false;
 
             if (!string.IsNullOrWhiteSpace(documentCode))
             {
@@ -102,7 +112,15 @@ public sealed class DocumentUploadService
 
                 try
                 {
-                    Directory.CreateDirectory(destinationRoot);
+                    if (!Directory.Exists(destinationRoot))
+                    {
+                        Directory.CreateDirectory(destinationRoot);
+                        createdDocumentDirectory = true;
+                    }
+                    else
+                    {
+                        Directory.CreateDirectory(destinationRoot);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -126,6 +144,11 @@ public sealed class DocumentUploadService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to save uploaded document to '{Destination}'.", destinationPath);
+                TryDeleteFile(destinationPath);
+                if (createdDocumentDirectory)
+                {
+                    TryDeleteDirectoryIfEmpty(destinationRoot);
+                }
                 return DocumentUploadResult.Failed("ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่อีกครั้ง");
             }
 
@@ -143,6 +166,11 @@ public sealed class DocumentUploadService
                 .ConfigureAwait(false);
             if (!manifestUpdateResult.Succeeded)
             {
+                TryDeleteFile(destinationPath);
+                if (createdDocumentDirectory)
+                {
+                    TryDeleteDirectoryIfEmpty(destinationRoot);
+                }
                 return DocumentUploadResult.Failed("บันทึกไฟล์สำเร็จ แต่ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
             }
 
@@ -187,7 +215,16 @@ public sealed class DocumentUploadService
 
             var rootFullPath = Path.GetFullPath(rootPath);
             var manifestPath = Path.Combine(rootPath, GetManifestFileName());
-            var manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+            ManifestDocument manifest;
+            try
+            {
+                manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+            }
+            catch (DocumentManifestReadException ex)
+            {
+                _logger.LogError(ex, "Cannot update document because the manifest could not be read.");
+                return DocumentUpdateResult.Failed("ไม่สามารถอ่านข้อมูลเอกสารเดิมได้ กรุณาติดต่อผู้ดูแลระบบ");
+            }
 
             var existingIndex = manifest.Documents.FindIndex(entry =>
                 string.Equals(NormalizeManifestPath(entry.FileName), normalizedPath, StringComparison.OrdinalIgnoreCase));
@@ -229,10 +266,18 @@ public sealed class DocumentUploadService
                 }
             }
 
+            string? backupPath = null;
+            var fileReplaced = false;
+
             if (request.Content is not null)
             {
                 try
                 {
+                    if (File.Exists(candidatePath))
+                    {
+                        backupPath = CreateBackup(candidatePath);
+                    }
+
                     if (request.Content.CanSeek)
                     {
                         request.Content.Seek(0, SeekOrigin.Begin);
@@ -240,10 +285,17 @@ public sealed class DocumentUploadService
 
                     await using var targetStream = File.Create(candidatePath);
                     await request.Content.CopyToAsync(targetStream, cancellationToken).ConfigureAwait(false);
+                    fileReplaced = true;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to replace document content at '{Destination}'.", candidatePath);
+                    if (!string.IsNullOrEmpty(backupPath))
+                    {
+                        TryRestoreFromBackup(backupPath, candidatePath);
+                        TryDeleteFile(backupPath);
+                        backupPath = null;
+                    }
                     return DocumentUpdateResult.Failed("ไม่สามารถบันทึกไฟล์ที่แก้ไขได้ กรุณาลองใหม่อีกครั้ง");
                 }
             }
@@ -273,7 +325,25 @@ public sealed class DocumentUploadService
 
             if (!manifestUpdateResult.Succeeded)
             {
+                if (!string.IsNullOrEmpty(backupPath))
+                {
+                    TryRestoreFromBackup(backupPath, candidatePath);
+                }
+                else if (fileReplaced && request.Content is not null)
+                {
+                    _logger.LogWarning("Manifest update failed after replacing file '{File}'. Original backup was not available.", candidatePath);
+                }
+
+                if (!string.IsNullOrEmpty(backupPath))
+                {
+                    TryDeleteFile(backupPath);
+                }
                 return DocumentUpdateResult.Failed("ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
+            }
+
+            if (!string.IsNullOrEmpty(backupPath))
+            {
+                TryDeleteFile(backupPath);
             }
 
             _catalogService.InvalidateCache();
@@ -307,7 +377,16 @@ public sealed class DocumentUploadService
             }
 
             var manifestPath = Path.Combine(rootPath, GetManifestFileName());
-            var manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+            ManifestDocument manifest;
+            try
+            {
+                manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+            }
+            catch (DocumentManifestReadException ex)
+            {
+                _logger.LogError(ex, "Failed to preview next document code because the manifest could not be read.");
+                return null;
+            }
 
             var nextSequence = CalculateNextSequence(manifest.Documents, normalizedType);
             return DocumentNumbering.FormatCode(normalizedType, nextSequence);
@@ -394,15 +473,31 @@ public sealed class DocumentUploadService
 
         manifest.Documents.Sort(CompareManifestEntries);
 
+        var manifestDirectory = Path.GetDirectoryName(manifestPath);
+        var tempDirectory = string.IsNullOrEmpty(manifestDirectory) ? Path.GetTempPath() : manifestDirectory;
+        var tempManifestPath = Path.Combine(tempDirectory, $"{Path.GetFileName(manifestPath)}.tmp-{Guid.NewGuid():N}");
+
         try
         {
-            await using var stream = File.Create(manifestPath);
-            await JsonSerializer.SerializeAsync(stream, manifest, _serializerOptions, cancellationToken).ConfigureAwait(false);
+            await using (var stream = File.Create(tempManifestPath))
+            {
+                await JsonSerializer.SerializeAsync(stream, manifest, _serializerOptions, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (!string.IsNullOrEmpty(manifestDirectory) && !Directory.Exists(manifestDirectory))
+            {
+                Directory.CreateDirectory(manifestDirectory);
+            }
+
+            File.Copy(tempManifestPath, manifestPath, overwrite: true);
+            File.Delete(tempManifestPath);
+
             return ManifestUpdateResult.Success(entry.DocumentType, entry.SequenceNumber);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to write manifest '{Manifest}'.", manifestPath);
+            TryDeleteFile(tempManifestPath);
             return ManifestUpdateResult.Failure(entry.DocumentType, entry.SequenceNumber);
         }
     }
@@ -422,8 +517,77 @@ public sealed class DocumentUploadService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to read manifest '{Manifest}', creating a new one.", manifestPath);
-            return new ManifestDocument();
+            throw new DocumentManifestReadException($"Failed to read manifest '{manifestPath}'.", ex);
+        }
+    }
+
+    private static void TryDeleteFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup.
+        }
+    }
+
+    private static void TryDeleteDirectoryIfEmpty(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(path) && !Directory.EnumerateFileSystemEntries(path).Any())
+            {
+                Directory.Delete(path, recursive: false);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup.
+        }
+    }
+
+    private static string CreateBackup(string originalPath)
+    {
+        var directory = Path.GetDirectoryName(originalPath);
+        var fileName = Path.GetFileName(originalPath);
+        var backupName = $"{fileName}.bak-{Guid.NewGuid():N}";
+        var backupPath = string.IsNullOrEmpty(directory)
+            ? Path.Combine(Path.GetTempPath(), backupName)
+            : Path.Combine(directory, backupName);
+
+        File.Copy(originalPath, backupPath, overwrite: true);
+        return backupPath;
+    }
+
+    private void TryRestoreFromBackup(string backupPath, string destinationPath)
+    {
+        try
+        {
+            if (!File.Exists(backupPath))
+            {
+                return;
+            }
+
+            File.Copy(backupPath, destinationPath, overwrite: true);
+        }
+        catch (Exception restoreEx)
+        {
+            _logger.LogError(restoreEx, "Failed to restore original file '{Destination}' from backup '{Backup}'.", destinationPath, backupPath);
         }
     }
 
@@ -629,4 +793,12 @@ internal sealed class ManifestEntry
     public DateTimeOffset? UpdatedAt { get; set; }
     public string? DocumentType { get; set; }
     public int? SequenceNumber { get; set; }
+}
+
+internal sealed class DocumentManifestReadException : Exception
+{
+    public DocumentManifestReadException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
 }
