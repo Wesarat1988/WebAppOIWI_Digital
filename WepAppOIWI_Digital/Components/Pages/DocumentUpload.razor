@@ -3,10 +3,6 @@
 @using System.Collections.Generic
 @using System.ComponentModel.DataAnnotations
 @inject DocumentUploadService DocumentUploader
-<<<<<<< HEAD
-=======
-@inject DocumentCatalogService Catalog
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
 @inject NavigationManager Navigation
 @inject ILogger<WepAppOIWI_Digital.Components.Pages.DocumentUpload> Logger
 
@@ -14,18 +10,10 @@
 
 <h1 class="mb-2">➕ เพิ่มเอกสาร OI/WI</h1>
 
-<<<<<<< HEAD
 @if (isLoadingDocumentNumbers)
 {
     <div class="alert alert-secondary d-inline-flex align-items-center gap-2" role="status">
         <span>กำลังคำนวณเลขเอกสารสำหรับประเภท OI และ WI...</span>
-=======
-@* ---- เลขเอกสารถัดไป: แสดงตามประเภทที่เลือกเพียงอันเดียว ---- *@
-@if (isLoadingDocumentNumbers)
-{
-    <div class="alert alert-secondary d-inline-flex align-items-center gap-2" role="status">
-        <span>กำลังคำนวณเลขเอกสาร...</span>
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
     </div>
 }
 else
@@ -35,7 +23,6 @@ else
         <div class="alert alert-warning" role="alert">@documentNumberError</div>
     }
 
-<<<<<<< HEAD
     <div class="row g-3 mb-3">
         @foreach (var documentType in DocumentNumbering.KnownTypes)
         {
@@ -56,25 +43,6 @@ else
                 </div>
             </div>
         }
-=======
-    <div class="d-flex flex-wrap gap-3 mb-3">
-        @{
-            var label = ResolveDocumentTypeLabel(selectedDocumentType);
-            var previewCode = GetDocumentCodeForType(selectedDocumentType);
-        }
-
-        <span class="badge rounded-pill text-bg-primary px-3 py-2">
-            เลขเอกสารถัดไป (@label):
-            @if (!string.IsNullOrEmpty(previewCode))
-            {
-                <strong>@previewCode</strong>
-            }
-            else
-            {
-                <span class="text-light opacity-75">ไม่พร้อมใช้งาน</span>
-            }
-        </span>
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
     </div>
 }
 
@@ -262,26 +230,15 @@ else
                 }
             }
 
-<<<<<<< HEAD
-=======
-            // เคลียร์ฟอร์ม
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
             formModel.Reset();
             selectedFile = null;
             selectedFileName = null;
 
-<<<<<<< HEAD
             ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
             await UpdateDocumentNumberPreviewAsync();
-=======
-            // โหลดเลขถัดไปใหม่ (ตามประเภทปัจจุบัน)
             ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
             await UpdateDocumentNumberPreviewAsync();
 
-            // ✅ เคลียร์แคชรายการเอกสาร และกลับหน้า Home เพื่อเห็นผลทันที
-            Catalog.InvalidateCache();
-            Navigation.NavigateTo("/", forceLoad: true);
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
         }
         catch (IOException ex)
         {
@@ -315,14 +272,11 @@ else
         }
     }
 
-<<<<<<< HEAD
     private void NavigateHome()
     {
         Navigation.NavigateTo("/");
     }
-=======
-    private void NavigateHome() => Navigation.NavigateTo("/");
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
+
 
     private string SelectedDocumentType
     {
@@ -359,19 +313,17 @@ else
 
         try
         {
-<<<<<<< HEAD
             var failedTypes = new List<string>();
 
-=======
-            // ดึงเฉพาะประเภทที่รู้จัก (ยังคงคำนวณไว้ล่วงหน้าได้ จะได้สลับประเภทแล้วแสดงทันที)
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
+            var failedTypes = new List<string>();
+
+
             foreach (var documentType in DocumentNumbering.KnownTypes)
             {
                 var normalizedType = NormalizeDocumentTypeOrDefault(documentType);
                 var preview = await DocumentUploader.GetNextDocumentCodeAsync(normalizedType);
 
                 if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
-<<<<<<< HEAD
                 {
                     return;
                 }
@@ -399,27 +351,18 @@ else
             {
                 var labels = failedTypes.Select(ResolveDocumentTypeLabel);
                 documentNumberError = $"ไม่สามารถคำนวณเลขเอกสารถัดไปสำหรับประเภท: {string.Join(", ", labels)}";
-=======
-                    return;
 
-                nextDocumentCodes[normalizedType] = preview;
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
             }
         }
         catch (Exception ex)
         {
-<<<<<<< HEAD
             Logger.LogError(ex, "Failed to compute next document numbers for known types.");
 
             if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
             {
                 return;
             }
-=======
-            Logger.LogError(ex, "Failed to compute next document numbers.");
-            if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
-                return;
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
+
 
             documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาลองใหม่";
         }
@@ -439,7 +382,6 @@ else
         return nextDocumentCodes.TryGetValue(normalized, out var code) ? code : null;
     }
 
-<<<<<<< HEAD
     private string GetDocumentTypeAlertClass(string documentType)
     {
         var normalized = NormalizeDocumentTypeOrDefault(documentType);
@@ -448,8 +390,7 @@ else
         return $"alert {tone} d-inline-flex align-items-center gap-2";
     }
 
-=======
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
+
     private void ApplySelectedDocumentType(string newType)
     {
         selectedDocumentType = newType;
@@ -462,7 +403,6 @@ else
     private static string NormalizeDocumentTypeOrDefault(string? value)
     {
         var normalized = DocumentNumbering.NormalizeType(value);
-<<<<<<< HEAD
 
         if (!DocumentNumbering.IsKnownType(normalized))
         {
@@ -470,11 +410,6 @@ else
         }
 
         return normalized;
-=======
-        return DocumentNumbering.IsKnownType(normalized)
-            ? normalized
-            : DocumentNumbering.DocumentTypeOi;
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
     }
 
     private sealed class UploadFormModel : IValidatableObject
@@ -486,7 +421,6 @@ else
         [Required(ErrorMessage = "กรุณาเลือกประเภทเอกสาร")]
         public string? DocumentType { get; set; } = DocumentNumbering.DocumentTypeOi;
 
-<<<<<<< HEAD
         [StringLength(100, ErrorMessage = "Line ต้องไม่เกิน 100 ตัวอักษร")]
         public string? Line { get; set; }
 
@@ -504,14 +438,7 @@ else
 
         [StringLength(500, ErrorMessage = "Comment ต้องไม่เกิน 500 ตัวอักษร")]
         public string? Comment { get; set; }
-=======
-        [StringLength(100)] public string? Line { get; set; }
-        [StringLength(100)] public string? Station { get; set; }
-        [StringLength(100)] public string? Model { get; set; }
-        [StringLength(100)] public string? MachineName { get; set; }
-        [StringLength(100)] public string? UploadedBy { get; set; }
-        [StringLength(500)] public string? Comment { get; set; }
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
+
 
         public void Reset()
         {
@@ -525,15 +452,13 @@ else
             Comment = null;
         }
 
-<<<<<<< HEAD
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
             if (string.Equals(DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
-=======
-        public IEnumerable<ValidationResult> Validate(ValidationContext context)
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            if (string.Equals(DocumentType, DocumentNumbering.DocumentTypeWi, StringComparison.OrdinalIgnoreCase)
->>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
+            if (string.Equals(DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
+
                 && string.IsNullOrWhiteSpace(MachineName))
             {
                 yield return new ValidationResult(
