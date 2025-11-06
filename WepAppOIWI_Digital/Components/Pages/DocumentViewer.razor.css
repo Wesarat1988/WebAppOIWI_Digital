@@ -3,7 +3,7 @@
     height: calc(100vh - 220px);
     max-height: 95vh;
     overflow-y: auto;
-    background-color: #f8f9fa;
+    background-color: var(--brand-bg);
 }
 
 .pdfjs-viewer {

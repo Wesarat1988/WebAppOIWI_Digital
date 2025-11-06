@@ -9,12 +9,12 @@ main {
 }
 
 .sidebar {
-    background-image: linear-gradient(180deg, #0d47a1 0%, #1976d2 55%, #e3f2fd 100%);
+    background-image: linear-gradient(180deg, var(--brand-primary-700) 0%, var(--brand-primary) 60%, var(--brand-primary-100) 100%);
 }
 
 .top-row {
-    background-color: #f7f7f7;
-    border-bottom: 1px solid #d6d5d5;
+    background-color: #f1f5f9;
+    border-bottom: 1px solid var(--brand-border);
     justify-content: flex-end;
     height: 3.5rem;
     display: flex;

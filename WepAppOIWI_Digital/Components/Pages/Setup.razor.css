@@ -1,7 +1,7 @@
-﻿.btn.GetMO {
-    background: linear-gradient(135deg,#6366f1,#4f46e5);
+.btn.GetMO {
+    background: linear-gradient(135deg,var(--brand-primary),var(--brand-primary-700));
     color: #fff;
-    box-shadow: 0 12px 25px rgba(99,102,241,.35);
+    box-shadow: 0 12px 25px rgba(30,80,200,.35);
     border: none;
     /* ปรับให้โค้งมาก */
     border-radius: 9999px; /* สำคัญที่สุด */
@@ -17,20 +17,20 @@
     /* ยกขึ้นนิด ๆ ตอน hover */
     .btn.GetMO:hover {
         transform: translateY(-1px);
-        box-shadow: 0 16px 30px rgba(99,102,241,.45);
+        box-shadow: 0 16px 30px rgba(30,80,200,.45);
     }
 
     /* กดลงนิด ๆ ตอน active */
     .btn.GetMO:active {
         transform: translateY(0) scale(.98);
-        box-shadow: 0 8px 18px rgba(99,102,241,.30);
+        box-shadow: 0 8px 18px rgba(30,80,200,.30);
         filter: brightness(.98);
     }
 
     /* วงแหวนโฟกัสสำหรับคีย์บอร์ด */
     .btn.GetMO:focus-visible {
         outline: none;
-        box-shadow: 0 12px 25px rgba(99,102,241,.35), 0 0 0 4px rgba(99,102,241,.25);
+        box-shadow: 0 12px 25px rgba(30,80,200,.35), 0 0 0 4px rgba(30,80,200,.25);
     }
 
     /* จุดกำเนิด ripple (ตรงกลาง) */
@@ -99,7 +99,7 @@
 
 .subtitle {
     margin: 0.35rem 0 0;
-    color: #64748b;
+    color: var(--brand-muted);
     font-size: 0.95rem;
 }
 
@@ -119,14 +119,14 @@ label span {
     display: block;
     font-size: 0.85rem;
     font-weight: 600;
-    color: #334155;
+    color: var(--brand-text);
     margin-bottom: 0.45rem;
 }
 
 .input {
     width: 100%;
     border-radius: 10px;
-    border: 1px solid #cbd5f5;
+    border: 1px solid var(--brand-border);
     padding: 0.65rem 0.75rem;
     font-size: 1rem;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -134,13 +134,13 @@ label span {
 
     .input:focus {
         outline: none;
-        border-color: #6366f1;
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        border-color: var(--brand-primary);
+        box-shadow: 0 0 0 3px rgba(30, 80, 200, 0.2);
     }
 
     .input[readonly] {
         background: rgba(226, 232, 240, 0.35);
-        color: #475569;
+        color: var(--brand-muted);
     }
 
 .input-with-button {
@@ -170,77 +170,77 @@ label span {
     }
 
     .btn.primary {
-        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-700));
         color: #fff;
         margin-top: 18px;
-        box-shadow: 0 12px 25px rgba(99, 102, 241, 0.35);
+        box-shadow: 0 12px 25px rgba(30, 80, 200, 0.35);
     }
 
         .btn.primary:not(:disabled):hover {
             transform: translateY(-1px);
-            box-shadow: 0 16px 28px rgba(99, 102, 241, 0.4);
+            box-shadow: 0 16px 28px rgba(30, 80, 200, 0.4);
         }
 
     .btn.secondary { 
-        background: rgba(59, 130, 246, 0.12);
+        background: rgba(30, 80, 200, 0.12);
         margin-top: 18px;
-        color: #1d4ed8;
+        color: var(--brand-primary);
     }
 
         .btn.secondary:not(:disabled):hover {
             transform: translateY(-1px);
-            background: rgba(59, 130, 246, 0.18);
+            background: rgba(30, 80, 200, 0.18);
         }
 
     .btn.warning {
-        background: rgba(249, 115, 22, 0.16);
-        color: #c2410c;
+        background: rgba(255, 170, 0, 0.16);
+        color: var(--brand-amber-700);
         padding-inline: 1.25rem;
     }
 
         .btn.warning:not(:disabled):hover {
             transform: translateY(-1px);
-            background: rgba(249, 115, 22, 0.24);
+            background: rgba(255, 170, 0, 0.24);
         }
 
     .btn.tertiary {
-        background: rgba(148, 163, 184, 0.2);
-        color: #334155;
+        background: rgba(100, 116, 139, 0.2);
+        color: var(--brand-text);
         padding-inline: 1rem;
     }
 
         .btn.tertiary:hover {
             transform: translateY(-1px);
-            background: rgba(148, 163, 184, 0.28);
+            background: rgba(100, 116, 139, 0.28);
         }
 
 .status-message {
     padding: 0.75rem 1rem;
     border-radius: 12px;
     font-weight: 500;
-    background: rgba(148, 163, 184, 0.18);
-    color: #475569;
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(100, 116, 139, 0.18);
+    color: var(--brand-muted);
+    border: 1px solid rgba(100, 116, 139, 0.25);
     opacity: 1;
     transition: opacity 0.4s ease;
 }
 
     .status-message.success {
-        background: rgba(34, 197, 94, 0.1);
-        color: #047857;
-        border-color: rgba(34, 197, 94, 0.25);
+        background: rgba(0, 190, 80, 0.1);
+        color: var(--brand-success-700);
+        border-color: rgba(0, 190, 80, 0.25);
     }
 
     .status-message.warning {
-        background: rgba(251, 191, 36, 0.12);
-        color: #b45309;
-        border-color: rgba(251, 191, 36, 0.28);
+        background: rgba(255, 170, 0, 0.12);
+        color: var(--brand-amber-700);
+        border-color: rgba(255, 170, 0, 0.28);
     }
 
     .status-message.error {
-        background: rgba(239, 68, 68, 0.12);
-        color: #b91c1c;
-        border-color: rgba(239, 68, 68, 0.25);
+        background: rgba(30, 80, 200, 0.12);
+        color: var(--brand-primary-700);
+        border-color: rgba(30, 80, 200, 0.25);
     }
 
     .status-message.fade-out {
@@ -278,7 +278,7 @@ label span {
     justify-content: space-between;
     align-items: center;
     padding: 1.15rem 1.5rem;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+    border-bottom: 1px solid rgba(100, 116, 139, 0.25);
 }
 
     .modal-header h2 {
@@ -292,13 +292,13 @@ label span {
     background: transparent;
     font-size: 1.25rem;
     cursor: pointer;
-    color: #94a3b8;
+    color: rgba(100,116,139,.75);
     padding: 0.25rem;
     transition: color 0.2s ease;
 }
 
     .icon-button:hover {
-        color: #475569;
+        color: var(--brand-muted);
     }
 
 .modal-body {
@@ -322,7 +322,7 @@ label span {
 .table-wrapper {
     max-height: 50vh;
     overflow: auto;
-    border: 1px solid rgba(148, 163, 184, 0.25);
+    border: 1px solid rgba(100, 116, 139, 0.25);
     border-radius: 14px;
 }
 
@@ -333,7 +333,7 @@ table {
 }
 
 thead {
-    background: rgba(99, 102, 241, 0.12);
+    background: rgba(30, 80, 200, 0.12);
     position: sticky;
     top: 0;
     z-index: 1;
@@ -343,17 +343,17 @@ thead {
         text-align: left;
         padding: 0.75rem 1rem;
         font-weight: 600;
-        color: #4338ca;
+        color: var(--brand-primary-700);
     }
 
 tbody td {
     padding: 0.75rem 1rem;
-    border-top: 1px solid rgba(148, 163, 184, 0.18);
-    color: #1f2937;
+    border-top: 1px solid rgba(100, 116, 139, 0.18);
+    color: var(--brand-text);
 }
 
 tbody tr:hover {
-    background: rgba(99, 102, 241, 0.1);
+    background: rgba(30, 80, 200, 0.1);
 }
 
 .actions {
@@ -362,7 +362,7 @@ tbody tr:hover {
 
 .empty-state {
     text-align: center;
-    color: #64748b;
+    color: var(--brand-muted);
     margin: 1rem 0 0;
 }
 
@@ -378,7 +378,7 @@ tbody tr:hover {
 }
 
 .panel.locked {
-    border: 1px solid rgba(148, 163, 184, 0.4);
+    border: 1px solid rgba(100, 116, 139, 0.4);
     box-shadow: none;
 }
 
@@ -395,7 +395,7 @@ tbody tr:hover {
     margin: 0;
     font-size: 1.35rem;
     font-weight: 700;
-    color: #312e81;
+    color: var(--brand-primary-700);
 }
 
 .filter-row {
@@ -409,7 +409,7 @@ tbody tr:hover {
     flex-direction: column;
     gap: 0.35rem;
     font-weight: 600;
-    color: #334155;
+    color: var(--brand-text);
     max-width: 210px;
     width: 100%;
 }
@@ -423,45 +423,45 @@ tbody tr:hover {
     display: flex;
     flex-wrap: wrap;
     gap: 0.75rem 1.5rem;
-    background: rgba(99, 102, 241, 0.08);
-    border: 1px solid rgba(99, 102, 241, 0.18);
+    background: rgba(30, 80, 200, 0.08);
+    border: 1px solid rgba(30, 80, 200, 0.18);
     border-radius: 12px;
     padding: 0.75rem 1rem;
     font-weight: 600;
-    color: #3730a3;
+    color: var(--brand-primary);
 }
 
 .selected-summary strong {
-    color: #312e81;
+    color: var(--brand-primary-700);
 }
 
 .lock-message {
     margin: 0;
     font-weight: 600;
-    color: #0f766e;
-    background: rgba(13, 148, 136, 0.12);
-    border: 1px solid rgba(13, 148, 136, 0.2);
+    color: var(--brand-teal-700);
+    background: rgba(0, 184, 200, 0.12);
+    border: 1px solid rgba(0, 184, 200, 0.2);
     border-radius: 12px;
     padding: 0.65rem 1rem;
 }
 
 tbody tr.selected {
-    background: rgba(34, 197, 94, 0.12);
+    background: rgba(0, 190, 80, 0.12);
 }
 
 .panel tbody tr.selected:hover {
-    background: rgba(34, 197, 94, 0.18);
+    background: rgba(0, 190, 80, 0.18);
 }
 
 .btn.success {
-    background: linear-gradient(135deg, #22c55e, #16a34a);
+    background: linear-gradient(135deg, var(--brand-success), var(--brand-success-700));
     color: #fff;
-    box-shadow: 0 12px 24px rgba(34, 197, 94, 0.35);
+    box-shadow: 0 12px 24px rgba(0, 190, 80, 0.35);
 }
 
     .btn.success:not(:disabled):hover {
         transform: translateY(-1px);
-        box-shadow: 0 16px 28px rgba(34, 197, 94, 0.45);
+        box-shadow: 0 16px 28px rgba(0, 190, 80, 0.45);
     }
 
 @media (max-width: 720px) {

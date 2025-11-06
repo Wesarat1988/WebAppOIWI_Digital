@@ -1,4 +1,117 @@
-﻿/* ========== Base / Viewport control ========== */
+:root {
+  /* ===== OI/WI Brand Palette ===== */
+  /* Blues (Primary) */
+  --brand-primary:    #1e50c8; /* PMS 2728C */
+  --brand-primary-700:#00288c; /* Reflex Blue C (เข้ม) */
+  --brand-primary-100:#bee6fa; /* PMS 2717C (อ่อน) */
+
+  /* Teals (Info) */
+  --brand-teal:       #00b8c8; /* PMS 7474C */
+  --brand-teal-700:   #00647d; /* PMS 4159C */
+  --brand-teal-100:   #9ee6be; /* ใกล้เคียง PMS 337C (อ่อน) */
+
+  /* Greens (Success) */
+  --brand-success:    #00be50; /* PMS 2271C */
+  --brand-success-700:#008223; /* PMS 2272C */
+
+  /* Ambers/Oranges (Warning/Accent) */
+  --brand-amber:      #ffaa00; /* PMS 137C */
+  --brand-amber-100:  #ffdc78; /* PMS 141C (อ่อน) */
+  --brand-amber-700:  #c88600; /* PMS 1245C (เข้ม) */
+
+  /* Neutrals */
+  --brand-text:       #0f172a;
+  --brand-muted:      #64748b;
+  --brand-border:     #e2e8f0;
+  --brand-bg:         #f8fafc;
+}
+
+/* ===== Map brand → Bootstrap semantic colors ===== */
+:root {
+  /* ปุ่ม/ลิงก์/องค์ประกอบหลัก */
+  --bs-primary:            var(--brand-primary);
+  --bs-primary-rgb:        30, 80, 200;
+
+  /* Success / Info / Warning */
+  --bs-success:            var(--brand-success);
+  --bs-success-rgb:        0, 190, 80;
+
+  --bs-info:               var(--brand-teal);
+  --bs-info-rgb:           0, 184, 200;
+
+  --bs-warning:            var(--brand-amber);
+  --bs-warning-rgb:        255, 170, 0;
+
+  /* ตัวหนังสือและพื้นหลังทั่วไป */
+  --bs-body-color:         var(--brand-text);
+  --bs-secondary-color:    var(--brand-muted);
+  --bs-border-color:       var(--brand-border);
+  --bs-body-bg:            var(--brand-bg);
+}
+
+/* ปุ่มและลิงก์หลัก */
+.btn-primary,
+.btn-primary:disabled,
+.btn-primary.disabled {
+  background-color: var(--brand-primary) !important;
+  border-color: var(--brand-primary) !important;
+  color: #fff !important;
+}
+.btn-primary:hover { background-color: var(--brand-primary-700) !important; border-color: var(--brand-primary-700) !important; }
+.btn-primary:active, .btn-primary:focus { background-color: var(--brand-primary-700) !important; border-color: var(--brand-primary-700) !important; box-shadow: 0 0 0 .25rem rgba(30,80,200,.25) !important; }
+
+/* ปุ่มรองตามสีแบรนด์ */
+.btn-success   { background-color: var(--brand-success) !important;   border-color: var(--brand-success) !important;   color:#fff !important; }
+.btn-success:hover,
+.btn-success:active,
+.btn-success:focus { background-color: var(--brand-success-700) !important; border-color: var(--brand-success-700) !important; }
+
+.btn-info      { background-color: var(--brand-teal) !important;      border-color: var(--brand-teal) !important;      color:#fff !important; }
+.btn-info:hover,
+.btn-info:active,
+.btn-info:focus { background-color: var(--brand-teal-700) !important; border-color: var(--brand-teal-700) !important; }
+
+.btn-warning   { background-color: var(--brand-amber) !important;     border-color: var(--brand-amber) !important;     color:#1f2937 !important; }
+.btn-warning:hover,
+.btn-warning:active,
+.btn-warning:focus { background-color: var(--brand-amber-700) !important; border-color: var(--brand-amber-700) !important; color:#fff !important; }
+
+/* ลิงก์ */
+a, .link-primary { color: var(--brand-primary) !important; }
+a:hover, .link-primary:hover { color: var(--brand-primary-700) !important; }
+
+/* Badges / Alerts / Table headers */
+.badge.bg-primary { background-color: var(--brand-primary) !important; }
+.badge.bg-success { background-color: var(--brand-success) !important; }
+.badge.bg-info    { background-color: var(--brand-teal) !important; }
+.badge.bg-warning { background-color: var(--brand-amber) !important; color:#1f2937 !important; }
+
+.alert-primary { background-color: color-mix(in srgb, var(--brand-primary) 12%, #fff) !important; border-color: var(--brand-primary) !important; color: var(--brand-primary-700) !important; }
+.alert-success { background-color: color-mix(in srgb, var(--brand-success) 12%, #fff) !important; border-color: var(--brand-success) !important; }
+.alert-info    { background-color: color-mix(in srgb, var(--brand-teal) 12%, #fff) !important; border-color: var(--brand-teal) !important; }
+.alert-warning { background-color: var(--brand-amber-100) !important; border-color: var(--brand-amber) !important; color:#1f2937 !important; }
+
+/* Form focus ring */
+.form-control:focus, .form-select:focus {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 .25rem rgba(30,80,200,.25);
+}
+
+/* Nav, pills, active states */
+.nav-pills .nav-link.active, .nav-pills .show>.nav-link {
+  background-color: var(--brand-primary) !important;
+  color: #fff !important;
+}
+
+/* Table header */
+.table thead th { background: color-mix(in srgb, var(--brand-primary) 10%, #fff); color:#0f172a; }
+
+/* Layout chrome (sidebar/topbar) */
+.shell__sidebar { background: linear-gradient(180deg, var(--brand-primary-700), var(--brand-primary)) !important; }
+.topbar         { background: #f1f5f9 !important; border-bottom: 1px solid var(--brand-border) !important; }
+
+
+/* ========== Base / Viewport control ========== */
 html, body {
     height: 100%;
 }
@@ -12,7 +125,7 @@ body {
 :root {
     --shell-sidebar-w: 260px;
     --shell-sidebar-w-collapsed: 64px;
-    --shell-bg: linear-gradient(180deg,#0d47a1,#1976d2);
+    --shell-bg: linear-gradient(180deg,var(--brand-primary-700),var(--brand-primary));
 }
 
 /* โครงหลัก 2 คอลัมน์: sidebar + content (ให้คุมสกรอลเอง) */
@@ -21,7 +134,7 @@ body {
     grid-template-columns: var(--shell-sidebar-w) 1fr;
     height: 100vh; /* ใช้สูงเท่า viewport */
     overflow: hidden; /* ไม่ให้กรอบใหญ่เลื่อน */
-    background: #f8fafc;
+    background: var(--brand-bg);
     transition: grid-template-columns .25s ease;
 }
 
@@ -99,7 +212,7 @@ body {
     align-items: center;
     gap: .75rem;
     padding: .55rem .65rem;
-    color: #e6eef9;
+    color: rgba(255,255,255,.85);
     text-decoration: none;
     border-radius: .5rem;
     transition: background-color .15s,color .15s;
@@ -150,7 +263,7 @@ body {
     gap: .5rem;
     padding: 0 .75rem;
     background: #f1f5f9;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--brand-border);
 }
 
 .topbar__toggle {
@@ -203,15 +316,15 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(0,0,0,.1);
+    border: 1px solid var(--brand-border);
     background: #fff;
-    color: #0d47a1;
+    color: var(--brand-primary);
     box-shadow: 0 1px 2px rgba(0,0,0,.06);
     transition: background-color .15s, color .15s, transform .15s;
 }
 
     .shell-fab:hover {
-        background: #f3f6ff;
+        background: var(--brand-primary-100);
     }
 
     .shell-fab:active {
@@ -219,7 +332,7 @@ body {
     }
 
     .shell-fab:focus-visible {
-        outline: 2px solid #82b1ff;
+        outline: 2px solid rgba(30,80,200,.35);
         outline-offset: 2px;
     }
 
@@ -264,4 +377,18 @@ body {
     padding: 6px;
     border-radius: 10px;
 }
+
+/* ==== Special CTA: Get MO (เฉพาะสไตล์ ไม่แตะ logic) ==== */
+.btn.GetMO {
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-primary-700));
+  color:#fff;
+  border:none;
+  border-radius: 9999px;
+  padding:.65rem 1.25rem;
+  box-shadow: 0 12px 25px rgba(30,80,200,.35);
+  transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+}
+.btn.GetMO:hover    { transform: translateY(-1px); box-shadow: 0 16px 30px rgba(30,80,200,.45); }
+.btn.GetMO:active   { transform: translateY(0) scale(.98); box-shadow: 0 8px 18px rgba(30,80,200,.30); filter: brightness(.98); }
+.btn.GetMO:focus-visible { outline: none; box-shadow: 0 0 0 .25rem rgba(30,80,200,.35); }
 
