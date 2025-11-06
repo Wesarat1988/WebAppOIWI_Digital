@@ -1,12 +1,57 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+<<<<<<< HEAD
+=======
 using System.Text.RegularExpressions;
+>>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
 
 namespace WepAppOIWI_Digital.Services;
 
 internal static class DocumentNumbering
 {
+<<<<<<< HEAD
+    public const string DocumentTypeOi = "OI";
+    public const string DocumentTypeWi = "WI";
+
+    public static IReadOnlyList<string> KnownTypes { get; } = new[]
+    {
+        DocumentTypeOi,
+        DocumentTypeWi
+    };
+
+    public static string NormalizeType(string? documentType)
+    {
+        if (string.IsNullOrWhiteSpace(documentType))
+        {
+            return string.Empty;
+        }
+
+        var normalized = documentType.Trim().ToUpperInvariant();
+        return normalized;
+    }
+
+    public static bool IsKnownType(string? documentType)
+    {
+        if (string.IsNullOrEmpty(documentType))
+        {
+            return false;
+        }
+
+        return KnownTypes.Contains(documentType, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static string? FormatCode(string? documentType, int? sequenceNumber)
+    {
+        var normalizedType = NormalizeType(documentType);
+        if (string.IsNullOrEmpty(normalizedType) || sequenceNumber is null || sequenceNumber <= 0)
+        {
+            return null;
+        }
+
+        return $"{normalizedType}-{sequenceNumber.Value:0000}";
+    }
+=======
     // ---------- Types ----------
     public const string DocumentTypeOi = "OI";
     public const string DocumentTypeWi = "WI";
@@ -100,4 +145,5 @@ internal static class DocumentNumbering
 
         return max + 1;
     }
+>>>>>>> 241a4c332f8adb7c4b2f49e01029e3411c94b892
 }
