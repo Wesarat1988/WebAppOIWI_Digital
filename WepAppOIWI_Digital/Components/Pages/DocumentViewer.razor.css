@@ -1,0 +1,31 @@
+.document-preview-frame {
+    min-height: 80vh;
+    height: calc(100vh - 220px);
+    max-height: 95vh;
+    overflow-y: auto;
+    background-color: #bee6fa;
+}
+
+.pdfjs-viewer {
+    position: relative;
+    min-height: 60vh;
+    padding: 1.5rem 1rem;
+    overflow-x: auto;
+}
+
+.pdfjs-viewer canvas {
+    display: block;
+    width: 100%;
+    margin: 0 auto 1.5rem auto;
+    background-color: #ffffff;
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.1);
+}
+
+.pdfjs-viewer canvas:last-of-type {
+    margin-bottom: 0;
+}
+
+.pdfjs-loading,
+.pdfjs-error {
+    font-size: 0.95rem;
+}
