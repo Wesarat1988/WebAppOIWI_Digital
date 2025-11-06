@@ -1,0 +1,273 @@
+﻿/* ========== Sidebar Layout (ใหม่ทั้งหมด) ========== */
+:root {
+    --shell-sidebar-w: 260px;
+    --shell-sidebar-w-collapsed: 64px;
+    --shell-bg: linear-gradient(180deg,#0d47a1,#1976d2);
+}
+
+/* โครงหลักเป็น 2 คอลัมน์: sidebar + content */
+.shell {
+    display: grid;
+    grid-template-columns: var(--shell-sidebar-w) 1fr;
+    min-height: 100vh;
+    overflow: hidden;
+    background: #f8fafc;
+    transition: grid-template-columns .25s ease;
+}
+
+    /* ยุบ = เหลือไอคอนอย่างเดียว */
+    .shell.shell--collapsed {
+        grid-template-columns: var(--shell-sidebar-w-collapsed) 1fr;
+    }
+
+/* -------- Sidebar -------- */
+.shell__sidebar {
+    background: var(--shell-bg);
+    color: #fff;
+    padding: .75rem .5rem;
+    overflow-y: auto;
+}
+
+.brand {
+    padding: 0;
+}
+
+    .brand .bi {
+        font-size: 1.25rem;
+    }
+
+.brand__text {
+    transition: opacity .2s,width .2s;
+}
+
+.menu {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+}
+
+.menu__item {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .55rem .65rem;
+    color: #e6eef9;
+    text-decoration: none;
+    border-radius: .5rem;
+    transition: background-color .15s,color .15s;
+}
+
+    .menu__item .bi {
+        font-size: 1.1rem;
+    }
+
+    .menu__item:hover {
+        background: rgba(255,255,255,.12);
+        color: #fff;
+    }
+
+    .menu__item.active {
+        background: rgba(255,255,255,.22);
+        color: #fff;
+    }
+
+/* ยุบแล้วซ่อนข้อความเหลือแต่ไอคอน */
+.shell.shell--collapsed .menu__item {
+    justify-content: center;
+}
+
+.shell.shell--collapsed .menu__text,
+.shell.shell--collapsed .brand__text {
+    width: 0;
+    opacity: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* -------- Content -------- */
+.shell__content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.topbar {
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: 0 .75rem;
+    background: #f1f5f9;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.topbar__toggle {
+    width: 40px;
+    height: 32px;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.content-area {
+    padding: 1rem 1.25rem;
+}
+
+/* ---------- Responsive (optional) ---------- */
+/* จอเล็ก: ซ่อนไว้ก่อน (collapsed) และเปลี่ยน sidebar ให้ overlay */
+@media (max-width: 992px) {
+    .shell {
+        grid-template-columns: 0 1fr;
+    }
+
+    .shell__sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: var(--shell-sidebar-w);
+        transform: translateX(-100%);
+        transition: transform .25s ease;
+        z-index: 1040;
+    }
+
+    .shell.shell--collapsed .shell__sidebar {
+        transform: translateX(-100%);
+    }
+
+    .shell:not(.shell--collapsed) .shell__sidebar {
+        transform: translateX(0);
+    }
+}
+
+/* บังคับเจาะจงคอนเทนเนอร์ */
+#app-shell.shell {
+    display: grid;
+    grid-template-columns: var(--shell-sidebar-w) 1fr;
+}
+
+    #app-shell.shell.shell--collapsed {
+        grid-template-columns: var(--shell-sidebar-w-collapsed) 1fr !important;
+    }
+
+/* กัน sidebar มี width จากที่อื่นทับ */
+#app-shell .shell__sidebar {
+    width: auto !important;
+}
+
+/* ✅ ขนาดโลโก้ */
+.brand-logo {
+    height: 22px; /* ปรับได้ 20–28px ตามชอบ */
+    width: auto;
+    display: block;
+}
+
+.shell.shell--collapsed .brand {
+    justify-content: center;
+}
+
+/* ===== Brand / Logo (เสริม) ===== */
+
+/* โลโก้ + ข้อความ ให้เป็นลิงก์กลับหน้า Home */
+.brand__link {
+    display: inline-flex;
+    align-items: center;
+    gap: .6rem;
+    color: #fff;
+    text-decoration: none;
+}
+
+    .brand__link:hover {
+        opacity: .95;
+    }
+
+/* ขนาดโลโก้ (ปรับได้) */
+.brand-logo {
+    height: 26px; /* เดิม 22px ถ้าอยากเล็กคง 22 ได้ */
+    width: auto;
+    display: block;
+    object-fit: contain;
+}
+
+/* ตอนยุบ: ซ่อนข้อความแบรนด์ เหลือเฉพาะโลโก้ และให้จัดกึ่งกลาง */
+.shell.shell--collapsed .brand__text {
+    width: 0;
+    opacity: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+.shell.shell--collapsed .brand {
+    justify-content: center;
+}
+
+.brand--flush {
+    /* เว้นขอบบน/ล่างเล็กน้อย (อยากชิดมากขึ้นลดค่าได้) */
+    padding: .5rem .5rem 1rem;
+}
+
+.brand__link {
+    display: block;
+    text-decoration: none;
+}
+
+/* ทำให้รูป “เต็มความกว้างของ sidebar” โดยรักษาอัตราส่วนภาพ */
+.brand-logo {
+    display: block;
+    width: 100%; /* กินเต็มกรอบของ .brand */
+    height: auto; /* รักษาสัดส่วน */
+    max-width: calc(var(--shell-sidebar-w) - 1rem); /* 0.5rem ซ้าย + 0.5rem ขวา */
+    object-fit: contain; /* ป้องกันบี้/ยืด */
+    margin: 0 auto; /* จัดกึ่งกลางกรณีรูปเล็กกว่า */
+}
+
+/* ตอนพับเมนู: ลด max-width ให้พอดีความกว้างที่พับ */
+.shell.shell--collapsed .brand-logo {
+    max-width: calc(var(--shell-sidebar-w-collapsed) - 1rem);
+}
+
+/* ปุ่ม toggle */
+.shell-fab {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(0,0,0,.1);
+    background: #fff;
+    color: #0d47a1;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+    transition: background-color .15s, color .15s, transform .15s;
+}
+
+    .shell-fab:hover {
+        background: #f3f6ff;
+    }
+
+    .shell-fab:active {
+        transform: scale(.98);
+    }
+
+    .shell-fab:focus-visible {
+        outline: 2px solid #82b1ff;
+        outline-offset: 2px;
+    }
+
+/* ไอคอนลูกศร */
+.shell-fab__chev {
+    width: 22px;
+    height: 20px;
+    transition: transform .2s ease;
+}
+
+/* เริ่มต้น (พับ) = ชี้ขวา */
+.shell-fab.is-collapsed .shell-fab__chev {
+    transform: rotate(0deg);
+}
+
+/* กางเมนู = ลูกศรชี้ซ้าย (หมุน 180) */
+.shell-fab.is-open .shell-fab__chev {
+    transform: rotate(180deg);
+}

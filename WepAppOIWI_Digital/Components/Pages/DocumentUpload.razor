@@ -8,7 +8,10 @@
 
 <PageTitle>เพิ่มเอกสาร OI/WI</PageTitle>
 
-<h1 class="mb-2">➕ เพิ่มเอกสาร OI/WI</h1>
+<h1 class="page-title">
+    <i class="bi bi-file-earmark-plus-fill me-2" style="font-size:32px; line-height:1; transform:translateY(2px);"></i>
+    Add OI/WI Document
+</h1>
 
 @if (isLoadingDocumentNumbers)
 {
@@ -23,28 +26,21 @@ else
         <div class="alert alert-warning" role="alert">@documentNumberError</div>
     }
 
-    <div class="row g-3 mb-3">
-        @foreach (var documentType in DocumentNumbering.KnownTypes)
-        {
-            var label = ResolveDocumentTypeLabel(documentType);
-            var previewCode = GetDocumentCodeForType(documentType);
-
-            <div class="col-md-6">
-                <div class="@GetDocumentTypeAlertClass(documentType)" role="status">
-                    <span>เลขเอกสารถัดไป (@label):</span>
-                    @if (!string.IsNullOrEmpty(previewCode))
-                    {
-                        <strong>@previewCode</strong>
-                    }
-                    else
-                    {
-                        <span class="text-muted">ไม่พร้อมใช้งาน</span>
-                    }
-                </div>
-            </div>
-        }
+    <div class="mb-3">
+        <div class="alert @AlertToneClass d-inline-flex align-items-center gap-2" role="status">
+            <span>เลขเอกสารถัดไป (@SelectedTypeLabel):</span>
+            @if (!string.IsNullOrEmpty(SelectedPreviewCode))
+            {
+                <strong>@SelectedPreviewCode</strong>
+            }
+            else
+            {
+                <span class="text-muted">ไม่พร้อมใช้งาน</span>
+            }
+        </div>
     </div>
 }
+
 
 <p class="text-muted">แนบไฟล์และกรอกข้อมูลเพื่อเพิ่มลงในรายการเอกสาร</p>
 
@@ -59,14 +55,17 @@ else
 
     <div class="mb-3">
         <label class="form-label">ประเภทเอกสาร</label>
+
         <InputSelect class="form-select"
-                     @bind-Value="SelectedDocumentType"
-                     @bind-Value:event="onchange">
+                     Value="formModel.DocumentType"
+                     ValueChanged="@(async (string? val) => await OnDocumentTypeChanged(val))"
+                     ValueExpression="() => formModel.DocumentType">
             @foreach (var documentType in DocumentNumbering.KnownTypes)
             {
                 <option value="@documentType">@documentType</option>
             }
         </InputSelect>
+
         <ValidationMessage For="() => formModel.DocumentType" />
     </div>
 
@@ -160,14 +159,22 @@ else
     private string? documentNumberError;
     private bool isLoadingDocumentNumbers;
     private string? lastAssignedDocumentCode;
-    private string selectedDocumentType = DocumentNumbering.DocumentTypeOi;
     private int documentNumberRequestId;
+    private string SelectedTypeLabel => ResolveDocumentTypeLabel(formModel.DocumentType);
+    private string? SelectedPreviewCode => GetDocumentCodeForType(formModel.DocumentType);
+
+    private string AlertToneClass =>
+    NormalizeDocumentTypeOrDefault(formModel.DocumentType) == DocumentNumbering.DocumentTypeWi
+        ? "alert-info"
+        : "alert-primary";
 
     protected override async Task OnInitializedAsync()
     {
-        ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
+        // normalize ค่าเริ่มต้น
+        formModel.DocumentType = NormalizeDocumentTypeOrDefault(formModel.DocumentType);
         await UpdateDocumentNumberPreviewAsync(notifyStart: false);
     }
+
 
     private async Task HandleValidSubmit()
     {
@@ -177,6 +184,7 @@ else
         successViewerUrl = null;
         lastAssignedDocumentCode = null;
 
+        // ใช้ค่าชนิดเอกสารจากฟอร์มเป็นแหล่งความจริง
         var normalizedDocumentType = NormalizeDocumentTypeOrDefault(formModel.DocumentType);
 
         if (selectedFile is null)
@@ -193,7 +201,7 @@ else
 
             var request = new DocumentUploadRequest(
                 DisplayName: formModel.DisplayName!,
-                DocumentType: normalizedDocumentType,
+                DocumentType: normalizedDocumentType,       // << ใช้ชนิดจากฟอร์ม
                 Line: formModel.Line,
                 Station: formModel.Station,
                 Model: formModel.Model,
@@ -230,11 +238,13 @@ else
                 }
             }
 
-            formModel.Reset();
+            // คงชนิดเอกสารเดิมไว้หลังบันทึก (เช่น เลือก WI ก็ยังเป็น WI)
+            var keepType = formModel.DocumentType;
+            formModel.Reset(keepType);
             selectedFile = null;
             selectedFileName = null;
 
-            ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
+            // อัปเดตเลขเอกสารถัดไปให้ตรงกับชนิดที่เลือกปัจจุบัน
             await UpdateDocumentNumberPreviewAsync();
         }
         catch (IOException ex)
@@ -274,38 +284,14 @@ else
         Navigation.NavigateTo("/");
     }
 
-    private string SelectedDocumentType
-    {
-        get => selectedDocumentType;
-        set => _ = HandleDocumentTypeChangedAsync(value);
-    }
-
-    private async Task HandleDocumentTypeChangedAsync(string? value)
-    {
-        var normalized = NormalizeDocumentTypeOrDefault(value);
-
-        if (string.Equals(selectedDocumentType, normalized, System.StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        ApplySelectedDocumentType(normalized);
-        await UpdateDocumentNumberPreviewAsync();
-    }
-
     private async Task UpdateDocumentNumberPreviewAsync(bool notifyStart = true)
     {
         var requestId = System.Threading.Interlocked.Increment(ref documentNumberRequestId);
         documentNumberError = null;
         nextDocumentCodes.Clear();
-        ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(selectedDocumentType));
 
         isLoadingDocumentNumbers = true;
-
-        if (notifyStart)
-        {
-            await InvokeAsync(StateHasChanged);
-        }
+        if (notifyStart) await InvokeAsync(StateHasChanged);
 
         try
         {
@@ -316,45 +302,25 @@ else
                 var normalizedType = NormalizeDocumentTypeOrDefault(documentType);
                 var preview = await DocumentUploader.GetNextDocumentCodeAsync(normalizedType);
 
-                if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
-                {
-                    return;
-                }
+                if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId)) return;
 
                 if (!string.IsNullOrEmpty(preview))
-                {
                     nextDocumentCodes[normalizedType] = preview;
-                }
                 else
-                {
                     failedTypes.Add(normalizedType);
-                }
             }
 
-            if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
-            {
-                return;
-            }
+            if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId)) return;
 
             if (failedTypes.Count == DocumentNumbering.KnownTypes.Count)
-            {
                 documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาตรวจสอบการตั้งค่าโฟลเดอร์";
-            }
             else if (failedTypes.Count > 0)
-            {
-                var labels = failedTypes.Select(ResolveDocumentTypeLabel);
-                documentNumberError = $"ไม่สามารถคำนวณเลขเอกสารถัดไปสำหรับประเภท: {string.Join(", ", labels)}";
-            }
+                documentNumberError = $"ไม่สามารถคำนวณเลขเอกสารถัดไปสำหรับประเภท: {string.Join(", ", failedTypes.Select(ResolveDocumentTypeLabel))}";
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to compute next document numbers for known types.");
-
-            if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId))
-            {
-                return;
-            }
-
+            if (requestId != System.Threading.Volatile.Read(ref documentNumberRequestId)) return;
             documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาลองใหม่";
         }
         finally
@@ -376,15 +342,9 @@ else
     private string GetDocumentTypeAlertClass(string documentType)
     {
         var normalized = NormalizeDocumentTypeOrDefault(documentType);
-        var isSelected = string.Equals(selectedDocumentType, normalized, StringComparison.OrdinalIgnoreCase);
+        var isSelected = string.Equals(formModel.DocumentType, normalized, StringComparison.OrdinalIgnoreCase);
         var tone = isSelected ? "alert-primary" : "alert-info";
         return $"alert {tone} d-inline-flex align-items-center gap-2";
-    }
-
-    private void ApplySelectedDocumentType(string newType)
-    {
-        selectedDocumentType = newType;
-        formModel.DocumentType = newType;
     }
 
     private static string ResolveDocumentTypeLabel(string? value)
@@ -429,10 +389,14 @@ else
         [StringLength(500, ErrorMessage = "Comment ต้องไม่เกิน 500 ตัวอักษร")]
         public string? Comment { get; set; }
 
-        public void Reset()
+        public void Reset(string? keepDocumentType = null)
         {
             DisplayName = null;
-            DocumentType = DocumentNumbering.DocumentTypeOi;
+
+            // ถ้ามีค่าที่ต้องการคงไว้ ให้ใช้ค่านั้น
+            // ถ้าไม่ส่งมาก็ “คงค่าเดิม” ไม่ต้องรีเซ็ตเป็น OI
+            DocumentType = keepDocumentType ?? DocumentType;
+
             Line = null;
             Station = null;
             Model = null;
@@ -452,4 +416,17 @@ else
             }
         }
     }
+
+    private async Task OnDocumentTypeChanged(string? newValue)
+    {
+        // normalize ถ้าจำเป็น
+        formModel.DocumentType = NormalizeDocumentTypeOrDefault(newValue);
+
+        // อัปเดตเลขเอกสารถัดไปให้ตรงกับชนิดที่เลือก
+        await UpdateDocumentNumberPreviewAsync();
+
+        // ให้ UI รีเฟรช (จริง ๆ UpdateDocumentNumberPreviewAsync เรียก StateHasChanged อยู่แล้ว)
+        StateHasChanged();
+    }
+
 }

@@ -1,0 +1,69 @@
+﻿@rendermode InteractiveServer
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+
+<button type="button"
+        class="shell-fab @(collapsed ? "is-collapsed" : "is-open")"
+        title="Toggle menu"
+        aria-label="Toggle menu"
+        @onclick="Toggle">
+    <svg viewBox="0 0 24 24" class="shell-fab__chev" aria-hidden="true">
+        <!-- ลูกศรขวา (จะหมุนผ่าน CSS ตามสถานะ) -->
+        <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+</button>
+
+@code {
+    private bool collapsed = true;
+    private DotNetObjectReference<ShellToggle>? _selfRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // 1) อ่านจาก DOM (จริง) ก่อน ถ้าไม่มีค่อยใช้ localStorage
+        var domState = await JS.InvokeAsync<string?>("shellToggle.getState");
+        if (bool.TryParse(domState, out var s1))
+        {
+            collapsed = s1;
+        }
+        else
+        {
+            var saved = await JS.InvokeAsync<string?>("shellToggle.getSaved");
+            if (bool.TryParse(saved, out var s2))
+            {
+                collapsed = s2;
+                await JS.InvokeVoidAsync("shellToggle.setCollapsed", collapsed);
+            }
+        }
+
+        // 2) เฝ้าดูการเปลี่ยน class บน #app-shell (ใครเปลี่ยนก็รู้)
+        _selfRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("shellToggle.watch", _selfRef);
+
+        StateHasChanged(); // อัปเดตไอคอนครั้งแรก
+    }
+
+    public async Task Toggle()
+    {
+        collapsed = !collapsed;
+        await JS.InvokeVoidAsync("shellToggle.setCollapsed", collapsed);
+        await JS.InvokeVoidAsync("shellToggle.save", collapsed);
+        // ไม่ต้อง StateHasChanged() ก็ได้ เพราะ setCollapsed แล้ว watch จะยิงกลับมาอีกครั้ง
+    }
+
+    [JSInvokable]
+    public Task OnShellStateChanged(bool isCollapsed)
+    {
+        // sync จาก JS -> Razor (เมื่อ class เปลี่ยนจากที่อื่น)
+        collapsed = isCollapsed;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _selfRef?.Dispose();
+    }
+}

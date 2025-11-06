@@ -1,22 +1,40 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
+
+    <!-- CSS หลัก -->
     <link rel="stylesheet" href="bootstrap/bootstrap.min.css" />
     <link rel="stylesheet" href="app.css" />
     <link rel="stylesheet" href="WepAppOIWI_Digital.styles.css" />
-    <link rel="icon" type="image/png" href="favicon.png" />
+
+    <!-- ฟอนต์ (optional) -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Bootstrap Icons (ใช้กับ <i class="bi ...">) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+
+    <!-- สไตล์ของเรา (ต้องอยู่หลัง app.css) -->
+    <link rel="stylesheet" href="css/site.css" />
+
+    <!-- ✅ ใช้โลโก้ Delta เป็น favicon (วางไฟล์ไว้ที่ wwwroot/icons/delta-logo.png) -->
+    <link rel="icon" type="image/png" href="icons/delta-logo.png" sizes="32x32" />
+    <link rel="icon" type="image/png" href="icons/delta-logo.png" sizes="64x64" />
+    <!-- (ถ้ามี .ico ก็ใส่เป็น fallback ได้) -->
+    <!-- <link rel="icon" href="icons/delta-logo.ico"> -->
+
     <HeadOutlet />
 </head>
-
 <body>
     <Routes />
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL" crossorigin="anonymous"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
+            crossorigin="anonymous"></script>
     <script src="js/pdfViewer.js"></script>
+    <script src="js/shellToggle.js"></script>
     <script src="_framework/blazor.web.js"></script>
 </body>
-
 </html>
