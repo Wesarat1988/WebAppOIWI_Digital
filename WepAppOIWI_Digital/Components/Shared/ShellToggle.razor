@@ -1,0 +1,68 @@
+﻿@rendermode InteractiveServer
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<button type="button"
+        class="shell-fab @(collapsed ? "is-collapsed" : "is-open")"
+        title="Toggle menu"
+        aria-label="Toggle menu"
+        @onclick="Toggle">
+    <svg viewBox="0 0 24 24" class="shell-fab__chev" aria-hidden="true">
+        <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+</button>
+
+@code {
+    private bool collapsed = true;                           // ปิดเสมอตั้งต้น
+    private DotNetObjectReference<ShellToggle>? _selfRef;
+
+    protected override void OnInitialized()
+    {
+        // ปิดทุกครั้งที่นำทางไปหน้าอื่น
+        Nav.LocationChanged += HandleLocationChanged;
+    }
+
+    private async void HandleLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        collapsed = true;
+        try { await JS.InvokeVoidAsync("shellToggle.setCollapsed", true); } catch { }
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        // โหลดครั้งแรก: บังคับปิด แล้วเริ่ม watch สถานะจาก DOM
+        collapsed = true;
+        await JS.InvokeVoidAsync("shellToggle.setCollapsed", true);
+
+        _selfRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("shellToggle.watch", _selfRef);
+        StateHasChanged();
+    }
+
+    private async Task Toggle()
+    {
+        collapsed = !collapsed;
+        await JS.InvokeVoidAsync("shellToggle.setCollapsed", collapsed);
+        // ไม่ต้อง save ใดๆ — ต้องการให้ปิดเสมอเมื่อเปิดหน้าใหม่
+    }
+
+    // JS callback เมื่อ class บน #app-shell ถูกเปลี่ยนจากที่อื่น (เช่น คลิกโลโก้ที่ sidebar)
+    [JSInvokable]
+    public Task OnShellStateChanged(bool isCollapsed)
+    {
+        collapsed = isCollapsed;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= HandleLocationChanged;
+        _selfRef?.Dispose();
+    }
+}

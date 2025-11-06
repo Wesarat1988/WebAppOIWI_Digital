@@ -236,6 +236,9 @@ else
 
             ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
             await UpdateDocumentNumberPreviewAsync();
+            ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
+            await UpdateDocumentNumberPreviewAsync();
+
         }
         catch (IOException ex)
         {
@@ -274,6 +277,7 @@ else
         Navigation.NavigateTo("/");
     }
 
+
     private string SelectedDocumentType
     {
         get => selectedDocumentType;
@@ -311,6 +315,9 @@ else
         {
             var failedTypes = new List<string>();
 
+            var failedTypes = new List<string>();
+
+
             foreach (var documentType in DocumentNumbering.KnownTypes)
             {
                 var normalizedType = NormalizeDocumentTypeOrDefault(documentType);
@@ -344,6 +351,7 @@ else
             {
                 var labels = failedTypes.Select(ResolveDocumentTypeLabel);
                 documentNumberError = $"ไม่สามารถคำนวณเลขเอกสารถัดไปสำหรับประเภท: {string.Join(", ", labels)}";
+
             }
         }
         catch (Exception ex)
@@ -354,6 +362,7 @@ else
             {
                 return;
             }
+
 
             documentNumberError = "ไม่สามารถคำนวณเลขเอกสารถัดไปได้ กรุณาลองใหม่";
         }
@@ -380,6 +389,7 @@ else
         var tone = isSelected ? "alert-primary" : "alert-info";
         return $"alert {tone} d-inline-flex align-items-center gap-2";
     }
+
 
     private void ApplySelectedDocumentType(string newType)
     {
@@ -429,6 +439,7 @@ else
         [StringLength(500, ErrorMessage = "Comment ต้องไม่เกิน 500 ตัวอักษร")]
         public string? Comment { get; set; }
 
+
         public void Reset()
         {
             DisplayName = null;
@@ -444,6 +455,10 @@ else
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
             if (string.Equals(DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (string.Equals(DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
+
                 && string.IsNullOrWhiteSpace(MachineName))
             {
                 yield return new ValidationResult(

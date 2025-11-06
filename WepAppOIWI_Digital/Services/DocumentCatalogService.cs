@@ -1,4 +1,5 @@
 using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -62,6 +63,7 @@ public sealed class DocumentCatalogService : IDisposable
 
     private IReadOnlyList<DocumentRecord>? _cachedDocuments;
     private DateTime _lastCacheTimeUtc;
+    private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(1);
     private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(1);
     private readonly object _cacheLock = new();
 
@@ -228,7 +230,6 @@ public sealed class DocumentCatalogService : IDisposable
                 var fileSystemRelativePath = normalizedRelativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
                 var fullPath = Path.Combine(context.ActiveRootPath!, fileSystemRelativePath);
                 var fileInfo = new FileInfo(fullPath);
-
                 documents.Add(CreateRecord(context, entry, fileInfo, normalizedRelativePath));
             }
         }
