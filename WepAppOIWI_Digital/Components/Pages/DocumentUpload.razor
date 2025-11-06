@@ -236,8 +236,6 @@ else
 
             ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
             await UpdateDocumentNumberPreviewAsync();
-            ApplySelectedDocumentType(NormalizeDocumentTypeOrDefault(formModel.DocumentType));
-            await UpdateDocumentNumberPreviewAsync();
 
         }
         catch (IOException ex)
@@ -314,9 +312,6 @@ else
         try
         {
             var failedTypes = new List<string>();
-
-            var failedTypes = new List<string>();
-
 
             foreach (var documentType in DocumentNumbering.KnownTypes)
             {
@@ -455,10 +450,6 @@ else
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
             if (string.Equals(DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
-        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
-        {
-            if (string.Equals(DocumentType, DocumentNumbering.DocumentTypeWi, System.StringComparison.OrdinalIgnoreCase)
-
                 && string.IsNullOrWhiteSpace(MachineName))
             {
                 yield return new ValidationResult(
