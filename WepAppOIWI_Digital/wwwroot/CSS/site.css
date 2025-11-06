@@ -1,0 +1,267 @@
+﻿/* ========== Base / Viewport control ========== */
+html, body {
+    height: 100%;
+}
+
+body {
+    overflow: hidden;
+    font-family: "Inter","IBM Plex Sans Thai",system-ui,Arial,sans-serif;
+}
+
+/* ========== Sidebar Layout ========== */
+:root {
+    --shell-sidebar-w: 260px;
+    --shell-sidebar-w-collapsed: 64px;
+    --shell-bg: linear-gradient(180deg,#0d47a1,#1976d2);
+}
+
+/* โครงหลัก 2 คอลัมน์: sidebar + content (ให้คุมสกรอลเอง) */
+#app-shell.shell {
+    display: grid;
+    grid-template-columns: var(--shell-sidebar-w) 1fr;
+    height: 100vh; /* ใช้สูงเท่า viewport */
+    overflow: hidden; /* ไม่ให้กรอบใหญ่เลื่อน */
+    background: #f8fafc;
+    transition: grid-template-columns .25s ease;
+}
+
+    /* ยุบ = เหลือไอคอนอย่างเดียว */
+    #app-shell.shell.shell--collapsed {
+        grid-template-columns: var(--shell-sidebar-w-collapsed) 1fr !important;
+    }
+
+/* -------- Sidebar (ล็อกติดหน้าจอ) -------- */
+#app-shell .shell__sidebar {
+    background: var(--shell-bg);
+    color: #fff;
+    padding: .75rem .5rem;
+    width: auto !important; /* กัน style อื่นมาทับ */
+    position: sticky; /* เกาะขอบบน */
+    top: 0;
+    height: 100vh; /* สูงเต็ม viewport */
+    overflow-y: auto; /* เมนูยาวค่อยเลื่อนเฉพาะด้านข้าง */
+}
+
+/* -------- Brand / Logo -------- */
+.brand {
+    padding: 0;
+}
+
+.brand__text {
+    transition: opacity .2s,width .2s;
+}
+
+.brand--flush {
+    padding: .5rem .5rem 1rem;
+}
+
+.brand__link {
+    display: block;
+    text-decoration: none;
+    color: #fff;
+}
+
+.brand-logo {
+    display: block;
+    width: 100%; /* กินเต็ม sidebar */
+    height: auto;
+    max-width: calc(var(--shell-sidebar-w) - 1rem); /* padding ซ้าย/ขวา .5rem */
+    object-fit: contain;
+    margin: 0 auto;
+}
+
+/* ตอนพับเมนู: ซ่อนข้อความ และบีบโลโก้ให้พอดี */
+.shell.shell--collapsed .brand__text {
+    width: 0;
+    opacity: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+.shell.shell--collapsed .brand {
+    justify-content: center;
+}
+
+.shell.shell--collapsed .brand-logo {
+    max-width: calc(var(--shell-sidebar-w-collapsed) - 1rem);
+}
+
+/* -------- Menu -------- */
+.menu {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+}
+
+.menu__item {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .55rem .65rem;
+    color: #e6eef9;
+    text-decoration: none;
+    border-radius: .5rem;
+    transition: background-color .15s,color .15s;
+}
+
+    .menu__item .bi {
+        font-size: 1.1rem;
+    }
+
+    .menu__item:hover {
+        background: rgba(255,255,255,.12);
+        color: #fff;
+    }
+
+    .menu__item.active {
+        background: rgba(255,255,255,.22);
+        color: #fff;
+    }
+
+/* ยุบแล้วซ่อนข้อความเหลือแต่ไอคอน */
+.shell.shell--collapsed .menu__item {
+    justify-content: center;
+}
+
+.shell.shell--collapsed .menu__text,
+.shell.shell--collapsed .brand__text {
+    width: 0;
+    opacity: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* -------- Content (เป็นคนเลื่อน) -------- */
+#app-shell .shell__content {
+    height: 100vh; /* สูงเต็ม viewport */
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden; /* ตัดการเลื่อนของกรอบ content */
+}
+
+.topbar {
+    flex: 0 0 56px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: 0 .75rem;
+    background: #f1f5f9;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.topbar__toggle {
+    width: 40px;
+    height: 32px;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* บริเวณนี้เป็น “ตัวเลื่อน” แทนทั้งหน้า */
+.content-area {
+    flex: 1 1 auto;
+    overflow: auto; /* ให้สกรอลเฉพาะเนื้อหา */
+    padding: 1rem 1.25rem;
+}
+
+/* ---------- Responsive (mobile: sidebar overlay) ---------- */
+@media (max-width: 992px) {
+    #app-shell.shell {
+        grid-template-columns: 0 1fr;
+    }
+
+    #app-shell .shell__sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: var(--shell-sidebar-w);
+        transform: translateX(-100%);
+        transition: transform .25s ease;
+        z-index: 1040;
+        height: 100vh; /* ยังคงเต็มจอ */
+        overflow-y: auto;
+    }
+
+    #app-shell.shell.shell--collapsed .shell__sidebar {
+        transform: translateX(-100%);
+    }
+
+    #app-shell.shell:not(.shell--collapsed) .shell__sidebar {
+        transform: translateX(0);
+    }
+}
+
+/* ===== Floating Toggle Button ===== */
+.shell-fab {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(0,0,0,.1);
+    background: #fff;
+    color: #0d47a1;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+    transition: background-color .15s, color .15s, transform .15s;
+}
+
+    .shell-fab:hover {
+        background: #f3f6ff;
+    }
+
+    .shell-fab:active {
+        transform: scale(.98);
+    }
+
+    .shell-fab:focus-visible {
+        outline: 2px solid #82b1ff;
+        outline-offset: 2px;
+    }
+
+.shell-fab__chev {
+    width: 22px;
+    height: 20px;
+    transition: transform .2s ease;
+}
+/* เริ่มต้น (พับ) = ชี้ขวา */
+.shell-fab.is-collapsed .shell-fab__chev {
+    transform: rotate(0deg);
+}
+/* กางเมนู = ลูกศรชี้ซ้าย (หมุน 180) */
+.shell-fab.is-open .shell-fab__chev {
+    transform: rotate(180deg);
+}
+
+/* ==== Rounded logo card on sidebar ==== */
+#app-shell .brand {
+    padding: 12px 12px 16px; /* เผื่อที่รอบ ๆ โลโก้เล็กน้อย */
+}
+
+#app-shell .brand-logo {
+    display: block;
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    /* มุมโค้ง + กรอบ + พื้นหลังขาว */
+    border-radius: 14px;
+    background: #fff;
+    padding: 10px; /* ระยะห่างโลโก้กับกรอบ */
+    border: 1px solid rgba(255,255,255,.35);
+    box-shadow: 0 4px 16px rgba(0,0,0,.12);
+}
+
+/* ตอนพับเมนู ลด padding ลงนิด ให้พอดีพื้นที่ */
+#app-shell.shell.shell--collapsed .brand {
+    padding: 8px 8px 12px;
+}
+
+#app-shell.shell.shell--collapsed .brand-logo {
+    padding: 6px;
+    border-radius: 10px;
+}
+
