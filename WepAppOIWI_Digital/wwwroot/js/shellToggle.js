@@ -1,37 +1,39 @@
 ﻿// wwwroot/js/shellToggle.js
-window.shellToggle = (function () {
+(function () {
     let observer = null;
+    let dotnetRef = null;
 
-    function el() {
+    function host() {
         return document.getElementById('app-shell');
     }
 
-    function currentCollapsed() {
-        const host = el();
-        return host ? host.classList.contains('shell--collapsed') : null;
+    function isCollapsed() {
+        const h = host();
+        return h ? h.classList.contains('shell--collapsed') : null;
     }
 
-    return {
+    function notifyIfChanged(before) {
+        const after = isCollapsed();
+        if (after !== null && after !== before && dotnetRef && window.DotNet) {
+            dotnetRef.invokeMethodAsync('OnShellStateChanged', after);
+        }
+    }
+
+    window.shellToggle = {
+        // บังคับยุบ/กาง และแจ้งกลับหา Razor ถ้าสถานะเปลี่ยน
         setCollapsed(collapsed) {
-            const host = el();
-            if (!host) return;
-            host.classList.toggle('shell--collapsed', collapsed);
-            try { localStorage.setItem('sidebarCollapsed', String(collapsed)); } catch { }
+            const h = host();
+            if (!h) return;
+            const before = h.classList.contains('shell--collapsed');
+            h.classList.toggle('shell--collapsed', collapsed);
+            notifyIfChanged(before);
         },
-        save(collapsed) {
-            try { localStorage.setItem('sidebarCollapsed', String(collapsed)); } catch { }
-        },
-        getSaved() {
-            try { return localStorage.getItem('sidebarCollapsed'); } catch { return null; }
-        },
-        getState() {
-            const c = currentCollapsed();
-            return c === null ? null : String(c);
-        },
-        // เฝ้า class ของ #app-shell แล้วเรียกกลับหา Blazor
-        watch(dotnetRef) {
-            const host = el();
-            if (!host || !window.MutationObserver) return;
+
+        // ใช้โดย ShellToggle.razor เพื่อติดตามการเปลี่ยนแปลง class จากแหล่งอื่น
+        watch(ref) {
+            dotnetRef = ref;
+            const h = host();
+            if (!h || !window.MutationObserver) return;
 
             if (observer) {
                 try { observer.disconnect(); } catch { }
@@ -39,16 +41,16 @@ window.shellToggle = (function () {
             }
 
             observer = new MutationObserver(() => {
-                const c = currentCollapsed();
+                const c = isCollapsed();
                 if (c !== null && dotnetRef) {
                     dotnetRef.invokeMethodAsync('OnShellStateChanged', c);
                 }
             });
 
-            observer.observe(host, { attributes: true, attributeFilter: ['class'] });
+            observer.observe(h, { attributes: true, attributeFilter: ['class'] });
 
             // แจ้งสถานะครั้งแรกทันที
-            const c = currentCollapsed();
+            const c = isCollapsed();
             if (c !== null && dotnetRef) {
                 dotnetRef.invokeMethodAsync('OnShellStateChanged', c);
             }

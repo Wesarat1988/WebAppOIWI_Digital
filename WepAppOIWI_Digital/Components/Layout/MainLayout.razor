@@ -2,13 +2,13 @@
 @using Microsoft.AspNetCore.Components.Routing
 @using WepAppOIWI_Digital.Components.Shared
 
-<div id="app-shell" class="shell">
+<div id="app-shell" class="shell shell--collapsed">
     <!-- Sidebar -->
     <aside class="shell__sidebar">
-
         <!-- โลโก้อย่างเดียว (ชนขอบ) -->
         <div class="brand brand--flush">
-            <NavLink href="" Match="NavLinkMatch.All" class="brand__link" title="Home" aria-label="Home">
+            <!-- ใช้ / แทน "" เพื่อกัน path แปลก ๆ และไม่ต้อง Match=All ที่โลโก้ -->
+            <NavLink href="/" class="brand__link" title="Home" aria-label="Home">
                 <img src="icons/Corporate_Logo.jpg"
                      alt="Delta"
                      class="brand-logo"
@@ -17,14 +17,15 @@
         </div>
 
         <nav class="menu">
-            <NavLink href="" Match="NavLinkMatch.All" class="menu__item">
+            <!-- ลิงก์ควรเป็นแบบ absolute path และให้ Match=All เฉพาะ Home -->
+            <NavLink href="/" Match="NavLinkMatch.All" class="menu__item">
                 <i class="bi bi-house-door"></i><span class="menu__text">Home</span>
             </NavLink>
-            <NavLink href="counter" class="menu__item">
-                <i class="bi bi-plus-square"></i><span class="menu__text">Counter</span>
+            <NavLink href="/counter" class="menu__item">
+                <i class="bi bi-file-earmark-medical"></i><span class="menu__text">OI/WI</span>
             </NavLink>
-            <NavLink href="setup" class="menu__item">
-                <i class="bi bi-list-check"></i><span class="menu__text">Setup</span>
+            <NavLink href="/setup" class="menu__item">
+                <i class="bi bi-gear"></i><span class="menu__text">Setup</span>
             </NavLink>
         </nav>
     </aside>
@@ -32,8 +33,10 @@
     <!-- Content -->
     <div class="shell__content">
         <header class="topbar">
+            <!-- ปุ่ม Toggle -->
             <ShellToggle />
-            <a class="link-secondary ms-auto" href="about">About</a>
+            <!-- ลิงก์ About เป็น path เริ่มต้นด้วย / -->
+            <a class="link-secondary ms-auto" href="/about">About</a>
         </header>
 
         <main class="content-area">
