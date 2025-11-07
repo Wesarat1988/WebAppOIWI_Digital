@@ -6,11 +6,23 @@
     background-color: #f8f9fa;
 }
 
+/* กล่องรวมหน้า PDF */
 .pdfjs-viewer {
-    position: relative;
-    min-height: 60vh;
-    padding: 1.5rem 1rem;
-    overflow-x: auto;
+    width: 100%;
+    max-width: 1200px; /* ปรับตามดีไซน์ */
+    margin: 0 auto;
+}
+
+/* ซ้อนทับ layer ตัวหนังสือ (ให้คัดลอกได้) */
+.pdfjs-textLayer {
+    mix-blend-mode: multiply;
+    pointer-events: none;
+}
+
+/* ป้องกันภาพเบลอบางเบราว์เซอร์ */
+.pdfjs-page-canvas {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
 }
 
 .pdfjs-viewer canvas {
@@ -29,3 +41,54 @@
 .pdfjs-error {
     font-size: 0.95rem;
 }
+
+/* ============ Next Document Badge (OI/WI) ============ */
+:root {
+    --oi-bg: #e7f1ff; /* OI: ฟ้าอ่อน */
+    --oi-fg: #0b60d1; /* OI: ฟ้าเข้ม */
+    --oi-bd: #b7d7ff;
+    --wi-bg: #fff6d8; /* WI: เหลืองอ่อน */
+    --wi-fg: #a36200; /* WI: เหลืองเข้ม (อำพัน) */
+    --wi-bd: #ffe7a3;
+}
+
+.doc-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .35rem .65rem;
+    border-radius: 12px;
+    font-weight: 600;
+    line-height: 1;
+    border: 1px solid transparent;
+    user-select: none;
+    transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+
+    .doc-badge .doc-badge__label {
+        opacity: .85;
+        font-weight: 600
+    }
+
+    .doc-badge .doc-badge__code {
+        font-weight: 800
+    }
+
+.doc-badge--oi {
+    background: var(--oi-bg);
+    color: var(--oi-fg);
+    border-color: var(--oi-bd);
+}
+
+.doc-badge--wi {
+    background: var(--wi-bg);
+    color: var(--wi-fg);
+    border-color: var(--wi-bd);
+}
+
+.doc-badge.doc-badge--sm {
+    padding: .3rem .55rem;
+    border-radius: 10px;
+    font-size: .9rem
+}
+

@@ -67,10 +67,21 @@ else
     @if (canPreviewInline && !string.IsNullOrEmpty(previewSource))
     {
         <div class="document-preview-frame border rounded">
+
+            <!-- PDF Toolbar -->
+            <div class="d-flex align-items-center gap-2 p-2 border-bottom bg-light">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomOut">−</button>
+                <span id="@($"{pdfContainerId}-scale")" class="small">100%</span>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomIn">+</button>
+                <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="FitWidth">Fit width</button>
+            </div>
+
+            <!-- PDF Canvas Container -->
             <div id="@pdfContainerId" class="pdfjs-viewer">
                 <div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
             </div>
         </div>
+
         <p class="text-muted small mt-2">
             หากไฟล์ไม่แสดงผลในตัวอย่าง กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
         </p>
@@ -84,8 +95,7 @@ else
 }
 
 @code {
-    [Parameter]
-    public string Token { get; set; } = string.Empty;
+    [Parameter] public string Token { get; set; } = string.Empty;
 
     private bool isLoading = true;
     private string? errorMessage;
@@ -161,11 +171,10 @@ else
         if (!isLoading && pendingPdfRender && !string.IsNullOrEmpty(previewSource))
         {
             pendingPdfRender = false;
-
             try
             {
                 pdfRenderAttempts++;
-                await JSRuntime.InvokeVoidAsync("pdfViewer.renderPdf", previewSource, pdfContainerId);
+                await JSRuntime.InvokeVoidAsync("pdfViewer.render", previewSource!, pdfContainerId);
             }
             catch (JSException jsEx)
             {
@@ -188,16 +197,18 @@ else
         }
     }
 
+    // ===== Toolbar actions (แก้ปัญหา quote ชนกันใน markup) =====
+    private Task ZoomIn() => JSRuntime.InvokeVoidAsync("pdfViewer.zoomIn", pdfContainerId).AsTask();
+    private Task ZoomOut() => JSRuntime.InvokeVoidAsync("pdfViewer.zoomOut", pdfContainerId).AsTask();
+    private Task FitWidth() => JSRuntime.InvokeVoidAsync("pdfViewer.fitWidth", pdfContainerId).AsTask();
+
     private static string DisplayOrDash(string? value)
-        => string.IsNullOrWhiteSpace(value) || value == "-"
-            ? "-"
-            : value!;
+        => string.IsNullOrWhiteSpace(value) || value == "-" ? "-" : value!;
 
     private static string FormatTimestamp(DateTimeOffset? timestamp)
         => timestamp.HasValue
             ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
             : "-";
 
-    private void NavigateHome()
-        => Navigation.NavigateTo("/");
+    private void NavigateHome() => Navigation.NavigateTo("/");
 }

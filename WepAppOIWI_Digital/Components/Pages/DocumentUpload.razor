@@ -27,20 +27,17 @@ else
 
     <div class="d-flex flex-wrap gap-3 mb-3">
         @{
-            var label = ResolveDocumentTypeLabel(selectedDocumentType);
+            var label = ResolveDocumentTypeLabel(selectedDocumentType); // "OI" หรือ "WI"
             var previewCode = GetDocumentCodeForType(selectedDocumentType);
+            var typeNorm = (selectedDocumentType ?? "").Trim().ToUpperInvariant();
+            var toneClass = typeNorm == "WI" ? "doc-badge--wi" : "doc-badge--oi";
         }
 
-        <span class="badge rounded-pill text-bg-primary px-3 py-2">
-            เลขเอกสารถัดไป (@label):
-            @if (!string.IsNullOrEmpty(previewCode))
-            {
-                <strong>@previewCode</strong>
-            }
-            else
-            {
-                <span class="text-light opacity-75">ไม่พร้อมใช้งาน</span>
-            }
+        <span class="doc-badge @toneClass">
+            <span class="doc-badge__label">เลขเอกสารถัดไป (@label):</span>
+            <span class="doc-badge__code">
+                @(string.IsNullOrEmpty(previewCode) ? "ไม่พร้อมใช้งาน" : previewCode)
+            </span>
         </span>
     </div>
 }
@@ -58,9 +55,11 @@ else
 
     <div class="mb-3">
         <label class="form-label">ประเภทเอกสาร</label>
+        @* ใช้ Value/ValueChanged เพื่ออัปเดตเลขเอกสารถัดไปทันที *@
         <InputSelect class="form-select"
-                     @bind-Value="SelectedDocumentType"
-                     @bind-Value:event="onchange">
+                     Value="selectedDocumentType"
+                     ValueChanged="@(async (string v) => await OnDocumentTypeChanged(v))"
+                     ValueExpression="() => selectedDocumentType">
             @foreach (var documentType in DocumentNumbering.KnownTypes)
             {
                 <option value="@documentType">@documentType</option>
@@ -276,23 +275,13 @@ else
 
     private void NavigateHome() => Navigation.NavigateTo("/");
 
-    private string SelectedDocumentType
-    {
-        get => selectedDocumentType;
-        set => _ = HandleDocumentTypeChangedAsync(value);
-    }
-
-    private async Task HandleDocumentTypeChangedAsync(string? value)
+    // ✅ ใช้ handler แทน @bind-Value เพื่อตอบสนองทันที
+    private async Task OnDocumentTypeChanged(string? value)
     {
         var normalized = NormalizeDocumentTypeOrDefault(value);
-
-        if (string.Equals(selectedDocumentType, normalized, System.StringComparison.Ordinal))
-        {
-            return;
-        }
-
         ApplySelectedDocumentType(normalized);
         await UpdateDocumentNumberPreviewAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task UpdateDocumentNumberPreviewAsync(bool notifyStart = true)
@@ -311,7 +300,6 @@ else
 
         try
         {
-            // ดึงเฉพาะประเภทที่รู้จัก (ยังคงคำนวณไว้ล่วงหน้าได้ จะได้สลับประเภทแล้วแสดงทันที)
             foreach (var documentType in DocumentNumbering.KnownTypes)
             {
                 var normalizedType = NormalizeDocumentTypeOrDefault(documentType);

@@ -64,7 +64,7 @@ internal static class DocumentNumbering
 
     // ---------- Parsing ----------
     private static readonly Regex CodeRegex =
-        new(@"^(?<type>[A-Za-z]{2})-(?<seq>\d{4})$", RegexOptions.Compiled);
+        new(@"^(?<type>[A-Za-z]{2})-?(?<seq>\d{4})$", RegexOptions.Compiled);
 
     /// <summary>พยายามอ่านรหัสรูปแบบ TYPE-0001</summary>
     public static bool TryParseCode(string? code, out string type, out int sequenceNumber)
@@ -93,11 +93,24 @@ internal static class DocumentNumbering
     {
         var type = NormalizeTypeOrDefault(documentType);
 
-        var max = existingCodes?
-            .Select(c => TryParseCode(c, out var t, out var n) && string.Equals(t, type, StringComparison.OrdinalIgnoreCase) ? n : 0)
-            .DefaultIfEmpty(0)
-            .Max() ?? 0;
+        // เก็บลำดับที่มีอยู่จริงของชนิดเดียวกัน
+        var used = new HashSet<int>();
+        if (existingCodes != null)
+        {
+            foreach (var code in existingCodes)
+            {
+                if (TryParseCode(code, out var t, out var n) &&
+                    string.Equals(t, type, StringComparison.OrdinalIgnoreCase) &&
+                    n > 0)
+                {
+                    used.Add(n);
+                }
+            }
+        }
 
-        return max + 1;
+        // หาเลขบวกตัวแรกที่ "ไม่มี" ในชุด (smallest missing positive)
+        var i = 1;
+        while (used.Contains(i)) i++;
+        return i;
     }
 }

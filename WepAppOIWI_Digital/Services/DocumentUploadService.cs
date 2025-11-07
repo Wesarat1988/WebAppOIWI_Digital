@@ -99,7 +99,7 @@ public sealed class DocumentUploadService
 
             if (!string.IsNullOrEmpty(normalizedDocumentType))
             {
-                preferredSequence = CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+                preferredSequence = CalculateNextSequenceSmart(rootPath, manifest, normalizedDocumentType);
                 documentCode = DocumentNumbering.FormatCode(normalizedDocumentType, preferredSequence);
             }
 
@@ -388,7 +388,7 @@ public sealed class DocumentUploadService
                 return null;
             }
 
-            var nextSequence = CalculateNextSequence(manifest.Documents, normalizedType);
+            var nextSequence = CalculateNextSequenceSmart(rootPath, manifest, normalizedType);
             return DocumentNumbering.FormatCode(normalizedType, nextSequence);
         }
         catch (Exception ex)
@@ -429,6 +429,7 @@ public sealed class DocumentUploadService
         ManifestEntry? existingEntry = existingIndex >= 0 ? manifest.Documents[existingIndex] : null;
 
         int? resolvedSequence = preferredSequence;
+        var rootPath = Path.GetDirectoryName(manifestPath) ?? string.Empty;
 
         if (existingEntry is not null)
         {
@@ -440,14 +441,14 @@ public sealed class DocumentUploadService
 
                 if (resolvedSequence is null || resolvedSequence <= 0)
                 {
-                    resolvedSequence = CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+                    resolvedSequence = CalculateNextSequenceSmart(rootPath, manifest, normalizedDocumentType);
                 }
             }
             else
             {
                 resolvedSequence = string.IsNullOrEmpty(normalizedDocumentType)
                     ? existingEntry.SequenceNumber
-                    : CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+                    : CalculateNextSequenceSmart(rootPath, manifest, normalizedDocumentType);
             }
         }
         else
@@ -456,7 +457,7 @@ public sealed class DocumentUploadService
             {
                 resolvedSequence = string.IsNullOrEmpty(normalizedDocumentType)
                     ? null
-                    : CalculateNextSequence(manifest.Documents, normalizedDocumentType);
+                    : CalculateNextSequenceSmart(rootPath, manifest, normalizedDocumentType);
             }
         }
 
@@ -540,6 +541,75 @@ public sealed class DocumentUploadService
             // Best-effort cleanup.
         }
     }
+
+    // รวมรหัสเอกสารที่มีอยู่จริง (ทั้งจากไฟล์ manifest และจากชื่อโฟลเดอร์ใน root)
+    // รวมรหัสเอกสารที่ “มีอยู่จริง” (ทั้งจาก manifest ที่ไฟล์ยังอยู่ และจากชื่อโฟลเดอร์ใน root)
+    private static IEnumerable<string> CollectExistingCodes(string rootPath, ManifestDocument manifest)
+    {
+        var list = new List<string>();
+
+        // 1) จาก manifest: นับเฉพาะเอกสารที่ยังมีไฟล์อยู่จริง
+        foreach (var e in manifest.Documents)
+        {
+            if (e is null) continue;
+            if (e.SequenceNumber is int seq && seq > 0 && !string.IsNullOrWhiteSpace(e.DocumentType))
+            {
+                try
+                {
+                    // path ที่บันทึกใน manifest อาจเป็นไฟล์ใต้โฟลเดอร์เอกสาร หรือไฟล์ที่ root
+                    var relative = (e.FileName ?? string.Empty)
+                        .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+                    var fullPath = Path.GetFullPath(Path.Combine(rootPath, relative));
+
+                    // นับเฉพาะเมื่อไฟล์ยังอยู่จริง
+                    if (!File.Exists(fullPath))
+                    {
+                        continue;
+                    }
+
+                    var code = DocumentNumbering.FormatCode(e.DocumentType, seq);
+                    if (!string.IsNullOrEmpty(code)) list.Add(code!);
+                }
+                catch
+                {
+                    // best-effort
+                }
+            }
+        }
+
+        // 2) จากโฟลเดอร์ระดับบนใน root (ชื่อโฟลเดอร์เป็นเลขเอกสาร)
+        try
+        {
+            foreach (var dir in Directory.EnumerateDirectories(rootPath))
+            {
+                var name = Path.GetFileName(dir);
+                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                // รองรับ OI-0001 / WI0002 (เราได้แก้ TryParseCode ให้รองรับ - แบบ optional แล้ว)
+                if (DocumentNumbering.TryParseCode(name, out var type, out var seq) && seq > 0)
+                {
+                    var code = DocumentNumbering.FormatCode(type, seq);
+                    if (!string.IsNullOrEmpty(code)) list.Add(code!);
+                }
+            }
+        }
+        catch
+        {
+            // best-effort
+        }
+
+        return list;
+    }
+
+    // คำนวณเลขถัดไป โดยใช้ smallest-missing จากชุดรหัสที่เก็บรวบรวมมาแล้ว
+    // คำนวณเลขถัดไปจากชุดรหัสที่ตรวจสอบแล้วว่า “มีอยู่จริง”
+    private static int CalculateNextSequenceSmart(string rootPath, ManifestDocument manifest, string normalizedDocumentType)
+    {
+        var existingCodes = CollectExistingCodes(rootPath, manifest);
+        return DocumentNumbering.GetNextSequence(existingCodes, normalizedDocumentType);
+    }
+
+
 
     private static void TryDeleteDirectoryIfEmpty(string? path)
     {
@@ -659,6 +729,7 @@ public sealed class DocumentUploadService
             ? path
             : path + Path.DirectorySeparatorChar;
 
+    // (ไม่ถูกใช้แล้ว แต่เก็บเผื่ออ้างอิง)
     private static int CalculateNextSequence(IReadOnlyCollection<ManifestEntry> entries, string normalizedDocumentType)
     {
         var max = 0;
