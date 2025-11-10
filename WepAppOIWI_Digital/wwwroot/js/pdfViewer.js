@@ -162,10 +162,13 @@
         }
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, state.canvas.width, state.canvas.height);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, state.canvas.width, state.canvas.height);
 
         const renderContext = {
             canvasContext: ctx,
-            viewport
+            viewport,
+            background: "rgb(255,255,255)"
         };
         if (dpr !== 1) {
             renderContext.transform = [dpr, 0, 0, dpr, 0, 0];

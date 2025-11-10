@@ -192,4 +192,7 @@ html, body, #app-shell, .shell__content, .content-area, .pdf-viewport, .pdf-scro
   transform: none !important;
   image-rendering: -webkit-optimize-contrast;
   image-rendering: crisp-edges;
+  background: #fff !important;
+  mix-blend-mode: normal !important;
+  filter: none !important;
 }
