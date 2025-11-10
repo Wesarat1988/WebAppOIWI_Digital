@@ -184,6 +184,6 @@ html, body{
 }
 
 /* Safety: ensure no transforms break fixed positioning */
-html, body, #app-shell, .shell__content, .content-area{
+html, body, #app-shell, .shell__content, .content-area, .pdf-viewport, .pdf-scroll{
   transform: none !important;
 }
