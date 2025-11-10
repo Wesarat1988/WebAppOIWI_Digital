@@ -63,11 +63,11 @@
         if (existing.resizeObserver) {
             existing.resizeObserver.disconnect();
         }
-        if (existing.scrollEl && existing.wheelHandler) {
-            existing.scrollEl.removeEventListener("wheel", existing.wheelHandler);
+        if (existing.host && existing.wheelHandler) {
+            existing.host.removeEventListener("wheel", existing.wheelHandler);
         }
-        if (existing.scrollEl && existing.keyHandler) {
-            existing.scrollEl.removeEventListener("keydown", existing.keyHandler);
+        if (existing.host && existing.keyHandler) {
+            existing.host.removeEventListener("keydown", existing.keyHandler);
         }
 
         views.delete(containerId);
@@ -104,15 +104,15 @@
         }
     }
 
-    function setScrollFocus(scrollEl) {
-        if (!scrollEl) {
+    function setScrollFocus(element) {
+        if (!element) {
             return;
         }
-        if (scrollEl.tabIndex < 0) {
-            scrollEl.tabIndex = 0;
+        if (element.tabIndex < 0) {
+            element.tabIndex = 0;
         }
         try {
-            scrollEl.focus({ preventScroll: true });
+            element.focus({ preventScroll: true });
         } catch {
             // ignore focus errors
         }
@@ -165,56 +165,58 @@
     }
 
     function attachInteraction(state) {
-        const scrollEl = state.scrollEl;
-        if (!scrollEl) {
+        const host = state.host;
+        if (!host) {
             return;
         }
 
         const wheelHandler = (event) => {
-            if (event.deltaY > 0) {
-                if (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1 && state.page < state.pages) {
-                    event.preventDefault();
-                    gotoPage(state.containerId, state.page + 1).catch(console.error);
-                }
-            } else if (event.deltaY < 0) {
-                if (scrollEl.scrollTop <= 0 && state.page > 1) {
-                    event.preventDefault();
-                    gotoPage(state.containerId, state.page - 1).catch(console.error);
-                }
+            if (!event.ctrlKey) {
+                return;
+            }
+
+            event.preventDefault();
+            if (event.deltaY < 0) {
+                zoomIn(state.containerId).catch(console.error);
+            } else if (event.deltaY > 0) {
+                zoomOut(state.containerId).catch(console.error);
             }
         };
 
         const keyHandler = (event) => {
+            if (event.ctrlKey) {
+                if (event.key === "+" || event.key === "=") {
+                    event.preventDefault();
+                    zoomIn(state.containerId).catch(console.error);
+                    return;
+                }
+                if (event.key === "-" || event.key === "_") {
+                    event.preventDefault();
+                    zoomOut(state.containerId).catch(console.error);
+                    return;
+                }
+            }
+
             switch (event.key) {
-                case "ArrowDown":
                 case "PageDown":
                     event.preventDefault();
                     gotoPage(state.containerId, state.page + 1).catch(console.error);
                     break;
-                case "ArrowUp":
                 case "PageUp":
                     event.preventDefault();
                     gotoPage(state.containerId, state.page - 1).catch(console.error);
-                    break;
-                case "Home":
-                    event.preventDefault();
-                    gotoPage(state.containerId, 1).catch(console.error);
-                    break;
-                case "End":
-                    event.preventDefault();
-                    gotoPage(state.containerId, state.pages).catch(console.error);
                     break;
                 default:
                     break;
             }
         };
 
-        scrollEl.addEventListener("wheel", wheelHandler, { passive: false });
-        scrollEl.addEventListener("keydown", keyHandler);
+        host.addEventListener("wheel", wheelHandler, { passive: false });
+        host.addEventListener("keydown", keyHandler);
 
         state.wheelHandler = wheelHandler;
         state.keyHandler = keyHandler;
-        setScrollFocus(scrollEl);
+        setScrollFocus(host);
     }
 
     function observeResize(state) {
