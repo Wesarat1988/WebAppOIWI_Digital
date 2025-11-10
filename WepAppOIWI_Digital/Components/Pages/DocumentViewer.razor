@@ -68,13 +68,23 @@ else
     {
         <div class="pdf-viewport rounded border">
             <!-- toolbar (sticky / ไม่เลื่อนตาม PDF) -->
-            <div class="pdf-toolbar">
-                <div class="btn-group me-2">
+            <div class="pdf-toolbar d-flex flex-wrap align-items-center gap-2">
+                <div class="btn-group">
+                    <button class="btn btn-light" @onclick="PrevPage">‹</button>
+                    <span class="btn btn-light disabled">
+                        <span id="@($"{pdfContainerId}-page")">@currentPage</span> /
+                        <span id="@($"{pdfContainerId}-pages")">@totalPages</span>
+                    </span>
+                    <button class="btn btn-light" @onclick="NextPage">›</button>
+                </div>
+
+                <div class="btn-group ms-3">
                     <button class="btn btn-light" @onclick="ZoomOut">−</button>
-                    <span class="btn btn-light disabled">@zoomPercent%</span>
+                    <span class="btn btn-light disabled" id="@($"{pdfContainerId}-scale")">@zoomPercent%</span>
                     <button class="btn btn-light" @onclick="ZoomIn">+</button>
                 </div>
-                <button class="btn btn-outline-secondary" @onclick="FitWidth">Fit width</button>
+
+                <button class="btn btn-outline-secondary ms-2" @onclick="FitWidth">Fit width</button>
             </div>
 
             <!-- ส่วนที่สกรอลล์เฉพาะหน้า PDF -->
@@ -114,7 +124,9 @@ else
     private readonly string pdfContainerId = $"pdfjs-viewer-{Guid.NewGuid():N}";
     private const int MaxPdfRenderAttempts = 3;
 
-    // เปอร์เซ็นต์ซูมบน toolbar
+    // สถานะของตัวแสดง PDF
+    private int currentPage = 1;
+    private int totalPages = 1;
     private int zoomPercent = 100;
 
     protected override async Task OnParametersSetAsync()
@@ -128,6 +140,9 @@ else
         canPreviewInline = false;
         pendingPdfRender = false;
         pdfRenderAttempts = 0;
+        currentPage = 1;
+        totalPages = 1;
+        zoomPercent = 100;
 
         if (!DocumentCatalogService.TryDecodeDocumentToken(Token, out var normalizedPath))
         {
@@ -184,11 +199,10 @@ else
                 await JSRuntime.InvokeVoidAsync("pdfViewer.ready");
                 await JSRuntime.InvokeVoidAsync("pdfViewer.render", previewSource!, pdfContainerId);
 
-                // อ่าน % เริ่มต้นจาก viewer
                 try
                 {
-                    zoomPercent = await JSRuntime.InvokeAsync<int>("pdfViewer.getZoomPercent", pdfContainerId);
-                    StateHasChanged();
+                    var info = await JSRuntime.InvokeAsync<PageInfo>("pdfViewer.getPageInfo", pdfContainerId);
+                    ApplyInfo(info);
                 }
                 catch { }
             }
@@ -205,6 +219,26 @@ else
     }
 
     // ===== Toolbar actions =====
+    private async Task PrevPage()
+    {
+        try
+        {
+            var info = await JSRuntime.InvokeAsync<PageInfo>("pdfViewer.prevPage", pdfContainerId);
+            ApplyInfo(info);
+        }
+        catch { }
+    }
+
+    private async Task NextPage()
+    {
+        try
+        {
+            var info = await JSRuntime.InvokeAsync<PageInfo>("pdfViewer.nextPage", pdfContainerId);
+            ApplyInfo(info);
+        }
+        catch { }
+    }
+
     private async Task ZoomIn()
     {
         try { zoomPercent = await JSRuntime.InvokeAsync<int>("pdfViewer.zoomIn", pdfContainerId); StateHasChanged(); }
@@ -220,6 +254,26 @@ else
         try { zoomPercent = await JSRuntime.InvokeAsync<int>("pdfViewer.fitWidth", pdfContainerId); StateHasChanged(); }
         catch { }
     }
+
+    private async Task GotoPage(int page)
+    {
+        try
+        {
+            var info = await JSRuntime.InvokeAsync<PageInfo>("pdfViewer.gotoPage", pdfContainerId, page);
+            ApplyInfo(info);
+        }
+        catch { }
+    }
+
+    private void ApplyInfo(PageInfo info)
+    {
+        currentPage = info.page;
+        totalPages = info.pages;
+        zoomPercent = info.zoom;
+        StateHasChanged();
+    }
+
+    private readonly record struct PageInfo(int page, int pages, int zoom);
 
     private static string DisplayOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) || value == "-" ? "-" : value!;
