@@ -1,255 +1,3 @@
-﻿/* ============================================
-   🔧 CRITICAL FIX: ป้องกัน Sidebar ขยับเมื่อ scroll PDF
-   ============================================ */
-
-html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden; /* บังคับให้ scroll เฉพาะใน shell__content */
-    position: relative;
-    isolation: isolate; /* สร้าง stacking context แยก */
-}
-
-/* ============================================
-   Shell Layout - ป้องกัน layout shift
-   ============================================ */
-#app-shell {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    width: 100%;
-    height: 100vh;
-    overflow: hidden;
-    position: relative;
-    isolation: isolate;
-}
-
-/* ============================================
-   SIDEBAR - Lock ให้แน่นมาก (ห้ามขยับเด็ดขาด)
-   ============================================ */
-.shell__sidebar {
-    position: fixed !important; /* บังคับ fixed */
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 240px;
-    background: #2c2c2c;
-    z-index: 9999999; /* สูงมาก */
-    overflow-y: auto;
-    overflow-x: hidden;
-    /* 🎯 CRITICAL: GPU Acceleration + Lock */
-    transform: translate3d(0, 0, 0) !important;
-    will-change: transform;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    /* 🎯 CRITICAL: CSS Containment - บอก browser ว่าอย่าแตะ */
-    contain: strict; /* layout + style + paint + size */
-    /* 🎯 CRITICAL: ป้องกัน overscroll */
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Sidebar เมื่อ collapsed */
-.shell--collapsed .shell__sidebar {
-    transform: translate3d(-240px, 0, 0) !important;
-}
-
-/* ป้องกัน iOS Safari momentum scroll */
-@supports (-webkit-touch-callout: none) {
-    .shell__sidebar {
-        -webkit-transform: translate3d(0, 0, 0) !important;
-        position: fixed !important;
-    }
-}
-
-/* ============================================
-   CONTENT AREA - แยก scroll context สมบูรณ์
-   ============================================ */
-.shell__content {
-    position: fixed !important;
-    top: 0;
-    left: 240px; /* ชิดขวา sidebar */
-    right: 0;
-    bottom: 0;
-    overflow: hidden; /* ห้าม scroll ที่นี่ */
-    background: #fff;
-    /* 🎯 CRITICAL: แยก stacking context */
-    transform: translate3d(0, 0, 0);
-    will-change: scroll-position;
-    isolation: isolate;
-    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* Content เมื่อ sidebar collapsed */
-.shell--collapsed .shell__content {
-    left: 0 !important;
-}
-
-/* ============================================
-   TOPBAR - ห้ามขยับ
-   ============================================ */
-.topbar {
-    position: sticky;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 60px;
-    background: #fff;
-    border-bottom: 1px solid #dee2e6;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    padding: 0 1.5rem;
-    /* Lock ไว้ */
-    transform: translateZ(0);
-    contain: layout style;
-}
-
-/* ============================================
-   CONTENT-AREA (ที่จะมี PDF scroll)
-   ============================================ */
-.content-area {
-    position: absolute !important;
-    top: 60px; /* ใต้ topbar */
-    left: 0;
-    right: 0;
-    bottom: 0;
-    overflow-y: auto; /* scroll ได้เฉพาะที่นี่ */
-    overflow-x: hidden;
-    padding: 1.5rem;
-    /* 🎯 CRITICAL: แยก scroll context จาก sidebar */
-    transform: translate3d(0, 0, 0);
-    will-change: scroll-position;
-    contain: layout style paint;
-    isolation: isolate;
-    /* ป้องกัน iOS bounce scroll */
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* ============================================
-   PDF VIEWPORT - ป้องกัน canvas ดัน layout
-   ============================================ */
-.pdf-viewport {
-    position: relative !important;
-    width: 100%;
-    background: #f5f5f5;
-    /* 🎯 Lock ไว้ */
-    transform: translateZ(0);
-    contain: layout style paint;
-    isolation: isolate;
-}
-
-.pdf-toolbar {
-    position: sticky;
-    top: 0;
-    left: 0;
-    right: 0;
-    background: #fff;
-    border-bottom: 1px solid #ddd;
-    padding: 0.75rem 1rem;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    /* Lock */
-    transform: translateZ(0);
-    contain: layout;
-}
-
-.pdf-scroll {
-    position: relative !important;
-    width: 100%;
-    height: calc(100% - 60px); /* ลบความสูง toolbar */
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 1rem;
-    /* 🎯 CRITICAL: ป้องกัน scroll ดัน sidebar */
-    transform: translate3d(0, 0, 0);
-    contain: strict;
-    isolation: isolate;
-    /* ป้องกัน overscroll */
-    overscroll-behavior: none;
-    -webkit-overflow-scrolling: touch;
-}
-
-/* ============================================
-   PDF.JS VIEWER - Lock canvas rendering
-   ============================================ */
-.pdfjs-viewer {
-    position: static !important; /* ห้ามใช้ fixed/absolute */
-    width: 100%;
-    max-width: 1200px;
-    margin: 0 auto;
-    /* 🎯 CRITICAL: ป้องกัน canvas ดัน layout */
-    transform: none !important;
-    contain: paint !important;
-}
-
-.pdfjs-page-canvas {
-    display: block !important;
-    margin: 0 auto 16px auto !important;
-    position: static !important; /* ห้าม position อื่น */
-    /* 🎯 CRITICAL: GPU layer + Lock */
-    transform: translateZ(0) !important;
-    backface-visibility: hidden !important;
-    -webkit-backface-visibility: hidden !important;
-    will-change: transform !important;
-    /* ป้องกัน antialiasing shift */
-    image-rendering: -webkit-optimize-contrast;
-    image-rendering: crisp-edges;
-    /* ป้องกัน layout reflow */
-    contain: strict;
-    /* Shadow */
-    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.1);
-    background-color: #fff;
-}
-
-/* ============================================
-   MOBILE (< 768px) - Overlay Mode
-   ============================================ */
-@media (max-width: 768px) {
-    #app-shell {
-        grid-template-columns: 1fr; /* column เดียว */
-    }
-
-    .shell__sidebar {
-        width: 280px;
-        transform: translate3d(-280px, 0, 0) !important; /* ซ่อน */
-        box-shadow: 2px 0 16px rgba(0, 0, 0, 0.2);
-    }
-
-    /* เปิด sidebar บนมือถือ */
-    .shell:not(.shell--collapsed) .shell__sidebar {
-        transform: translate3d(0, 0, 0) !important;
-    }
-
-    .shell__content {
-        left: 0 !important; /* เต็มหน้าจอ */
-    }
-
-    /* Overlay */
-    .shell__overlay {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
-        z-index: 9999998; /* ต่ำกว่า sidebar */
-        opacity: 0;
-        transition: opacity 0.3s ease;
-    }
-
-    .shell:not(.shell--collapsed) .shell__overlay {
-        display: block;
-        opacity: 1;
-    }
-}
-
 /* ============================================
    BRAND & MENU (ตาม design เดิม)
    ============================================ */
@@ -273,6 +21,11 @@ html, body {
     display: block;
 }
 
+.shell__sidebar {
+    background: #2c2c2c;
+    color: #fff;
+}
+
 .menu {
     padding: 1rem 0;
 }
@@ -287,22 +40,36 @@ html, body {
     gap: 0.75rem;
 }
 
-    .menu__item:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-        color: #fff;
-    }
+.menu__item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
 
-    .menu__item.active {
-        background-color: rgba(255, 255, 255, 0.15);
-        color: #fff;
-        font-weight: 600;
-    }
+.menu__item.active {
+    background-color: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font-weight: 600;
+}
 
-    .menu__item i {
-        font-size: 1.25rem;
-        width: 1.5rem;
-        text-align: center;
-    }
+.menu__item i {
+    font-size: 1.25rem;
+    width: 1.5rem;
+    text-align: center;
+}
+
+.topbar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: #fff;
+    border-bottom: 1px solid #dee2e6;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    padding: 0 1.5rem;
+}
 
 /* ============================================
    SCROLLBAR STYLING
@@ -331,10 +98,10 @@ html, body {
     border-radius: 4px;
 }
 
-    .content-area::-webkit-scrollbar-thumb:hover,
-    .pdf-scroll::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 0, 0, 0.3);
-    }
+.content-area::-webkit-scrollbar-thumb:hover,
+.pdf-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.3);
+}
 
 /* ============================================
    UTILITIES
@@ -343,8 +110,86 @@ html, body {
     overflow: hidden !important;
 }
 
-/* ป้องกัน text select ขณะ scroll */
 .is-scrolling {
     user-select: none;
     -webkit-user-select: none;
+}
+
+/* === Layout variables === */
+:root{
+  --sidebar-w: 260px;
+  --sidebar-w-collapsed: 86px;
+}
+
+/* Lock page scrolling to content-area only */
+html, body{
+  height: 100%;
+  overflow: hidden;
+  margin: 0;
+}
+
+/* Root shell */
+#app-shell.shell{
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Sidebar: fixed to viewport (never moves) */
+.shell__sidebar{
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  width: var(--sidebar-w);
+  height: 100vh;
+  overflow-y: auto;
+  z-index: 1040;
+}
+
+/* Collapse state driven by ShellToggle */
+#app-shell.shell.shell--collapsed .shell__sidebar{
+  width: var(--sidebar-w-collapsed);
+}
+
+/* Content sits to the right and is the only scroll area parent */
+.shell__content{
+  height: 100vh;
+  margin-left: var(--sidebar-w);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;                    /* this layer doesn't scroll */
+  transition: margin-left .2s ease;
+}
+#app-shell.shell.shell--collapsed .shell__content{
+  margin-left: var(--sidebar-w-collapsed);
+}
+
+/* Scroll only here */
+.content-area{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* PDF viewer inner scroll (if present) */
+.pdf-viewport, .pdf-scroll{
+  height: 100%;
+  overflow: auto;
+}
+
+/* Keep toggle in topbar; don't follow PDF scroll */
+.topbar .shell-fab{
+  position: sticky;
+  top: 8px;
+  z-index: 1100;
+}
+
+/* Safety: ensure no transforms break fixed positioning */
+html, body, #app-shell, .shell__content, .content-area, .pdf-viewport, .pdf-scroll{
+  transform: none !important;
+}
+
+.pdfjs-page-canvas{
+  transform: none !important;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
 }
