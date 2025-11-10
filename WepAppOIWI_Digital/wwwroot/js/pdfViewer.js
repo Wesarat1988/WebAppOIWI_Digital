@@ -6,10 +6,12 @@
     let loaderPromise;
     const views = new Map();
 
-    // ====== 🔥 GOD MODE: Lock Sidebar Function ======
-    function lockSidebarGPU() {
-        const sidebar = document.querySelector('.shell__sidebar');
-        if (!sidebar) return;
+    let loader; // promise โหลด pdf.js
+    const views = new Map(); // เก็บ state ต่อ containerId
+    let isReadyResolve;
+    const readyPromise = new Promise(resolve => {
+        isReadyResolve = resolve;
+    });
 
         // บังคับ GPU layer + ป้องกันทุกอย่างที่จะดัน layout
         const criticalLock = [
@@ -75,20 +77,31 @@
     function ensureLoaded() {
         if (window.pdfjsLib) {
             window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_CDN;
+            if (isReadyResolve) {
+                isReadyResolve();
+                isReadyResolve = null;
+            }
             return Promise.resolve(window.pdfjsLib);
         }
-        if (!loaderPromise) {
-            loaderPromise = new Promise((resolve, reject) => {
-                const s = document.createElement("script");
-                s.src = PDF_JS_CDN;
-                s.async = true;
-                s.onload = () => {
-                    if (!window.pdfjsLib) return reject(new Error("pdf.js not found"));
+        if (!loader) {
+            loader = new Promise((resolve, reject) => {
+                const script = document.createElement("script");
+                script.src = PDF_JS_CDN;
+                script.async = true;
+                script.onload = () => {
+                    if (!window.pdfjsLib) {
+                        reject(new Error("pdf.js not found"));
+                        return;
+                    }
                     window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_CDN;
+                    if (isReadyResolve) {
+                        isReadyResolve();
+                        isReadyResolve = null;
+                    }
                     resolve(window.pdfjsLib);
                 };
-                s.onerror = () => reject(new Error("failed to load pdf.js"));
-                document.head.appendChild(s);
+                script.onerror = () => reject(new Error("failed to load pdf.js"));
+                document.head.appendChild(script);
             });
         }
         return loaderPromise;
@@ -100,11 +113,13 @@
         lockSidebarGPU();
     }
 
-    // ====== utils (เดิม) ======
+    // preload
+    ensureLoaded().catch(console.error);
+
     function computeFitWidthScale(page, containerWidth) {
-        const vp = page.getViewport({ scale: 1 });
-        const w = Math.max(containerWidth || vp.width, 300);
-        return w / vp.width;
+        const viewport = page.getViewport({ scale: 1 });
+        const width = containerWidth || viewport.width;
+        return width / viewport.width;
     }
 
     async function fetchPdfArrayBuffer(url) {
@@ -116,12 +131,10 @@
     // ====== 🔥 render หลัก (เพิ่ม GOD MODE protection) ======
     async function render(url, containerId) {
         await ready();
-
-        // 🔥 Lock sidebar ก่อนทำอะไร
-        lockSidebarGPU();
-
         const host = document.getElementById(containerId);
-        if (!host) return;
+        if (!host) {
+            return;
+        }
 
         host.innerHTML = '<div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>';
 
@@ -138,32 +151,30 @@
         }
 
         try {
-            const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
-            const state = { pdf, scale: 1, fitWidthScale: 1, pages: [], containerId };
+            const pdf = await window.pdfjsLib.getDocument({ url, withCredentials: true }).promise;
+            const state = {
+                pdf,
+                scale: 1,
+                fitWidthScale: 1,
+                pages: [],
+                containerId
+            };
             views.set(containerId, state);
-
             host.innerHTML = "";
 
-            // 🔥 Lock อีกครั้งหลัง clear
-            lockContainer(host);
+            for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex++) {
+                const page = await pdf.getPage(pageIndex);
 
-            if (!host.clientWidth) host.style.width = "100%";
-
-            // 🔥 ใช้ requestAnimationFrame เพื่อ sync กับ browser paint cycle
-            await new Promise(resolve => requestAnimationFrame(resolve));
-
-            for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                if (i === 1) {
-                    const fit = computeFitWidthScale(page, host.clientWidth);
+                const fit = computeFitWidthScale(page, host.clientWidth);
+                if (pageIndex === 1) {
                     state.fitWidthScale = fit;
                     state.scale = fit;
+                    updateToolbarScale(containerId, state.scale);
                 }
                 await renderPage(host, state, page);
 
-                // 🔥 Lock sidebar หลัง render แต่ละหน้า
-                lockSidebarGPU();
-            }
+                const viewport = page.getViewport({ scale: state.scale });
+                const dpr = window.devicePixelRatio || 1;
 
             // ResizeObserver สำหรับ Fit Width (เดิม)
             const ro = new ResizeObserver(() => {
@@ -181,40 +192,10 @@
             ro.observe(host);
             state._ro = ro;
 
-            // 🔥 Final lock
-            lockSidebarGPU();
+                canvas.width = Math.floor(viewport.width * dpr);
+                canvas.height = Math.floor(viewport.height * dpr);
 
-        } catch (e) {
-            console.error("PDF render error:", e);
-            host.innerHTML = `<div class="pdfjs-error alert alert-danger m-3">ไม่สามารถเปิดเอกสาร PDF ได้: ${e.message}</div>`;
-        }
-    }
-
-    // ====== 🔥 render หน้าเดียว (เพิ่ม GOD MODE) ======
-    async function renderPage(host, state, page) {
-        const dpr = window.devicePixelRatio || 1;
-        const vp = page.getViewport({ scale: state.scale });
-        const canvas = document.createElement("canvas");
-        canvas.className = "pdfjs-page-canvas";
-
-        // 🔥 Lock canvas ก่อน append (ป้องกันดัน sidebar)
-        lockCanvas(canvas, vp.width, vp.height);
-
-        // Set actual pixel dimensions
-        canvas.width = Math.floor(vp.width * dpr);
-        canvas.height = Math.floor(vp.height * dpr);
-
-        const ctx = canvas.getContext("2d", {
-            alpha: false, // ป้องกัน alpha blending
-            willReadFrequently: false
-        });
-
-        // 🔥 Force layout ก่อน append
-        canvas.offsetHeight;
-
-        // 🔥 Append โดยใช้ requestAnimationFrame (sync กับ browser paint)
-        await new Promise(resolve => {
-            requestAnimationFrame(() => {
+                const context = canvas.getContext("2d", { alpha: false });
                 host.appendChild(canvas);
                 // Force reflow
                 canvas.offsetHeight;
@@ -222,100 +203,87 @@
             });
         });
 
-        // Render (เดิม)
-        await page.render({
-            canvasContext: ctx,
-            viewport: vp,
-            transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null,
-            background: 'white' // ป้องกัน transparent bleeding
-        }).promise;
+                await page.render({
+                    canvasContext: context,
+                    viewport,
+                    transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null
+                }).promise;
 
-        state.pages.push({ canvas, ctx, page, dpr });
-
-        // 🔥 Force reflow หลัง render + Lock sidebar
-        canvas.offsetHeight;
-        lockSidebarGPU();
+                state.pages.push({ canvas, ctx: context, page, dpr });
+            }
+        } catch (error) {
+            console.error("PDF render error", error);
+            host.innerHTML = '<div class="pdfjs-error alert alert-danger m-3">ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้</div>';
+        }
     }
 
-    // ====== 🔥 re-render เมื่อ zoom (เพิ่ม GOD MODE) ======
     async function reRender(containerId) {
-        const st = views.get(containerId);
-        if (!st) return;
+        const state = views.get(containerId);
+        if (!state) {
+            return;
+        }
 
-        // 🔥 Lock sidebar ก่อน re-render
-        lockSidebarGPU();
+        for (const pageState of state.pages) {
+            const viewport = pageState.page.getViewport({ scale: state.scale });
 
-        // 🔥 Batch DOM updates ด้วย requestAnimationFrame
-        await new Promise(resolve => requestAnimationFrame(resolve));
+            pageState.canvas.style.width = `${Math.floor(viewport.width)}px`;
+            pageState.canvas.style.height = `${Math.floor(viewport.height)}px`;
 
-        for (const p of st.pages) {
-            const vp = p.page.getViewport({ scale: st.scale });
+            pageState.canvas.width = Math.floor(viewport.width * pageState.dpr);
+            pageState.canvas.height = Math.floor(viewport.height * pageState.dpr);
 
-            // 🔥 Lock canvas ใหม่ทุกครั้ง
-            lockCanvas(p.canvas, vp.width, vp.height);
-
-            p.canvas.width = Math.floor(vp.width * p.dpr);
-            p.canvas.height = Math.floor(vp.height * p.dpr);
-
-            // 🔥 Force layout
-            p.canvas.offsetHeight;
-
-            await p.page.render({
-                canvasContext: p.ctx,
-                viewport: vp,
-                transform: p.dpr !== 1 ? [p.dpr, 0, 0, p.dpr, 0, 0] : null,
-                background: 'white'
+            await pageState.page.render({
+                canvasContext: pageState.ctx,
+                viewport,
+                transform: pageState.dpr !== 1 ? [pageState.dpr, 0, 0, pageState.dpr, 0, 0] : null
             }).promise;
 
             // 🔥 Force reflow หลัง render
             p.canvas.offsetHeight;
         }
 
-        // 🔥 Lock sidebar หลัง re-render เสร็จ
-        lockSidebarGPU();
+        updateToolbarScale(containerId, state.scale);
     }
 
-    // ====== API (เดิม + เพิ่ม lock) ======
-    async function zoomIn(id) {
-        lockSidebarGPU(); // 🔥 Lock ก่อน zoom
-        const st = views.get(id);
-        if (!st) return 100;
-        st.scale = Math.min(st.scale * 1.1, 4);
-        await reRender(id);
-        lockSidebarGPU(); // 🔥 Lock หลัง zoom
-        return Math.round(st.scale * 100);
+    function updateToolbarScale(containerId, scale) {
+        const element = document.getElementById(`${containerId}-scale`);
+        if (element) {
+            element.textContent = `${Math.round(scale * 100)}%`;
+        }
     }
 
-    async function zoomOut(id) {
-        lockSidebarGPU(); // 🔥 Lock ก่อน zoom
-        const st = views.get(id);
-        if (!st) return 100;
-        st.scale = Math.max(st.scale / 1.1, 0.25);
-        await reRender(id);
-        lockSidebarGPU(); // 🔥 Lock หลัง zoom
-        return Math.round(st.scale * 100);
+    function zoomIn(containerId) {
+        const state = views.get(containerId);
+        if (!state) {
+            return;
+        }
+        state.scale *= 1.1;
+        reRender(containerId);
     }
 
-    async function fitWidth(id) {
-        lockSidebarGPU(); // 🔥 Lock ก่อน fit
-        const st = views.get(id);
-        if (!st) return 100;
-        const host = document.getElementById(id);
-        if (!host || !st.pdf) return Math.round(st.scale * 100);
-        const p = await st.pdf.getPage(1);
-        st.fitWidthScale = computeFitWidthScale(p, host.clientWidth);
-        st.scale = st.fitWidthScale;
-        await reRender(id);
-        lockSidebarGPU(); // 🔥 Lock หลัง fit
-        return Math.round(st.scale * 100);
+    function zoomOut(containerId) {
+        const state = views.get(containerId);
+        if (!state) {
+            return;
+        }
+        state.scale /= 1.1;
+        reRender(containerId);
     }
 
-    function getZoomPercent(id) {
-        const st = views.get(id);
-        return st ? Math.round(st.scale * 100) : 100;
+    function fitWidth(containerId) {
+        const state = views.get(containerId);
+        if (!state) {
+            return;
+        }
+        state.scale = state.fitWidthScale || state.scale;
+        reRender(containerId);
     }
 
-    // ====== Export API ======
+    function ready() {
+        ensureLoaded().catch(console.error);
+        return readyPromise;
+    }
+
     window.pdfViewer = {
         ready,
         render,
@@ -323,7 +291,8 @@
         zoomIn,
         zoomOut,
         fitWidth,
-        getZoomPercent
+        ready,
+        renderPdf: render
     };
 
     // ====== 🔥 GOD MODE: Auto-lock on DOM events ======
