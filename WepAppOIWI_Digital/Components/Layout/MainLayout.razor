@@ -1,41 +1,14 @@
-﻿@inherits LayoutComponentBase
-@using Microsoft.AspNetCore.Components.Routing
+@inherits LayoutComponentBase
 @using WepAppOIWI_Digital.Components.Shared
 
-<div id="app-shell" class="shell shell--collapsed">
-    <!-- Sidebar -->
-    <aside class="shell__sidebar">
-        <!-- โลโก้อย่างเดียว (ชนขอบ) -->
-        <div class="brand brand--flush">
-            <!-- ใช้ / แทน "" เพื่อกัน path แปลก ๆ และไม่ต้อง Match=All ที่โลโก้ -->
-            <NavLink href="/" class="brand__link" title="Home" aria-label="Home">
-                <img src="icons/Corporate_Logo.jpg"
-                     alt="Delta"
-                     class="brand-logo"
-                     decoding="async" />
-            </NavLink>
-        </div>
+<div id="app-shell" class="shell">
+    @* Sidebar: fixed block, outside page scroll *@
+    <NavSidebar />
 
-        <nav class="menu">
-            <!-- ลิงก์ควรเป็นแบบ absolute path และให้ Match=All เฉพาะ Home -->
-            <NavLink href="/" Match="NavLinkMatch.All" class="menu__item">
-                <i class="bi bi-house-door"></i><span class="menu__text">Home</span>
-            </NavLink>
-            <NavLink href="/counter" class="menu__item">
-                <i class="bi bi-file-earmark-medical"></i><span class="menu__text">OI/WI</span>
-            </NavLink>
-            <NavLink href="/setup" class="menu__item">
-                <i class="bi bi-gear"></i><span class="menu__text">Setup</span>
-            </NavLink>
-        </nav>
-    </aside>
-
-    <!-- Content -->
+    @* Content: the only scroll container *@
     <div class="shell__content">
         <header class="topbar">
-            <!-- ปุ่ม Toggle -->
             <ShellToggle />
-            <!-- ลิงก์ About เป็น path เริ่มต้นด้วย / -->
             <a class="link-secondary ms-auto" href="/about">About</a>
         </header>
 
