@@ -1,115 +1,350 @@
-﻿/* ===== PDF Preview ===== */
-.document-preview-frame {
-    min-height: 80vh;
-    height: calc(100vh - 220px);
-    max-height: 95vh;
-    overflow: auto; /* เลื่อนในกรอบ */
-    background: #f8f9fa;
+﻿/* ============================================
+   🔧 CRITICAL FIX: ป้องกัน Sidebar ขยับเมื่อ scroll PDF
+   ============================================ */
+
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden; /* บังคับให้ scroll เฉพาะใน shell__content */
+    position: relative;
+    isolation: isolate; /* สร้าง stacking context แยก */
 }
 
-/* Toolbar */
-.pdfjs-toolbar {
-    display: flex;
-    align-items: center;
-    gap: .5rem;
-    padding: .5rem .75rem;
-    margin-bottom: .75rem;
+/* ============================================
+   Shell Layout - ป้องกัน layout shift
+   ============================================ */
+#app-shell {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+    isolation: isolate;
+}
+
+/* ============================================
+   SIDEBAR - Lock ให้แน่นมาก (ห้ามขยับเด็ดขาด)
+   ============================================ */
+.shell__sidebar {
+    position: fixed !important; /* บังคับ fixed */
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 240px;
+    background: #2c2c2c;
+    z-index: 9999999; /* สูงมาก */
+    overflow-y: auto;
+    overflow-x: hidden;
+    /* 🎯 CRITICAL: GPU Acceleration + Lock */
+    transform: translate3d(0, 0, 0) !important;
+    will-change: transform;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    /* 🎯 CRITICAL: CSS Containment - บอก browser ว่าอย่าแตะ */
+    contain: strict; /* layout + style + paint + size */
+    /* 🎯 CRITICAL: ป้องกัน overscroll */
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sidebar เมื่อ collapsed */
+.shell--collapsed .shell__sidebar {
+    transform: translate3d(-240px, 0, 0) !important;
+}
+
+/* ป้องกัน iOS Safari momentum scroll */
+@supports (-webkit-touch-callout: none) {
+    .shell__sidebar {
+        -webkit-transform: translate3d(0, 0, 0) !important;
+        position: fixed !important;
+    }
+}
+
+/* ============================================
+   CONTENT AREA - แยก scroll context สมบูรณ์
+   ============================================ */
+.shell__content {
+    position: fixed !important;
+    top: 0;
+    left: 240px; /* ชิดขวา sidebar */
+    right: 0;
+    bottom: 0;
+    overflow: hidden; /* ห้าม scroll ที่นี่ */
     background: #fff;
-    border: 1px solid #e2e8f0;
-    border-radius: .5rem;
+    /* 🎯 CRITICAL: แยก stacking context */
+    transform: translate3d(0, 0, 0);
+    will-change: scroll-position;
+    isolation: isolate;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Content เมื่อ sidebar collapsed */
+.shell--collapsed .shell__content {
+    left: 0 !important;
+}
+
+/* ============================================
+   TOPBAR - ห้ามขยับ
+   ============================================ */
+.topbar {
     position: sticky;
     top: 0;
-    z-index: 2;
-}
-
-.pdfjs-toolbar__group {
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: #fff;
+    border-bottom: 1px solid #dee2e6;
+    z-index: 100;
     display: flex;
     align-items: center;
-    gap: .5rem;
+    padding: 0 1.5rem;
+    /* Lock ไว้ */
+    transform: translateZ(0);
+    contain: layout style;
 }
 
-.pdfjs-btn {
-    border: 1px solid #cbd5e1;
+/* ============================================
+   CONTENT-AREA (ที่จะมี PDF scroll)
+   ============================================ */
+.content-area {
+    position: absolute !important;
+    top: 60px; /* ใต้ topbar */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow-y: auto; /* scroll ได้เฉพาะที่นี่ */
+    overflow-x: hidden;
+    padding: 1.5rem;
+    /* 🎯 CRITICAL: แยก scroll context จาก sidebar */
+    transform: translate3d(0, 0, 0);
+    will-change: scroll-position;
+    contain: layout style paint;
+    isolation: isolate;
+    /* ป้องกัน iOS bounce scroll */
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* ============================================
+   PDF VIEWPORT - ป้องกัน canvas ดัน layout
+   ============================================ */
+.pdf-viewport {
+    position: relative !important;
+    width: 100%;
+    background: #f5f5f5;
+    /* 🎯 Lock ไว้ */
+    transform: translateZ(0);
+    contain: layout style paint;
+    isolation: isolate;
+}
+
+.pdf-toolbar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
     background: #fff;
-    border-radius: .375rem;
-    padding: .25rem .5rem;
-    min-width: 2.25rem;
-    line-height: 1.2;
-    cursor: pointer;
-    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+    border-bottom: 1px solid #ddd;
+    padding: 0.75rem 1rem;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    /* Lock */
+    transform: translateZ(0);
+    contain: layout;
 }
 
-    .pdfjs-btn:hover {
-        background: #f8fafc;
-    }
-
-.pdfjs-sep {
-    width: 1px;
-    height: 22px;
-    background: #e2e8f0;
-    display: inline-block;
+.pdf-scroll {
+    position: relative !important;
+    width: 100%;
+    height: calc(100% - 60px); /* ลบความสูง toolbar */
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 1rem;
+    /* 🎯 CRITICAL: ป้องกัน scroll ดัน sidebar */
+    transform: translate3d(0, 0, 0);
+    contain: strict;
+    isolation: isolate;
+    /* ป้องกัน overscroll */
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
 }
 
-.pdfjs-zoom {
-    min-width: 3.5rem;
-    text-align: center;
-    font-weight: 600;
-}
-
-/* Pages */
-.pdfjs-pages {
-    display: block;
-}
-
-.pdfjs-page {
-    margin: 0 auto 1rem auto;
+/* ============================================
+   PDF.JS VIEWER - Lock canvas rendering
+   ============================================ */
+.pdfjs-viewer {
+    position: static !important; /* ห้ามใช้ fixed/absolute */
+    width: 100%;
     max-width: 1200px;
+    margin: 0 auto;
+    /* 🎯 CRITICAL: ป้องกัน canvas ดัน layout */
+    transform: none !important;
+    contain: paint !important;
 }
 
 .pdfjs-page-canvas {
-    display: block;
-    width: 100%;
-    height: auto;
-    background: #fff;
-    box-shadow: 0 .5rem 1.25rem rgba(0,0,0,.08);
+    display: block !important;
+    margin: 0 auto 16px auto !important;
+    position: static !important; /* ห้าม position อื่น */
+    /* 🎯 CRITICAL: GPU layer + Lock */
+    transform: translateZ(0) !important;
+    backface-visibility: hidden !important;
+    -webkit-backface-visibility: hidden !important;
+    will-change: transform !important;
+    /* ป้องกัน antialiasing shift */
     image-rendering: -webkit-optimize-contrast;
     image-rendering: crisp-edges;
+    /* ป้องกัน layout reflow */
+    contain: strict;
+    /* Shadow */
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.1);
+    background-color: #fff;
 }
 
-/* ปิด textLayer เด็ดขาดไม่ให้บัง PDF */
-.textLayer, .pdfjs-textLayer {
-    display: none !important;
+/* ============================================
+   MOBILE (< 768px) - Overlay Mode
+   ============================================ */
+@media (max-width: 768px) {
+    #app-shell {
+        grid-template-columns: 1fr; /* column เดียว */
+    }
+
+    .shell__sidebar {
+        width: 280px;
+        transform: translate3d(-280px, 0, 0) !important; /* ซ่อน */
+        box-shadow: 2px 0 16px rgba(0, 0, 0, 0.2);
+    }
+
+    /* เปิด sidebar บนมือถือ */
+    .shell:not(.shell--collapsed) .shell__sidebar {
+        transform: translate3d(0, 0, 0) !important;
+    }
+
+    .shell__content {
+        left: 0 !important; /* เต็มหน้าจอ */
+    }
+
+    /* Overlay */
+    .shell__overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 9999998; /* ต่ำกว่า sidebar */
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .shell:not(.shell--collapsed) .shell__overlay {
+        display: block;
+        opacity: 1;
+    }
 }
 
-/* Loading / Error */
-.pdfjs-loading, .pdfjs-error {
-    font-size: .95rem;
-    text-align: center;
+/* ============================================
+   BRAND & MENU (ตาม design เดิม)
+   ============================================ */
+.brand {
     padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-/* Hide any pdf.js text layer (all variants) */
-.textLayer,
-.pdfjs-textLayer,
-[class*="textLayer"] {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
+.brand--flush {
+    padding: 0;
 }
 
-/* โครง PDF pages */
-.pdfjs-pages {
-    width: 100%;
-    max-width: 1200px;
-    margin-inline: auto;
-}
-
-.pdfjs-page {
-    margin: 0 auto 16px;
-}
-
-.pdfjs-page-canvas {
+.brand__link {
     display: block;
-    background: #fff;
-    box-shadow: 0 8px 24px rgba(0,0,0,.10);
+    line-height: 0;
+}
+
+.brand-logo {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.menu {
+    padding: 1rem 0;
+}
+
+.menu__item {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    color: #fff;
+    text-decoration: none;
+    transition: background-color 0.2s;
+    gap: 0.75rem;
+}
+
+    .menu__item:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        color: #fff;
+    }
+
+    .menu__item.active {
+        background-color: rgba(255, 255, 255, 0.15);
+        color: #fff;
+        font-weight: 600;
+    }
+
+    .menu__item i {
+        font-size: 1.25rem;
+        width: 1.5rem;
+        text-align: center;
+    }
+
+/* ============================================
+   SCROLLBAR STYLING
+   ============================================ */
+.shell__sidebar::-webkit-scrollbar,
+.content-area::-webkit-scrollbar,
+.pdf-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.shell__sidebar::-webkit-scrollbar-track,
+.content-area::-webkit-scrollbar-track,
+.pdf-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.shell__sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+}
+
+.content-area::-webkit-scrollbar-thumb,
+.pdf-scroll::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+    .content-area::-webkit-scrollbar-thumb:hover,
+    .pdf-scroll::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 0, 0, 0.3);
+    }
+
+/* ============================================
+   UTILITIES
+   ============================================ */
+.no-scroll {
+    overflow: hidden !important;
+}
+
+/* ป้องกัน text select ขณะ scroll */
+.is-scrolling {
+    user-select: none;
+    -webkit-user-select: none;
 }

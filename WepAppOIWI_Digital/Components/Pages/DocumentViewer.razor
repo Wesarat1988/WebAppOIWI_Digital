@@ -66,19 +66,24 @@ else
 
     @if (canPreviewInline && !string.IsNullOrEmpty(previewSource))
     {
-        <div class="document-preview-frame border rounded">
-
-            <!-- PDF Toolbar -->
-            <div class="d-flex align-items-center gap-2 p-2 border-bottom bg-light">
-                <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomOut">−</button>
-                <span id="@($"{pdfContainerId}-scale")" class="small">100%</span>
-                <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomIn">+</button>
-                <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="FitWidth">Fit width</button>
+        <div class="pdf-viewport rounded border">
+            <!-- toolbar (sticky / ไม่เลื่อนตาม PDF) -->
+            <div class="pdf-toolbar">
+                <div class="btn-group me-2">
+                    <button class="btn btn-light" @onclick="ZoomOut">−</button>
+                    <span class="btn btn-light disabled">@zoomPercent%</span>
+                    <button class="btn btn-light" @onclick="ZoomIn">+</button>
+                </div>
+                <button class="btn btn-outline-secondary" @onclick="FitWidth">Fit width</button>
             </div>
 
-            <!-- PDF Canvas Container -->
-            <div id="@pdfContainerId" class="pdfjs-viewer">
-                <div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
+            <!-- ส่วนที่สกรอลล์เฉพาะหน้า PDF -->
+            <div class="pdf-scroll">
+                <div id="@pdfContainerId" class="pdfjs-viewer">
+                    <div class="pdfjs-loading text-muted text-center p-4">
+                        กำลังโหลดตัวอย่างเอกสาร PDF...
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -106,8 +111,11 @@ else
     private bool canPreviewInline;
     private bool pendingPdfRender;
     private int pdfRenderAttempts;
-    private readonly string pdfContainerId = $"pdfjs-viewer-{System.Guid.NewGuid():N}";
+    private readonly string pdfContainerId = $"pdfjs-viewer-{Guid.NewGuid():N}";
     private const int MaxPdfRenderAttempts = 3;
+
+    // เปอร์เซ็นต์ซูมบน toolbar
+    private int zoomPercent = 100;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -149,7 +157,6 @@ else
             downloadSource = $"/documents/download/{Uri.EscapeDataString(Token)}";
             canPreviewInline = string.Equals(fileHandle.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase);
             pendingPdfRender = canPreviewInline && !string.IsNullOrEmpty(previewSource);
-            pdfRenderAttempts = 0;
         }
         catch (OperationCanceledException)
         {
@@ -176,6 +183,14 @@ else
                 pdfRenderAttempts++;
                 await JSRuntime.InvokeVoidAsync("pdfViewer.ready");
                 await JSRuntime.InvokeVoidAsync("pdfViewer.render", previewSource!, pdfContainerId);
+
+                // อ่าน % เริ่มต้นจาก viewer
+                try
+                {
+                    zoomPercent = await JSRuntime.InvokeAsync<int>("pdfViewer.getZoomPercent", pdfContainerId);
+                    StateHasChanged();
+                }
+                catch { }
             }
             catch (JSException jsEx)
             {
@@ -186,30 +201,29 @@ else
                     await InvokeAsync(StateHasChanged);
                 }
             }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex, "Unexpected error while rendering PDF preview for '{DocumentPath}'", document?.FileName);
-                if (pdfRenderAttempts < MaxPdfRenderAttempts)
-                {
-                    pendingPdfRender = true;
-                    await InvokeAsync(StateHasChanged);
-                }
-            }
         }
     }
 
-    // ===== Toolbar actions (แก้ปัญหา quote ชนกันใน markup) =====
-    private Task ZoomIn() => JSRuntime.InvokeVoidAsync("pdfViewer.zoomIn", pdfContainerId).AsTask();
-    private Task ZoomOut() => JSRuntime.InvokeVoidAsync("pdfViewer.zoomOut", pdfContainerId).AsTask();
-    private Task FitWidth() => JSRuntime.InvokeVoidAsync("pdfViewer.fitWidth", pdfContainerId).AsTask();
+    // ===== Toolbar actions =====
+    private async Task ZoomIn()
+    {
+        try { zoomPercent = await JSRuntime.InvokeAsync<int>("pdfViewer.zoomIn", pdfContainerId); StateHasChanged(); }
+        catch { }
+    }
+    private async Task ZoomOut()
+    {
+        try { zoomPercent = await JSRuntime.InvokeAsync<int>("pdfViewer.zoomOut", pdfContainerId); StateHasChanged(); }
+        catch { }
+    }
+    private async Task FitWidth()
+    {
+        try { zoomPercent = await JSRuntime.InvokeAsync<int>("pdfViewer.fitWidth", pdfContainerId); StateHasChanged(); }
+        catch { }
+    }
 
     private static string DisplayOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) || value == "-" ? "-" : value!;
-
     private static string FormatTimestamp(DateTimeOffset? timestamp)
-        => timestamp.HasValue
-            ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-            : "-";
-
+        => timestamp.HasValue ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "-";
     private void NavigateHome() => Navigation.NavigateTo("/");
 }

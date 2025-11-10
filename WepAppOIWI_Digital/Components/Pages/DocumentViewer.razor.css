@@ -1,4 +1,4 @@
-.document-preview-frame {
+﻿.document-preview-frame {
     min-height: 80vh;
     height: calc(100vh - 220px);
     max-height: 95vh;
@@ -6,20 +6,20 @@
     background-color: #f8f9fa;
 }
 
-/* ���ͧ���˹�� PDF */
+/* กล่องรวมหน้า PDF */
 .pdfjs-viewer {
     width: 100%;
-    max-width: 1200px; /* ��Ѻ�����䫹� */
+    max-width: 1200px; /* ปรับตามดีไซน์ */
     margin: 0 auto;
 }
 
-/* ��͹�Ѻ layer ���˹ѧ��� (���Ѵ�͡��) */
+/* ซ้อนทับ layer ตัวหนังสือ (ให้คัดลอกได้) */
 .pdfjs-textLayer {
     mix-blend-mode: multiply;
     pointer-events: none;
 }
 
-/* ��ͧ�ѹ�Ҿ��ͺҧ��������� */
+/* ป้องกันภาพเบลอบางเบราว์เซอร์ */
 .pdfjs-page-canvas {
     image-rendering: -webkit-optimize-contrast;
     image-rendering: crisp-edges;
@@ -44,11 +44,11 @@
 
 /* ============ Next Document Badge (OI/WI) ============ */
 :root {
-    --oi-bg: #e7f1ff; /* OI: �����͹ */
-    --oi-fg: #0b60d1; /* OI: ������ */
+    --oi-bg: #e7f1ff; /* OI: ฟ้าอ่อน */
+    --oi-fg: #0b60d1; /* OI: ฟ้าเข้ม */
     --oi-bd: #b7d7ff;
-    --wi-bg: #fff6d8; /* WI: ����ͧ��͹ */
-    --wi-fg: #a36200; /* WI: ����ͧ��� (�Ӿѹ) */
+    --wi-bg: #fff6d8; /* WI: เหลืองอ่อน */
+    --wi-fg: #a36200; /* WI: เหลืองเข้ม (อำพัน) */
     --wi-bd: #ffe7a3;
 }
 
@@ -92,3 +92,19 @@
     font-size: .9rem
 }
 
+/* แก้เด็ดขาด: PDF viewer ห้ามดัน Sidebar เด็ดขาด */
+.pdf-viewport,
+.pdf-scroll,
+.pdfjs-viewer,
+#app-shell .shell__content > * {
+    position: static !important;
+    transform: none !important;
+    contain: paint !important;
+}
+
+/* ป้องกัน canvas ดัน layout */
+.pdfjs-page-canvas {
+    position: static !important;
+    transform: translate(0,0) !important;
+    display: block !important;
+}Docume
