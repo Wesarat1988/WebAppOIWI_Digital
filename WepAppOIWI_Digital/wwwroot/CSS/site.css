@@ -187,3 +187,9 @@ html, body{
 html, body, #app-shell, .shell__content, .content-area, .pdf-viewport, .pdf-scroll{
   transform: none !important;
 }
+
+.pdfjs-page-canvas{
+  transform: none !important;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}

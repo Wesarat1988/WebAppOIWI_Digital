@@ -118,9 +118,24 @@
         }
     }
 
+    function raf2() {
+        return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+
+    function getHostWidth(host) {
+        if (!host) {
+            return 0;
+        }
+        return host.clientWidth || host.getBoundingClientRect().width || 0;
+    }
+
     function computeFitWidthScale(pdfPage, hostWidth) {
-        const viewport = pdfPage.getViewport({ scale: 1 });
-        const width = Math.max(hostWidth || 0, 1);
+        const rotation = pdfPage.rotate || 0;
+        const viewport = pdfPage.getViewport({ scale: 1, rotation });
+        const width = Math.max(hostWidth || 0, 300);
+        if (viewport.width === 0) {
+            return 1;
+        }
         return width / viewport.width;
     }
 
@@ -130,14 +145,16 @@
         }
 
         const page = suppliedPage ?? await state.pdf.getPage(state.page);
-        const viewport = page.getViewport({ scale: state.scale });
+        const rotation = page.rotate || 0;
+        const viewport = page.getViewport({ scale: state.scale, rotation });
         const dpr = window.devicePixelRatio || 1;
         state.dpr = dpr;
 
-        state.canvas.width = Math.floor(viewport.width * dpr);
-        state.canvas.height = Math.floor(viewport.height * dpr);
+        state.canvas.width = Math.round(viewport.width * dpr);
+        state.canvas.height = Math.round(viewport.height * dpr);
         state.canvas.style.width = `${viewport.width}px`;
         state.canvas.style.height = `${viewport.height}px`;
+        state.canvas.style.transform = "none";
 
         const ctx = state.ctx;
         if (!ctx) {
@@ -243,7 +260,7 @@
             return buildInfo(state);
         }
         const page = await state.pdf.getPage(state.page);
-        const hostWidth = state.host.clientWidth || (state.scrollEl ? state.scrollEl.clientWidth : 0);
+        const hostWidth = getHostWidth(state.host) || (state.scrollEl ? getHostWidth(state.scrollEl) : 0);
         let nextScale = computeFitWidthScale(page, hostWidth);
         if (!isFinite(nextScale) || nextScale <= 0) {
             nextScale = state.scale;
@@ -265,9 +282,10 @@
 
         host.innerHTML = "";
         const canvas = document.createElement('canvas');
-        canvas.className = 'pdfjs-canvas';
+        canvas.className = 'pdfjs-page-canvas';
+        canvas.style.transform = 'none';
         host.appendChild(canvas);
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false });
         if (!ctx) {
             throw new Error('Unable to create 2D context');
         }
@@ -280,13 +298,6 @@
         const task = window.pdfjsLib.getDocument({ data });
         const pdf = await task.promise;
 
-        const firstPage = await pdf.getPage(1);
-        const hostWidth = host.clientWidth || (scrollEl ? scrollEl.clientWidth : 0);
-        let fitWidthScale = computeFitWidthScale(firstPage, hostWidth);
-        if (!isFinite(fitWidthScale) || fitWidthScale <= 0) {
-            fitWidthScale = 1;
-        }
-
         const state = {
             containerId,
             host,
@@ -294,8 +305,8 @@
             pdf,
             page: 1,
             pages: pdf.numPages,
-            scale: fitWidthScale,
-            fitWidthScale,
+            scale: 1,
+            fitWidthScale: 1,
             isFitWidth: true,
             canvas,
             ctx,
@@ -306,6 +317,18 @@
         };
 
         views.set(containerId, state);
+
+        await raf2();
+
+        const firstPage = await pdf.getPage(1);
+        const hostWidth = getHostWidth(host) || (scrollEl ? getHostWidth(scrollEl) : 0);
+        let fitWidthScale = computeFitWidthScale(firstPage, hostWidth);
+        if (!isFinite(fitWidthScale) || fitWidthScale <= 0) {
+            fitWidthScale = 1;
+        }
+
+        state.scale = fitWidthScale;
+        state.fitWidthScale = fitWidthScale;
         observeResize(state);
         attachInteraction(state);
 
@@ -323,7 +346,7 @@
         state.page = target;
         if (state.isFitWidth) {
             const page = await state.pdf.getPage(state.page);
-            const hostWidth = state.host.clientWidth || (state.scrollEl ? state.scrollEl.clientWidth : 0);
+            const hostWidth = getHostWidth(state.host) || (state.scrollEl ? getHostWidth(state.scrollEl) : 0);
             let scale = computeFitWidthScale(page, hostWidth);
             if (!isFinite(scale) || scale <= 0) {
                 scale = state.scale;
