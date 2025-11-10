@@ -3,74 +3,89 @@
     const PDF_JS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
     const PDF_JS_WORKER_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
-    let loader;                   // promise โหลด pdf.js
-    const views = new Map();      // เก็บ state ต่อ containerId
+    let loader; // promise โหลด pdf.js
+    const views = new Map(); // เก็บ state ต่อ containerId
+    let isReadyResolve;
+    const readyPromise = new Promise(resolve => {
+        isReadyResolve = resolve;
+    });
 
     function ensureLoaded() {
         if (window.pdfjsLib) {
             window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_CDN;
+            if (isReadyResolve) {
+                isReadyResolve();
+                isReadyResolve = null;
+            }
             return Promise.resolve(window.pdfjsLib);
         }
         if (!loader) {
             loader = new Promise((resolve, reject) => {
-                const s = document.createElement("script");
-                s.src = PDF_JS_CDN;
-                s.async = true;
-                s.onload = () => {
-                    if (!window.pdfjsLib) return reject(new Error("pdf.js not found"));
+                const script = document.createElement("script");
+                script.src = PDF_JS_CDN;
+                script.async = true;
+                script.onload = () => {
+                    if (!window.pdfjsLib) {
+                        reject(new Error("pdf.js not found"));
+                        return;
+                    }
                     window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_CDN;
+                    if (isReadyResolve) {
+                        isReadyResolve();
+                        isReadyResolve = null;
+                    }
                     resolve(window.pdfjsLib);
                 };
-                s.onerror = () => reject(new Error("failed to load pdf.js"));
-                document.head.appendChild(s);
+                script.onerror = () => reject(new Error("failed to load pdf.js"));
+                document.head.appendChild(script);
             });
         }
         return loader;
     }
 
+    // preload
+    ensureLoaded().catch(console.error);
+
     function computeFitWidthScale(page, containerWidth) {
-        const v = page.getViewport({ scale: 1 });
-        const w = containerWidth || v.width;
-        return w / v.width;
+        const viewport = page.getViewport({ scale: 1 });
+        const width = containerWidth || viewport.width;
+        return width / viewport.width;
     }
 
     async function render(url, containerId) {
+        await ready();
         const host = document.getElementById(containerId);
-        if (!host) return;
+        if (!host) {
+            return;
+        }
 
         host.innerHTML = '<div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>';
         host.style.position = "relative";
 
         try {
-            const pdfjsLib = await ensureLoaded();
-            const pdf = await pdfjsLib.getDocument({ url, withCredentials: true }).promise;
-
-            // state ต่อคอนเทนเนอร์
+            const pdf = await window.pdfjsLib.getDocument({ url, withCredentials: true }).promise;
             const state = {
                 pdf,
                 scale: 1,
                 fitWidthScale: 1,
-                pages: [],     // {canvas, ctx, page, outputScale}
+                pages: [],
                 containerId
             };
             views.set(containerId, state);
-
             host.innerHTML = "";
 
-            // วาดทีละหน้า
-            for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
+            for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex++) {
+                const page = await pdf.getPage(pageIndex);
 
-                // fit กว้างเท่าคอนเทนเนอร์
                 const fit = computeFitWidthScale(page, host.clientWidth);
-                if (i === 1) {
+                if (pageIndex === 1) {
                     state.fitWidthScale = fit;
-                    state.scale = fit; // เริ่มต้นพอดีกว้าง
+                    state.scale = fit;
                     updateToolbarScale(containerId, state.scale);
                 }
 
                 const viewport = page.getViewport({ scale: state.scale });
-                const outputScale = window.devicePixelRatio || 1;
+                const dpr = window.devicePixelRatio || 1;
 
                 const canvas = document.createElement("canvas");
                 canvas.className = "pdfjs-page-canvas";
@@ -79,84 +94,96 @@
                 canvas.style.width = `${Math.floor(viewport.width)}px`;
                 canvas.style.height = `${Math.floor(viewport.height)}px`;
 
-                // ขนาดจริงบนแคนวาส (คูณ DPI)
-                canvas.width = Math.floor(viewport.width * outputScale);
-                canvas.height = Math.floor(viewport.height * outputScale);
+                canvas.width = Math.floor(viewport.width * dpr);
+                canvas.height = Math.floor(viewport.height * dpr);
 
-                const ctx = canvas.getContext("2d", { alpha: false });
+                const context = canvas.getContext("2d", { alpha: false });
                 host.appendChild(canvas);
 
                 await page.render({
-                    canvasContext: ctx,
+                    canvasContext: context,
                     viewport,
-                    transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null
+                    transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null
                 }).promise;
 
-                // ไม่สร้าง textLayer เพื่อไม่ให้ทับแคนวาส
-                state.pages.push({ canvas, ctx, page, outputScale });
+                state.pages.push({ canvas, ctx: context, page, dpr });
             }
-        } catch (err) {
-            console.error(err);
+        } catch (error) {
+            console.error("PDF render error", error);
             host.innerHTML = '<div class="pdfjs-error alert alert-danger m-3">ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้</div>';
         }
     }
 
-    // re-render ทุกหน้าเมื่อสเกลเปลี่ยน
     async function reRender(containerId) {
         const state = views.get(containerId);
-        if (!state) return;
+        if (!state) {
+            return;
+        }
 
-        for (const p of state.pages) {
-            const viewport = p.page.getViewport({ scale: state.scale });
+        for (const pageState of state.pages) {
+            const viewport = pageState.page.getViewport({ scale: state.scale });
 
-            p.canvas.style.width = `${Math.floor(viewport.width)}px`;
-            p.canvas.style.height = `${Math.floor(viewport.height)}px`;
+            pageState.canvas.style.width = `${Math.floor(viewport.width)}px`;
+            pageState.canvas.style.height = `${Math.floor(viewport.height)}px`;
 
-            p.canvas.width = Math.floor(viewport.width * p.outputScale);
-            p.canvas.height = Math.floor(viewport.height * p.outputScale);
+            pageState.canvas.width = Math.floor(viewport.width * pageState.dpr);
+            pageState.canvas.height = Math.floor(viewport.height * pageState.dpr);
 
-            await p.page.render({
-                canvasContext: p.ctx,
+            await pageState.page.render({
+                canvasContext: pageState.ctx,
                 viewport,
-                transform: p.outputScale !== 1 ? [p.outputScale, 0, 0, p.outputScale, 0, 0] : null
+                transform: pageState.dpr !== 1 ? [pageState.dpr, 0, 0, pageState.dpr, 0, 0] : null
             }).promise;
         }
+
         updateToolbarScale(containerId, state.scale);
     }
 
     function updateToolbarScale(containerId, scale) {
-        const el = document.getElementById(`${containerId}-scale`);
-        if (el) el.textContent = `${Math.round(scale * 100)}%`;
+        const element = document.getElementById(`${containerId}-scale`);
+        if (element) {
+            element.textContent = `${Math.round(scale * 100)}%`;
+        }
     }
 
-    // ===== public zoom controls =====
     function zoomIn(containerId) {
-        const st = views.get(containerId);
-        if (!st) return;
-        st.scale = st.scale * 1.1;
+        const state = views.get(containerId);
+        if (!state) {
+            return;
+        }
+        state.scale *= 1.1;
         reRender(containerId);
     }
 
     function zoomOut(containerId) {
-        const st = views.get(containerId);
-        if (!st) return;
-        st.scale = st.scale / 1.1;
+        const state = views.get(containerId);
+        if (!state) {
+            return;
+        }
+        state.scale /= 1.1;
         reRender(containerId);
     }
 
     function fitWidth(containerId) {
-        const st = views.get(containerId);
-        if (!st) return;
-        st.scale = st.fitWidthScale || st.scale;
+        const state = views.get(containerId);
+        if (!state) {
+            return;
+        }
+        state.scale = state.fitWidthScale || state.scale;
         reRender(containerId);
     }
 
-    // ให้ทั้งชื่อใหม่และชื่อเก่า (กันโค้ดเก่าที่เรียก renderPdf)
+    function ready() {
+        ensureLoaded().catch(console.error);
+        return readyPromise;
+    }
+
     window.pdfViewer = {
         render,
         zoomIn,
         zoomOut,
         fitWidth,
+        ready,
         renderPdf: render
     };
 })();

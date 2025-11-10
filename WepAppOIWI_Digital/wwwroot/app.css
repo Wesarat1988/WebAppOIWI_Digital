@@ -1,85 +1,72 @@
-/* ========== Sidebar Layout (���������) ========== */
+/* =========================
+   Sidebar + Logo + Toggle (compact)
+   ========================= */
+
+/* ---- ตัวแปรหลัก ---- */
 :root {
     --shell-sidebar-w: 260px;
-    --shell-sidebar-w-collapsed: 64px;
-    --shell-bg: linear-gradient(180deg,#0d47a1,#1976d2);
+    --shell-sidebar-w-collapsed: 80px;
+    --shell-bg: linear-gradient(180deg, #0d47a1, #1976d2);
+
+    /* โลโก้ตอนกาง/พับ */
+    --logo-open-h: 110px;
+    --logo-open-maxw: 220px;
+    --logo-collapsed-h: 40px;
+    --logo-collapsed-maxw: 120px;
 }
 
-/* �ç��ѡ�� 2 �������: sidebar + content */
-.shell {
-    display: grid;
-    grid-template-columns: var(--shell-sidebar-w) 1fr;
-    min-height: 100vh;
+/* ---- ล็อกไม่ให้ทั้งหน้าเลื่อน; ให้เลื่อนแค่เนื้อหา ---- */
+html,
+body {
+    height: 100%;
     overflow: hidden;
-    background: #f8fafc;
-    transition: grid-template-columns .25s ease;
 }
 
-    /* �غ = ������ѹ 64px */
-    .shell.shell--collapsed {
-        grid-template-columns: var(--shell-sidebar-w-collapsed) 1fr;
-    }
+body {
+    font-family: "Inter", "IBM Plex Sans Thai", system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #f8fafc;
+}
 
-/* -------- Sidebar -------- */
-.shell__sidebar {
+/* ---- Shell wrapper ---- */
+#app-shell.shell {
+    position: relative;
+    min-height: 100vh;
+    background: #f8fafc;
+}
+
+/* ---- Sidebar fixed ติดจอเสมอ ---- */
+#app-shell .shell__sidebar {
+    position: fixed;         /* สำคัญ */
+    inset: 0 auto 0 0;       /* top:0; left:0; bottom:0 */
+    width: var(--shell-sidebar-w);
+    height: 100vh;
+    overflow-y: auto;        /* เมนูยาวค่อยเลื่อนในแถบ */
+    z-index: 1040;
+    padding: 10px 8px;       /* กรอบโลโก้พอประมาณ */
+    display: flex;
+    align-items: flex-start;
+    flex-direction: column;
     background: var(--shell-bg);
     color: #fff;
-    padding: .75rem .5rem;
-    overflow-y: auto;
 }
 
-.brand {
-    display: flex;
-    align-items: center;
-    gap: .6rem;
-    padding: .5rem .5rem .75rem;
-    font-weight: 700;
+/* ตอนพับให้แคบลง */
+#app-shell.shell.shell--collapsed .shell__sidebar {
+    width: var(--shell-sidebar-w-collapsed);
 }
 
-    .brand .bi {
-        font-size: 1.25rem;
-    }
-
-.brand__text {
-    transition: opacity .2s, width .2s;
-}
-
-.menu {
+/* ---- Content ขยับไปขวา และเป็นตัวรับสกรอลล์ ---- */
+#app-shell .shell__content {
+    height: 100vh;
+    margin-left: var(--shell-sidebar-w);
     display: flex;
     flex-direction: column;
-    gap: .25rem;
+    overflow: hidden;
+    transition: margin-left .2s ease;
 }
 
-.menu__item {
-    display: flex;
-    align-items: center;
-    gap: .75rem;
-    padding: .55rem .65rem;
-    color: #e6eef9;
-    text-decoration: none;
-    border-radius: .5rem;
-    transition: background-color .15s, color .15s;
-}
-
-    .menu__item .bi {
-        font-size: 1.1rem;
-    }
-
-    .menu__item:hover {
-        background: rgba(255,255,255,.12);
-        color: #fff;
-    }
-
-    .menu__item.active {
-        background: rgba(255,255,255,.22);
-        color: #fff;
-    }
-
-/* -------- Content -------- */
-.shell__content {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
+#app-shell.shell.shell--collapsed .shell__content {
+    margin-left: var(--shell-sidebar-w-collapsed);
 }
 
 .topbar {
@@ -88,29 +75,119 @@
     align-items: center;
     gap: .5rem;
     padding: 0 .75rem;
-    background: #f1f5f9;
-    border-bottom: 1px solid #e2e8f0;
+    background: rgba(255, 255, 255, .82);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid rgba(15, 23, 42, .08);
 }
 
-.topbar__toggle {
-    width: 40px;
-    height: 32px;
-    display: inline-flex;
-    justify-content: center;
-    align-items: center;
+.topbar .link-secondary {
+    white-space: nowrap;
 }
 
+/* พื้นที่เนื้อหาเลื่อนแทนทั้งหน้า */
 .content-area {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
     padding: 1rem 1.25rem;
 }
 
-/* ----- �غ���ǫ�͹��ͤ���������������ͤ͹ ----- */
-.shell.shell--collapsed .menu__item {
-    justify-content: center;
+/* ถ้ามี PDF viewer ที่ห่อด้วยคลาสนี้ ให้เลื่อนภายในได้ */
+.pdf-scroll {
+    height: 100%;
+    overflow: auto;
 }
 
-.shell.shell--collapsed .menu__text,
-.shell.shell--collapsed .brand__text {
+/* ---- โลโก้ DELTA (กลาง + โค้ง + เงา) ---- */
+#app-shell .shell__sidebar .brand {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 8px;
+}
+
+#app-shell .shell__sidebar .brand .brand__link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+#app-shell.shell:not(.shell--collapsed) .shell__sidebar .brand .brand-logo {
+    display: block;
+    height: var(--logo-open-h);
+    max-height: var(--logo-open-h);
+    width: auto;
+    max-width: var(--logo-open-maxw);
+    object-fit: contain;
+    margin: 0 auto;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, .45);
+    background: #fff;
+    padding: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .10);
+    overflow: hidden;
+    transition: height .25s ease, max-height .25s ease, transform .25s ease;
+}
+
+#app-shell.shell.shell--collapsed .shell__sidebar .brand .brand-logo {
+    height: var(--logo-collapsed-h);
+    max-height: var(--logo-collapsed-h);
+    width: auto;
+    max-width: var(--logo-collapsed-maxw);
+    padding: 4px;
+}
+
+/* (เสริม) เอฟเฟกต์ hover เบา ๆ ตอนกาง */
+@media (prefers-reduced-motion: no-preference) {
+    #app-shell.shell:not(.shell--collapsed) .shell__sidebar .brand .brand-logo:hover {
+        transform: scale(1.04);
+    }
+}
+
+/* ---- Sidebar menu ---- */
+.menu {
+    display: flex;
+    flex-direction: column;
+    gap: .4rem;
+    width: 100%;
+    margin-top: 1rem;
+}
+
+.menu__item {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .55rem .7rem;
+    color: rgba(255, 255, 255, .82);
+    text-decoration: none;
+    border-radius: .75rem;
+    transition: background-color .15s ease, color .15s ease, transform .15s ease;
+}
+
+.menu__item .bi {
+    font-size: 1.1rem;
+}
+
+.menu__item:hover,
+.menu__item:focus-visible {
+    background: rgba(255, 255, 255, .16);
+    color: #fff;
+}
+
+.menu__item.active {
+    background: rgba(255, 255, 255, .28);
+    color: #fff;
+}
+
+#app-shell.shell.shell--collapsed .menu__item {
+    justify-content: center;
+    padding-inline: .5rem;
+}
+
+#app-shell.shell.shell--collapsed .menu__text,
+#app-shell.shell.shell--collapsed .brand__text {
     width: 0;
     opacity: 0;
     margin: 0;
@@ -118,57 +195,62 @@
     overflow: hidden;
 }
 
-/* ====== ���� motion: slide ���/�͡ ��ء��Ҵ�͔ ====== */
-/* �ѧ�Ѻ�ç grid �ͧ�͹෹���������������ⴹ�Ѻ */
-#app-shell.shell {
-    display: grid;
-    grid-template-columns: var(--shell-sidebar-w) 1fr !important;
-}
-
-    #app-shell.shell.shell--collapsed {
-        grid-template-columns: var(--shell-sidebar-w-collapsed) 1fr !important;
-    }
-/* ����� sidebar slide �� */
-#app-shell .shell__sidebar {
+/* ---- ปุ่ม Toggle ให้เป็นวงกลม และไม่เลื่อนตามเอกสาร ---- */
+.shell-fab {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, .12);
+    background: #fff;
+    color: #0d47a1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .06);
+    transition: background-color .15s, transform .12s, box-shadow .2s;
     position: sticky;
-    top: 0;
-    height: 100vh;
-    transform: translateX(0);
-    transition: transform .25s ease;
-    z-index: 3;
-}
-/* �͹�Ѻ: ����͹�͡ ������ѹ 64px */
-#app-shell.shell.shell--collapsed .shell__sidebar {
-    transform: translateX(calc(-100% + var(--shell-sidebar-w-collapsed)));
-}
-/* �ѹ sidebar �� width ����ҷѺ */
-#app-shell .shell__sidebar {
-    width: auto !important;
+    top: 8px;
+    z-index: 1100;  /* ติดขอบในแถบบน */
 }
 
-/* ---------- Responsive (optional) ---------- */
-/* �����: ���ᶺ�� overlay ��ԧ � */
+.shell-fab:hover {
+    background: #f3f6ff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .10);
+}
+
+.shell-fab:active {
+    transform: scale(.98);
+}
+
+.shell-fab:focus-visible {
+    outline: 2px solid #82b1ff;
+    outline-offset: 2px;
+}
+
+.shell-fab .bi,
+.shell-fab svg {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+/* ---- Responsive states ---- */
 @media (max-width: 992px) {
-    .shell {
-        grid-template-columns: 0 1fr;
+    #app-shell .shell__sidebar {
+        transform: translateX(-100%);
+        transition: transform .2s ease;
     }
 
-    #app-shell .shell__sidebar {
-        position: fixed;
-        inset: 0 auto 0 0;
-        width: var(--shell-sidebar-w);
-    }
-    /* �Դ: slide in */
-    #app-shell:not(.shell--collapsed) .shell__sidebar {
+    #app-shell.shell:not(.shell--collapsed) .shell__sidebar {
         transform: translateX(0);
     }
-    /* �Դ: slide out */
-    #app-shell.shell--collapsed .shell__sidebar {
-        transform: translateX(-100%);
-    }
-}
 
-/* ====== �͹������� (����ԧ������ App.razor) ====== */
-body {
-    font-family: "Inter","IBM Plex Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;
+    #app-shell .shell__content {
+        margin-left: 0;
+    }
+
+    #app-shell.shell.shell--collapsed .shell__content {
+        margin-left: 0;
+    }
 }
