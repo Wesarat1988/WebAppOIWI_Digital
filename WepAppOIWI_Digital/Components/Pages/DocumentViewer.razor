@@ -70,8 +70,17 @@ else
             <!-- toolbar (sticky / ไม่เลื่อนตาม PDF) -->
             <div class="pdf-toolbar">
                 <div class="btn-group me-2">
+                    <button class="btn btn-light" @onclick="PrevPage">‹</button>
+                    <span class="btn btn-light disabled">
+                        <span id="@($"{pdfContainerId}-page")">@pageDisplay</span>
+                    </span>
+                    <button class="btn btn-light" @onclick="NextPage">›</button>
+                </div>
+                <div class="btn-group me-2">
                     <button class="btn btn-light" @onclick="ZoomOut">−</button>
-                    <span class="btn btn-light disabled">@zoomPercent%</span>
+                    <span class="btn btn-light disabled">
+                        <span id="@($"{pdfContainerId}-scale")">@zoomPercent%</span>
+                    </span>
                     <button class="btn btn-light" @onclick="ZoomIn">+</button>
                 </div>
                 <button class="btn btn-outline-secondary" @onclick="FitWidth">Fit width</button>
@@ -116,6 +125,7 @@ else
 
     // เปอร์เซ็นต์ซูมบน toolbar
     private int zoomPercent = 100;
+    private string pageDisplay = "1 / 1";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -128,6 +138,8 @@ else
         canPreviewInline = false;
         pendingPdfRender = false;
         pdfRenderAttempts = 0;
+        zoomPercent = 100;
+        pageDisplay = "1 / 1";
 
         if (!DocumentCatalogService.TryDecodeDocumentToken(Token, out var normalizedPath))
         {
@@ -188,6 +200,8 @@ else
                 try
                 {
                     zoomPercent = await JSRuntime.InvokeAsync<int>("pdfViewer.getZoomPercent", pdfContainerId);
+                    var info = await JSRuntime.InvokeAsync<PdfPageInfo>("pdfViewer.getPageInfo", pdfContainerId);
+                    pageDisplay = $"{info.Page} / {info.PageCount}";
                     StateHasChanged();
                 }
                 catch { }
@@ -205,6 +219,28 @@ else
     }
 
     // ===== Toolbar actions =====
+    private async Task PrevPage()
+    {
+        try
+        {
+            var info = await JSRuntime.InvokeAsync<PdfPageInfo>("pdfViewer.prevPage", pdfContainerId);
+            pageDisplay = $"{info.Page} / {info.PageCount}";
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private async Task NextPage()
+    {
+        try
+        {
+            var info = await JSRuntime.InvokeAsync<PdfPageInfo>("pdfViewer.nextPage", pdfContainerId);
+            pageDisplay = $"{info.Page} / {info.PageCount}";
+            StateHasChanged();
+        }
+        catch { }
+    }
+
     private async Task ZoomIn()
     {
         try { zoomPercent = await JSRuntime.InvokeAsync<int>("pdfViewer.zoomIn", pdfContainerId); StateHasChanged(); }
@@ -220,6 +256,8 @@ else
         try { zoomPercent = await JSRuntime.InvokeAsync<int>("pdfViewer.fitWidth", pdfContainerId); StateHasChanged(); }
         catch { }
     }
+
+    private sealed record PdfPageInfo(int Page, int PageCount);
 
     private static string DisplayOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) || value == "-" ? "-" : value!;
