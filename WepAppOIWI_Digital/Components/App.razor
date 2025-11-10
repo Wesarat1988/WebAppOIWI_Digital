@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -17,7 +17,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
 
     <!-- สไตล์ของเรา (ต้องอยู่หลัง app.css) -->
-    <link rel="stylesheet" href="css/site.css" />
+    <link rel="stylesheet" href="css/site.css?v=2" />
 
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="icons/delta-logo.png" sizes="32x32" />
@@ -33,13 +33,20 @@
             integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
             crossorigin="anonymous" defer></script>
 
-    <!-- สคริปต์ของคุณ (ตัวแสดง PDF) -->
-    <script src="js/pdfViewer.js" defer></script>
-
-    <!-- Blazor runtime (ไม่ต้องมีในโครงการ จะถูกเสิร์ฟอัตโนมัติ) -->
+    <!-- Blazor runtime -->
     <script src="_framework/blazor.web.js" defer></script>
 
-    <!-- สคริปต์ควบคุม Sidebar/Toggle ของคุณ -->
-    <script src="js/shellToggle.js" defer></script>
+    <!-- สคริปต์แสดง PDF (ใส่ cache-buster กันแคช) -->
+    <script src="js/pdfViewer.js?v=2" defer></script>
+
+    <!-- Toggle เมนูด้านข้าง -->
+    <script src="js/shellToggle.js?v=2" defer></script>
+
+    <!-- Debug ช่วยตรวจว่า pdfViewer โหลดจริง -->
+    <script defer>
+        window.addEventListener('DOMContentLoaded', function () {
+          console.log('[host] pdfViewer ready =', !!window.pdfViewer);
+        });
+    </script>
 </body>
 </html>

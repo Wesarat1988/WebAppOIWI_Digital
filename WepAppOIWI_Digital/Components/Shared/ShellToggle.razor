@@ -8,19 +8,16 @@
         title="Toggle menu"
         aria-label="Toggle menu"
         @onclick="Toggle">
-    <svg viewBox="0 0 24 24" class="shell-fab__chev" aria-hidden="true">
-        <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2"
-              stroke-linecap="round" stroke-linejoin="round" />
-    </svg>
+    <!-- ใช้ Bootstrap Icons: สลับทิศตามสถานะ -->
+    <i class="bi @(collapsed ? "bi-chevron-right" : "bi-chevron-left")"></i>
 </button>
 
 @code {
-    private bool collapsed = true;                           // ปิดเสมอตั้งต้น
+    private bool collapsed = true;
     private DotNetObjectReference<ShellToggle>? _selfRef;
 
     protected override void OnInitialized()
     {
-        // ปิดทุกครั้งที่นำทางไปหน้าอื่น
         Nav.LocationChanged += HandleLocationChanged;
     }
 
@@ -35,7 +32,6 @@
     {
         if (!firstRender) return;
 
-        // โหลดครั้งแรก: บังคับปิด แล้วเริ่ม watch สถานะจาก DOM
         collapsed = true;
         await JS.InvokeVoidAsync("shellToggle.setCollapsed", true);
 
@@ -48,10 +44,8 @@
     {
         collapsed = !collapsed;
         await JS.InvokeVoidAsync("shellToggle.setCollapsed", collapsed);
-        // ไม่ต้อง save ใดๆ — ต้องการให้ปิดเสมอเมื่อเปิดหน้าใหม่
     }
 
-    // JS callback เมื่อ class บน #app-shell ถูกเปลี่ยนจากที่อื่น (เช่น คลิกโลโก้ที่ sidebar)
     [JSInvokable]
     public Task OnShellStateChanged(bool isCollapsed)
     {
