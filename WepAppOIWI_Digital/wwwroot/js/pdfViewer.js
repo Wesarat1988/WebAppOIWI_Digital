@@ -2,20 +2,22 @@
 (function () {
     const PDF_JS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
     const PDF_JS_WORKER_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const MIN_SCALE = 0.25;
+    const MAX_SCALE = 5;
 
     const views = new Map();
     let loaderPromise;
-    let readyResolve;
+    let readyResolver;
     const readyPromise = new Promise(resolve => {
-        readyResolve = resolve;
+        readyResolver = resolve;
     });
 
     function ensureLoaded() {
         if (window.pdfjsLib) {
             window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_CDN;
-            if (readyResolve) {
-                readyResolve();
-                readyResolve = null;
+            if (readyResolver) {
+                readyResolver();
+                readyResolver = null;
             }
             return Promise.resolve(window.pdfjsLib);
         }
@@ -31,9 +33,9 @@
                         return;
                     }
                     window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_CDN;
-                    if (readyResolve) {
-                        readyResolve();
-                        readyResolve = null;
+                    if (readyResolver) {
+                        readyResolver();
+                        readyResolver = null;
                     }
                     resolve(window.pdfjsLib);
                 };
@@ -52,7 +54,7 @@
 
     ensureLoaded().catch(console.error);
 
-    function cleanupView(containerId) {
+    function cleanup(containerId) {
         const existing = views.get(containerId);
         if (!existing) {
             return;
@@ -71,24 +73,34 @@
         views.delete(containerId);
     }
 
-    function computeFitWidthScale(page, state) {
-        const viewport = page.getViewport({ scale: 1 });
-        const containerWidth = state.host.clientWidth || (state.scrollEl ? state.scrollEl.clientWidth : viewport.width);
-        const width = containerWidth > 0 ? containerWidth : viewport.width;
-        return width / viewport.width;
-    }
-
-    function updateScaleIndicator(state) {
-        const element = document.getElementById(`${state.containerId}-scale`);
-        if (element) {
-            element.textContent = `${Math.round(state.scale * 100)}%`;
+    function getState(containerId) {
+        const state = views.get(containerId);
+        if (!state) {
+            throw new Error(`PDF viewer for '${containerId}' is not ready`);
         }
+        return state;
     }
 
-    function updatePageIndicator(state) {
-        const element = document.getElementById(`${state.containerId}-page`);
-        if (element) {
-            element.textContent = `${state.currentPage} / ${state.pageCount}`;
+    function buildInfo(state) {
+        return {
+            page: state.page,
+            pages: state.pages,
+            zoom: Math.round(state.scale * 100)
+        };
+    }
+
+    function updateIndicators(state) {
+        const pageEl = document.getElementById(`${state.containerId}-page`);
+        if (pageEl) {
+            pageEl.textContent = String(state.page);
+        }
+        const pagesEl = document.getElementById(`${state.containerId}-pages`);
+        if (pagesEl) {
+            pagesEl.textContent = String(state.pages);
+        }
+        const scaleEl = document.getElementById(`${state.containerId}-scale`);
+        if (scaleEl) {
+            scaleEl.textContent = `${Math.round(state.scale * 100)}%`;
         }
     }
 
@@ -106,71 +118,68 @@
         }
     }
 
-    async function renderCurrentPage(state) {
+    function computeFitWidthScale(pdfPage, hostWidth) {
+        const viewport = pdfPage.getViewport({ scale: 1 });
+        const width = Math.max(hostWidth || 0, 1);
+        return width / viewport.width;
+    }
+
+    async function renderCurrent(state, suppliedPage) {
         if (!state.pdf) {
-            return;
+            throw new Error("PDF document not loaded");
         }
-        const page = await state.pdf.getPage(state.currentPage);
+
+        const page = suppliedPage ?? await state.pdf.getPage(state.page);
         const viewport = page.getViewport({ scale: state.scale });
         const dpr = window.devicePixelRatio || 1;
+        state.dpr = dpr;
 
         state.canvas.width = Math.floor(viewport.width * dpr);
         state.canvas.height = Math.floor(viewport.height * dpr);
-        state.canvas.style.width = `${Math.floor(viewport.width)}px`;
-        state.canvas.style.height = `${Math.floor(viewport.height)}px`;
+        state.canvas.style.width = `${viewport.width}px`;
+        state.canvas.style.height = `${viewport.height}px`;
 
         const ctx = state.ctx;
         if (!ctx) {
-            return;
+            throw new Error("2D rendering context not available");
         }
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, state.canvas.width, state.canvas.height);
 
         const renderContext = {
             canvasContext: ctx,
-            viewport,
-            transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null
+            viewport
         };
+        if (dpr !== 1) {
+            renderContext.transform = [dpr, 0, 0, dpr, 0, 0];
+        }
 
         await page.render(renderContext).promise;
 
-        if (state.scrollEl) {
+        if (state.scrollEl && typeof state.scrollEl.scrollTop === "number") {
             state.scrollEl.scrollTop = 0;
         }
 
-        updateScaleIndicator(state);
-        updatePageIndicator(state);
-    }
-
-    function goToPageInternal(state, pageNumber) {
-        if (!state.pdf) {
-            return Promise.resolve(false);
-        }
-        const next = Math.max(1, Math.min(pageNumber, state.pageCount));
-        if (next === state.currentPage) {
-            return Promise.resolve(false);
-        }
-        state.currentPage = next;
-        return renderCurrentPage(state).then(() => true).catch(() => false);
+        updateIndicators(state);
+        return buildInfo(state);
     }
 
     function attachInteraction(state) {
-        const wheelHandler = (event) => {
-            if (!state.scrollEl) {
-                return;
-            }
+        const scrollEl = state.scrollEl;
+        if (!scrollEl) {
+            return;
+        }
 
-            const delta = event.deltaY;
-            const el = state.scrollEl;
-            if (delta > 0) {
-                if (el.scrollTop + el.clientHeight >= el.scrollHeight - 1 && state.currentPage < state.pageCount) {
+        const wheelHandler = (event) => {
+            if (event.deltaY > 0) {
+                if (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 1 && state.page < state.pages) {
                     event.preventDefault();
-                    goToPageInternal(state, state.currentPage + 1);
+                    gotoPage(state.containerId, state.page + 1).catch(console.error);
                 }
-            } else if (delta < 0) {
-                if (el.scrollTop <= 0 && state.currentPage > 1) {
+            } else if (event.deltaY < 0) {
+                if (scrollEl.scrollTop <= 0 && state.page > 1) {
                     event.preventDefault();
-                    goToPageInternal(state, state.currentPage - 1);
+                    gotoPage(state.containerId, state.page - 1).catch(console.error);
                 }
             }
         };
@@ -180,213 +189,204 @@
                 case "ArrowDown":
                 case "PageDown":
                     event.preventDefault();
-                    goToPageInternal(state, state.currentPage + 1);
+                    gotoPage(state.containerId, state.page + 1).catch(console.error);
                     break;
                 case "ArrowUp":
                 case "PageUp":
                     event.preventDefault();
-                    goToPageInternal(state, state.currentPage - 1);
+                    gotoPage(state.containerId, state.page - 1).catch(console.error);
                     break;
                 case "Home":
                     event.preventDefault();
-                    goToPageInternal(state, 1);
+                    gotoPage(state.containerId, 1).catch(console.error);
                     break;
                 case "End":
                     event.preventDefault();
-                    goToPageInternal(state, state.pageCount);
+                    gotoPage(state.containerId, state.pages).catch(console.error);
                     break;
                 default:
                     break;
             }
         };
 
-        if (state.scrollEl) {
-            state.scrollEl.addEventListener("wheel", wheelHandler, { passive: false });
-            state.scrollEl.addEventListener("keydown", keyHandler);
-        }
+        scrollEl.addEventListener("wheel", wheelHandler, { passive: false });
+        scrollEl.addEventListener("keydown", keyHandler);
 
         state.wheelHandler = wheelHandler;
         state.keyHandler = keyHandler;
+        setScrollFocus(scrollEl);
+    }
+
+    function observeResize(state) {
+        if (state.resizeObserver) {
+            state.resizeObserver.disconnect();
+        }
+        const observer = new ResizeObserver(() => {
+            if (!state.isFitWidth) {
+                return;
+            }
+            queueMicrotask(() => {
+                if (!views.has(state.containerId)) {
+                    return;
+                }
+                recomputeFitWidth(state).catch(console.error);
+            });
+        });
+        observer.observe(state.host);
+        state.resizeObserver = observer;
+    }
+
+    async function recomputeFitWidth(state) {
+        if (!state.pdf) {
+            return buildInfo(state);
+        }
+        const page = await state.pdf.getPage(state.page);
+        const hostWidth = state.host.clientWidth || (state.scrollEl ? state.scrollEl.clientWidth : 0);
+        let nextScale = computeFitWidthScale(page, hostWidth);
+        if (!isFinite(nextScale) || nextScale <= 0) {
+            nextScale = state.scale;
+        }
+        state.scale = nextScale;
+        state.fitWidthScale = nextScale;
+        return renderCurrent(state, page);
     }
 
     async function render(url, containerId) {
         await ready();
+        cleanup(containerId);
+
         const host = document.getElementById(containerId);
         if (!host) {
-            return;
+            throw new Error(`Container '${containerId}' not found`);
         }
-
-        cleanupView(containerId);
-
-        const scrollEl = host.closest(".pdf-scroll") || host;
-        setScrollFocus(scrollEl);
+        const scrollEl = host.closest('.pdf-scroll') || host.parentElement || host;
 
         host.innerHTML = "";
-        const canvas = document.createElement("canvas");
-        canvas.className = "pdfjs-canvas";
+        const canvas = document.createElement('canvas');
+        canvas.className = 'pdfjs-canvas';
         host.appendChild(canvas);
-        const ctx = canvas.getContext("2d", { alpha: false });
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            throw new Error('Unable to create 2D context');
+        }
+
+        const response = await fetch(url, { credentials: 'include' });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch PDF: ${response.status}`);
+        }
+        const data = await response.arrayBuffer();
+        const task = window.pdfjsLib.getDocument({ data });
+        const pdf = await task.promise;
+
+        const firstPage = await pdf.getPage(1);
+        const hostWidth = host.clientWidth || (scrollEl ? scrollEl.clientWidth : 0);
+        let fitWidthScale = computeFitWidthScale(firstPage, hostWidth);
+        if (!isFinite(fitWidthScale) || fitWidthScale <= 0) {
+            fitWidthScale = 1;
+        }
 
         const state = {
             containerId,
             host,
             scrollEl,
+            pdf,
+            page: 1,
+            pages: pdf.numPages,
+            scale: fitWidthScale,
+            fitWidthScale,
+            isFitWidth: true,
             canvas,
             ctx,
-            pdf: null,
-            pageCount: 0,
-            currentPage: 1,
-            scale: 1,
-            fitWidthScale: 1,
-            isFitWidth: true,
             resizeObserver: null,
             wheelHandler: null,
-            keyHandler: null
+            keyHandler: null,
+            dpr: window.devicePixelRatio || 1
         };
 
         views.set(containerId, state);
-
-        let pdf;
-        try {
-            const loadingTask = window.pdfjsLib.getDocument({ url, withCredentials: true });
-            pdf = await loadingTask.promise;
-        } catch (error) {
-            console.error("Failed to load PDF", error);
-            host.innerHTML = '<div class="pdfjs-error alert alert-danger m-3">ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้</div>';
-            views.delete(containerId);
-            return;
-        }
-
-        state.pdf = pdf;
-        state.pageCount = pdf.numPages;
-        updatePageIndicator(state);
-
-        try {
-            const firstPage = await pdf.getPage(1);
-            state.fitWidthScale = computeFitWidthScale(firstPage, state);
-            state.scale = state.fitWidthScale;
-            state.isFitWidth = true;
-            await renderCurrentPage(state);
-        } catch (error) {
-            console.error("Failed to render initial PDF page", error);
-            host.innerHTML = '<div class="pdfjs-error alert alert-danger m-3">ไม่สามารถแสดงตัวอย่างไฟล์ PDF ได้</div>';
-            views.delete(containerId);
-            return;
-        }
-
-        const ro = new ResizeObserver(() => {
-            if (!state.pdf) {
-                return;
-            }
-            const wasFit = state.isFitWidth || Math.abs(state.scale - state.fitWidthScale) < 0.001;
-            state.pdf.getPage(1).then(page => {
-                state.fitWidthScale = computeFitWidthScale(page, state);
-                if (wasFit) {
-                    state.scale = state.fitWidthScale;
-                    state.isFitWidth = true;
-                    renderCurrentPage(state);
-                }
-            }).catch(() => { /* ignore */ });
-        });
-        ro.observe(state.host);
-        state.resizeObserver = ro;
-
+        observeResize(state);
         attachInteraction(state);
+
+        const info = await renderCurrent(state, firstPage);
+        return info;
+    }
+
+    async function gotoPage(containerId, pageNumber) {
+        const state = getState(containerId);
+        const target = Math.min(Math.max(1, Math.trunc(pageNumber || 1)), state.pages);
+        if (target === state.page) {
+            updateIndicators(state);
+            return buildInfo(state);
+        }
+        state.page = target;
+        if (state.isFitWidth) {
+            const page = await state.pdf.getPage(state.page);
+            const hostWidth = state.host.clientWidth || (state.scrollEl ? state.scrollEl.clientWidth : 0);
+            let scale = computeFitWidthScale(page, hostWidth);
+            if (!isFinite(scale) || scale <= 0) {
+                scale = state.scale;
+            }
+            state.scale = scale;
+            state.fitWidthScale = scale;
+            return renderCurrent(state, page);
+        }
+        return renderCurrent(state);
+    }
+
+    function nextPage(containerId) {
+        return gotoPage(containerId, getState(containerId).page + 1);
+    }
+
+    function prevPage(containerId) {
+        return gotoPage(containerId, getState(containerId).page - 1);
     }
 
     async function zoomIn(containerId) {
-        const state = views.get(containerId);
-        if (!state) {
-            return 100;
-        }
+        const state = getState(containerId);
         state.isFitWidth = false;
-        state.scale *= 1.1;
-        await renderCurrentPage(state);
+        state.scale = Math.min(state.scale * 1.1, MAX_SCALE);
+        await renderCurrent(state);
         return Math.round(state.scale * 100);
     }
 
     async function zoomOut(containerId) {
-        const state = views.get(containerId);
-        if (!state) {
-            return 100;
-        }
+        const state = getState(containerId);
         state.isFitWidth = false;
-        state.scale /= 1.1;
-        await renderCurrentPage(state);
+        state.scale = Math.max(state.scale / 1.1, MIN_SCALE);
+        await renderCurrent(state);
         return Math.round(state.scale * 100);
     }
 
     async function fitWidth(containerId) {
-        const state = views.get(containerId);
-        if (!state || !state.pdf) {
-            return 100;
-        }
-        try {
-            const page = await state.pdf.getPage(state.currentPage);
-            state.fitWidthScale = computeFitWidthScale(page, state);
-        } catch {
-            // ignore errors computing fit width
-        }
-        state.scale = state.fitWidthScale;
+        const state = getState(containerId);
         state.isFitWidth = true;
-        await renderCurrentPage(state);
-        return Math.round(state.scale * 100);
-    }
-
-    async function nextPage(containerId) {
-        const state = views.get(containerId);
-        if (!state) {
-            return { page: 1, pageCount: 1 };
-        }
-        await goToPageInternal(state, state.currentPage + 1);
-        return { page: state.currentPage, pageCount: state.pageCount };
-    }
-
-    async function prevPage(containerId) {
-        const state = views.get(containerId);
-        if (!state) {
-            return { page: 1, pageCount: 1 };
-        }
-        await goToPageInternal(state, state.currentPage - 1);
-        return { page: state.currentPage, pageCount: state.pageCount };
-    }
-
-    async function goToPage(containerId, pageNumber) {
-        const state = views.get(containerId);
-        if (!state) {
-            return { page: 1, pageCount: 1 };
-        }
-        await goToPageInternal(state, pageNumber);
-        return { page: state.currentPage, pageCount: state.pageCount };
-    }
-
-    function getZoomPercent(containerId) {
-        const state = views.get(containerId);
-        if (!state) {
-            return 100;
-        }
-        return Math.round(state.scale * 100);
+        const info = await recomputeFitWidth(state);
+        return info.zoom;
     }
 
     function getPageInfo(containerId) {
-        const state = views.get(containerId);
-        if (!state) {
-            return { page: 1, pageCount: 1 };
-        }
-        return { page: state.currentPage, pageCount: state.pageCount };
+        const state = getState(containerId);
+        updateIndicators(state);
+        return buildInfo(state);
+    }
+
+    function getZoomPercent(containerId) {
+        const state = getState(containerId);
+        return Math.round(state.scale * 100);
     }
 
     window.pdfViewer = {
         ready,
         render,
         renderPdf: render,
+        getPageInfo,
+        gotoPage,
+        goToPage: gotoPage,
+        nextPage,
+        prevPage,
         zoomIn,
         zoomOut,
         fitWidth,
-        nextPage,
-        prevPage,
-        goToPage,
-        getZoomPercent,
-        getPageInfo
+        getZoomPercent
     };
 })();
