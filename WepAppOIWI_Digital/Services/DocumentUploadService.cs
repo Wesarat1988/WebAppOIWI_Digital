@@ -17,7 +17,7 @@ public sealed class DocumentUploadService
     private readonly DocumentCatalogService _catalogService;
     private readonly DocumentCatalogOptions _options;
     private readonly ILogger<DocumentUploadService> _logger;
-    private readonly IVersionStore _versionStore; // <-- เพิ่มบรรทัดนี้
+    private readonly IVersionStore _versionStore; // จัดการ snapshot/version history
     private readonly SemaphoreSlim _uploadLock = new(1, 1);
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
@@ -38,27 +38,26 @@ public sealed class DocumentUploadService
         _versionStore = versionStore; 
     }
 
-    // ===== เพิ่มเมธอดใหม่ 2 ตัว =====
+    // ประวัติย้อนหลังของไฟล์
     public Task<IReadOnlyList<VersionDescriptor>> GetHistoryAsync(string normalizedPath, int take = 5, CancellationToken ct = default)
         => _versionStore.ListAsync(normalizedPath, take, ct);
 
     public async Task<bool> RevertToAsync(string normalizedPath, string versionId, string? actor, string? comment, CancellationToken ct = default)
     {
-        var ctx = await _catalogService.EnsureCatalogContextAsync(ct).ConfigureAwait(false);
-        var rootPath = ctx.ActiveRootPath;
-        if (string.IsNullOrWhiteSpace(rootPath)) return false;
+        await _catalogService.EnsureCatalogContextAsync(ct).ConfigureAwait(false);
 
-        var physical = Path.GetFullPath(Path.Combine(
-            rootPath,
-            normalizedPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)));
+        string physical;
+        try
+        {
+            physical = _catalogService.ResolvePhysicalPath(normalizedPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve physical path for {Path} while reverting.", normalizedPath);
+            return false;
+        }
 
-        var ok = await _versionStore.RestoreAsync(
-            normalizedPath: normalizedPath,
-            versionId: versionId,
-            physicalPath: physical,
-            actor: actor,
-            comment: comment,
-            ct: ct).ConfigureAwait(false);
+        var ok = await _versionStore.RestoreAsync(normalizedPath, versionId, physical, actor, comment, ct).ConfigureAwait(false);
 
         if (ok) _catalogService.InvalidateCache();
         return ok;
@@ -204,6 +203,15 @@ public sealed class DocumentUploadService
                 return DocumentUploadResult.Failed("บันทึกไฟล์สำเร็จ แต่ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
             }
 
+            try
+            {
+                await _versionStore.SnapshotAsync(relativeFileName, destinationPath, request.UploadedBy, request.Comment, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to snapshot newly uploaded document {Path}.", relativeFileName);
+            }
+
             _catalogService.InvalidateCache();
 
             return DocumentUploadResult.Success(
@@ -301,6 +309,18 @@ public sealed class DocumentUploadService
 
             if (request.Content is not null)
             {
+                try
+                {
+                    if (File.Exists(candidatePath))
+                    {
+                        await _versionStore.SnapshotAsync(normalizedPath, candidatePath, request.UploadedBy, request.Comment, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to snapshot document before updating {Path}.", normalizedPath);
+                }
+
                 try
                 {
                     if (File.Exists(candidatePath))
