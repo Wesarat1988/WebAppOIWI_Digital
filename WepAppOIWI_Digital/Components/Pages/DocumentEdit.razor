@@ -1,6 +1,7 @@
 @page "/documents/edit/{Token}"
 @rendermode InteractiveServer
 
+@using System
 @using System.ComponentModel.DataAnnotations
 @using System.IO
 @using Microsoft.AspNetCore.Components.Forms
@@ -146,7 +147,7 @@ else
                                 }
                                 @if (v.SizeBytes is long s)
                                 {
-                                    <text> · @((s / 1024.0):F1) KB</text>
+                                    <text> · @((s / 1024.0).ToString("F1")) KB</text>
                                 }
                             </div>
                         </div>
@@ -236,7 +237,7 @@ else
             }
 
             ApplyRecordToForm(currentRecord);
-            viewerUrl = BuildViewerUrl(normalizedPath);
+            viewerUrl = BuildViewerUrl(normalizedPath, currentRecord.UpdatedAt);
         }
         catch (Exception ex)
         {
@@ -337,7 +338,7 @@ else
 
             statusCssClass = "alert alert-success";
             statusMessage = "บันทึกการแก้ไขเรียบร้อยแล้ว";
-            successViewerUrl = BuildViewerUrl(currentNormalizedPath);
+            successViewerUrl = BuildViewerUrl(currentNormalizedPath, DateTimeOffset.UtcNow);
 
             selectedFile = null;
             selectedFileName = null;
@@ -364,7 +365,7 @@ else
             if (currentRecord is not null)
             {
                 ApplyRecordToForm(currentRecord);
-                viewerUrl = BuildViewerUrl(currentNormalizedPath);
+                viewerUrl = BuildViewerUrl(currentNormalizedPath, currentRecord.UpdatedAt);
             }
         }
         catch (Exception ex)
@@ -400,7 +401,7 @@ else
             ? string.Empty
             : value ?? string.Empty;
 
-    private static string? BuildViewerUrl(string? normalizedPath)
+    private static string? BuildViewerUrl(string? normalizedPath, DateTimeOffset? updatedAt)
     {
         if (string.IsNullOrWhiteSpace(normalizedPath))
         {
@@ -410,7 +411,8 @@ else
         try
         {
             var token = DocumentCatalogService.EncodeDocumentToken(normalizedPath);
-            return $"/documents/viewer/{Uri.EscapeDataString(token)}";
+            var stamp = (updatedAt?.UtcTicks ?? DateTimeOffset.UtcNow.UtcTicks).ToString();
+            return $"/documents/viewer/{Uri.EscapeDataString(token)}?v={stamp}";
         }
         catch
         {
