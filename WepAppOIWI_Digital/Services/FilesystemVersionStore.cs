@@ -121,6 +121,32 @@ public sealed class FilesystemVersionStore : IVersionStore
                     metadata = await ReadMetadataAsync(metadataPath, ct).ConfigureAwait(false);
                 }
             }
+            else
+            {
+                var fallbackMetadata = Directory
+                    .EnumerateFiles(versionDirectory, versionId + "*.json", SearchOption.TopDirectoryOnly)
+                    .FirstOrDefault();
+                if (!string.IsNullOrEmpty(fallbackMetadata))
+                {
+                    metadataPath = fallbackMetadata;
+                    metadata = await ReadMetadataAsync(metadataPath, ct).ConfigureAwait(false);
+                }
+            }
+
+            var binaryPath = ResolveVersionFilePath(metadataPath, metadata) ??
+                Directory.EnumerateFiles(versionDirectory, versionId + ".*", SearchOption.TopDirectoryOnly).FirstOrDefault();
+
+            if (string.IsNullOrEmpty(binaryPath) || !File.Exists(binaryPath))
+            {
+                _logger.LogWarning("Snapshot {VersionId} for {NormalizedPath} not found.", versionId, normalizedPath);
+                return false;
+            }
+
+            if (File.Exists(physicalPath))
+            {
+                var snapshotComment = string.IsNullOrWhiteSpace(comment)
+                    ? $"Snapshot before restore to {versionId}"
+                    : $"{comment} (before restore)";
 
             var versionFile = ResolveVersionFilePath(metadataPath, metadata) ??
                 Directory.EnumerateFiles(versionDirectory, versionId + ".*", SearchOption.TopDirectoryOnly).FirstOrDefault();
@@ -289,6 +315,7 @@ public sealed class FilesystemVersionStore : IVersionStore
             _logger.LogDebug("Skipping snapshot for {NormalizedPath} because the file '{PhysicalPath}' does not exist.", normalizedPath, physicalPath);
             return false;
         }
+    }
 
         string? versionFilePath = null;
         string? metadataPath = null;
@@ -604,6 +631,38 @@ public sealed class FilesystemVersionStore : IVersionStore
         {
             // Best-effort.
         }
+    }
+
+    private static void TryDeleteFile(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup.
+        }
+    }
+
+    private sealed class SnapshotMetadata
+    {
+        [JsonPropertyName("descriptor")]
+        public VersionDescriptor? Descriptor { get; set; }
+
+        [JsonPropertyName("originalFileName")]
+        public string? OriginalFileName { get; set; }
+
+        [JsonPropertyName("storedFileName")]
+        public string? StoredFileName { get; set; }
     }
 
     private static void TryDeleteFile(string? path)
