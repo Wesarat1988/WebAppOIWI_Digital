@@ -75,6 +75,41 @@ app.MapGet("/documents/download/{token}", (string token, DocumentCatalogService 
 app.MapGet("/documents/file/{token}", (HttpContext context, string token, DocumentCatalogService catalog, CancellationToken cancellationToken)
     => ServeDocumentAsync(context, token, catalog, cancellationToken, inline: true));
 
+app.MapGet("/documents/{token}/versions", async (string token, int? take, DocumentUploadService uploader, CancellationToken cancellationToken) =>
+{
+    if (!DocumentCatalogService.TryDecodeDocumentToken(token, out var normalizedPath))
+    {
+        return Results.BadRequest();
+    }
+
+    var history = await uploader.GetHistoryAsync(normalizedPath, take.GetValueOrDefault(5), cancellationToken).ConfigureAwait(false);
+    return Results.Ok(history);
+});
+
+app.MapPost("/documents/{token}/versions/{versionId}/set-active", async (HttpContext httpContext, string token, string versionId, DocumentUploadService uploader, CancellationToken cancellationToken) =>
+{
+    if (!DocumentCatalogService.TryDecodeDocumentToken(token, out var normalizedPath))
+    {
+        return Results.BadRequest();
+    }
+
+    var actor = httpContext.User?.Identity?.Name;
+    var result = await uploader.SetActiveVersionAsync(normalizedPath, versionId, actor, comment: null, cancellationToken).ConfigureAwait(false);
+
+    if (!result.Succeeded)
+    {
+        return Results.BadRequest(new { message = result.ErrorMessage ?? "ไม่สามารถตั้งเวอร์ชันนี้ให้ใช้งานได้" });
+    }
+
+    return Results.Ok(new
+    {
+        versionId = result.ActiveVersionId,
+        updatedAtUtc = result.UpdatedAtUtc?.UtcTicks,
+        result.DocumentCode,
+        result.NormalizedPath
+    });
+});
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
