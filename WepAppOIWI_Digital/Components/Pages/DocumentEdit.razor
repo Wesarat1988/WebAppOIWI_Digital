@@ -1,6 +1,7 @@
 @page "/documents/edit/{Token}"
 @rendermode InteractiveServer
 
+@using System
 @using System.ComponentModel.DataAnnotations
 @using System.IO
 @using Microsoft.AspNetCore.Components.Forms
@@ -132,7 +133,7 @@ else
                 @foreach (var v in versions)
                 {
                     <div class="list-group-item d-flex align-items-center justify-content-between">
-                        <div>
+                        <div class="flex-grow-1 me-3">
                             <div class="fw-semibold">Version: @v.VersionId</div>
                             <div class="text-muted small">
                                 @v.TimestampUtc.ToLocalTime():g
@@ -146,12 +147,19 @@ else
                                 }
                                 @if (v.SizeBytes is long s)
                                 {
-                                    <text> · @((s / 1024.0):F1) KB</text>
+                                    <text> · @((s / 1024.0).ToString("F1")) KB</text>
                                 }
                             </div>
                         </div>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-sm btn-warning" @onclick="() => Restore(v)">ย้อนเป็นเวอร์ชันนี้</button>
+                        <div>
+                            @if (v.IsActive)
+                            {
+                                <span class="badge bg-success">ใช้งานอยู่</span>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-primary" disabled="@isSwitching" @onclick="() => SetActive(v)">ตั้งให้ใช้งาน</button>
+                            }
                         </div>
                     </div>
                 }
@@ -199,6 +207,7 @@ else
 
     // History
     private IReadOnlyList<VersionDescriptor> versions = Array.Empty<VersionDescriptor>();
+    private bool isSwitching;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -236,7 +245,7 @@ else
             }
 
             ApplyRecordToForm(currentRecord);
-            viewerUrl = BuildViewerUrl(normalizedPath);
+            viewerUrl = BuildViewerUrl(normalizedPath, currentRecord.UpdatedAt);
         }
         catch (Exception ex)
         {
@@ -337,7 +346,7 @@ else
 
             statusCssClass = "alert alert-success";
             statusMessage = "บันทึกการแก้ไขเรียบร้อยแล้ว";
-            successViewerUrl = BuildViewerUrl(currentNormalizedPath);
+            successViewerUrl = BuildViewerUrl(currentNormalizedPath, DateTimeOffset.UtcNow);
 
             selectedFile = null;
             selectedFileName = null;
@@ -351,7 +360,7 @@ else
         }
     }
 
-    private async Task RefreshRecordAsync()
+    private async Task RefreshRecordAsync(bool updateForm = true)
     {
         if (string.IsNullOrEmpty(currentNormalizedPath))
         {
@@ -360,11 +369,22 @@ else
 
         try
         {
-            currentRecord = await DocumentCatalog.TryGetDocumentAsync(currentNormalizedPath);
-            if (currentRecord is not null)
+            var refreshed = await DocumentCatalog.TryGetDocumentAsync(currentNormalizedPath);
+            if (refreshed is not null)
             {
-                ApplyRecordToForm(currentRecord);
-                viewerUrl = BuildViewerUrl(currentNormalizedPath);
+                currentRecord = refreshed;
+
+                if (updateForm)
+                {
+                    ApplyRecordToForm(refreshed);
+                }
+                else
+                {
+                    var fileName = Path.GetFileName(refreshed.FileName ?? string.Empty);
+                    currentFileName = string.IsNullOrEmpty(fileName) ? "-" : fileName;
+                }
+
+                viewerUrl = BuildViewerUrl(currentNormalizedPath, refreshed.UpdatedAt);
             }
         }
         catch (Exception ex)
@@ -400,7 +420,7 @@ else
             ? string.Empty
             : value ?? string.Empty;
 
-    private static string? BuildViewerUrl(string? normalizedPath)
+    private static string? BuildViewerUrl(string? normalizedPath, DateTimeOffset? updatedAt)
     {
         if (string.IsNullOrWhiteSpace(normalizedPath))
         {
@@ -410,7 +430,8 @@ else
         try
         {
             var token = DocumentCatalogService.EncodeDocumentToken(normalizedPath);
-            return $"/documents/viewer/{Uri.EscapeDataString(token)}";
+            var stamp = (updatedAt?.UtcTicks ?? DateTimeOffset.UtcNow.UtcTicks).ToString();
+            return $"/documents/viewer/{Uri.EscapeDataString(token)}?v={stamp}";
         }
         catch
         {
@@ -482,37 +503,55 @@ else
         }
     }
 
-    private async Task Restore(VersionDescriptor v)
+    private async Task SetActive(VersionDescriptor v)
     {
-        if (currentRecord is null || string.IsNullOrEmpty(currentNormalizedPath))
+        if (string.IsNullOrEmpty(currentNormalizedPath))
+        {
             return;
+        }
+
+        isSwitching = true;
+        statusCssClass = null;
+        statusMessage = null;
 
         try
         {
-            var ok = await DocumentUploader.RevertToAsync(
+            var result = await DocumentUploader.SetActiveVersionAsync(
                 normalizedPath: currentNormalizedPath!,
                 versionId: v.VersionId,
-                actor: formModel.UploadedBy ?? "-",
-                comment: "Revert from UI");
+                actor: formModel.UploadedBy ?? currentRecord?.UploadedBy,
+                comment: null);
 
-            if (ok)
-            {
-                statusCssClass = "alert alert-success";
-                statusMessage = $"คืนเป็นเวอร์ชัน {v.VersionId} เรียบร้อย";
-                await RefreshRecordAsync();
-                await LoadVersionsAsync();
-            }
-            else
+            if (!result.Succeeded)
             {
                 statusCssClass = "alert alert-danger";
-                statusMessage = "คืนเวอร์ชันไม่สำเร็จ";
+                statusMessage = result.ErrorMessage ?? "ไม่สามารถตั้งเวอร์ชันนี้ให้ใช้งานได้";
+                return;
             }
+
+            if (!string.IsNullOrEmpty(result.NormalizedPath))
+            {
+                currentNormalizedPath = result.NormalizedPath;
+            }
+
+            await RefreshRecordAsync(updateForm: false);
+            await LoadVersionsAsync();
+
+            var stamp = result.UpdatedAtUtc ?? currentRecord?.UpdatedAt ?? DateTimeOffset.UtcNow;
+            viewerUrl = BuildViewerUrl(currentNormalizedPath, stamp);
+
+            statusCssClass = "alert alert-success";
+            statusMessage = $"ตั้งเวอร์ชัน {v.VersionId} ให้ใช้งานเรียบร้อย";
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Restore failed");
+            Logger.LogError(ex, "Failed to set active version for {Path}", currentNormalizedPath);
             statusCssClass = "alert alert-danger";
-            statusMessage = "เกิดข้อผิดพลาดขณะคืนเวอร์ชัน";
+            statusMessage = "ไม่สามารถตั้งเวอร์ชันนี้ให้ใช้งานได้";
+        }
+        finally
+        {
+            isSwitching = false;
         }
     }
 }
