@@ -37,7 +37,8 @@ public sealed record DocumentRecord(
     string Comment,
     string DocumentType,
     int? SequenceNumber,
-    string? DocumentCode
+    string? DocumentCode,
+    int Version
 )
 {
     public string? LinkUrl { get; init; }
@@ -148,6 +149,25 @@ public sealed class DocumentCatalogService : IDisposable
         var root = context.ActiveRootPath ?? throw new InvalidOperationException("Catalog root not set.");
         var relative = normalizedPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
         return Path.GetFullPath(Path.Combine(root, relative));
+    }
+
+    public string GetDocumentRootPath(string documentCode)
+    {
+        if (string.IsNullOrWhiteSpace(documentCode))
+        {
+            throw new ArgumentException("Value cannot be null or whitespace.", nameof(documentCode));
+        }
+
+        var context = GetCatalogContext();
+        var root = context.ActiveRootPath ?? throw new InvalidOperationException("Catalog root not set.");
+        var safeCode = Slugify(documentCode);
+        return Path.Combine(root, safeCode);
+    }
+
+    public (string CurrentDirectory, string VersionsDirectory) GetDocumentDirectories(string documentCode)
+    {
+        var root = GetDocumentRootPath(documentCode);
+        return (Path.Combine(root, "current"), Path.Combine(root, "versions"));
     }
 
     public void InvalidateCache()
@@ -373,6 +393,12 @@ public sealed class DocumentCatalogService : IDisposable
         var sequenceNumber = entry.SequenceNumber;
         var documentCode = DocumentNumbering.FormatCode(normalizedDocumentType, sequenceNumber);
 
+        var version = entry.Version.GetValueOrDefault();
+        if (version <= 0)
+        {
+            version = 1;
+        }
+
         return new DocumentRecord(
             normalizedRelativePath,
             string.IsNullOrWhiteSpace(displayName) ? fallbackDisplayName : displayName,
@@ -385,7 +411,8 @@ public sealed class DocumentCatalogService : IDisposable
             NormalizeMetadata(entry.Comment),
             displayDocumentType,
             sequenceNumber,
-            documentCode)
+            documentCode,
+            version)
         {
             LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
         };
@@ -411,7 +438,8 @@ public sealed class DocumentCatalogService : IDisposable
             "-",
             "-",
             null,
-            null
+            null,
+            1
         )
         {
             LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
@@ -454,8 +482,58 @@ public sealed class DocumentCatalogService : IDisposable
     {
         try
         {
-            return Directory.EnumerateFiles(rootDirectory, "*", SearchOption.AllDirectories)
-                .ToList();
+            var results = new List<string>();
+            var stack = new Stack<string>();
+            stack.Push(rootDirectory);
+
+            while (stack.Count > 0)
+            {
+                var current = stack.Pop();
+
+                IEnumerable<string> directories;
+                try
+                {
+                    directories = Directory.EnumerateDirectories(current);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var directory in directories)
+                {
+                    var name = Path.GetFileName(directory);
+                    if (string.Equals(name, "versions", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    stack.Push(directory);
+                }
+
+                IEnumerable<string> files;
+                try
+                {
+                    files = Directory.EnumerateFiles(current, "*", SearchOption.TopDirectoryOnly);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var file in files)
+                {
+                    var fileName = Path.GetFileName(file);
+                    if (string.Equals(fileName, "meta.json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    results.Add(file);
+                }
+            }
+
+            return results;
         }
         catch (Exception ex)
         {
@@ -524,6 +602,36 @@ public sealed class DocumentCatalogService : IDisposable
 
         var trimmed = value.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? "-" : trimmed;
+    }
+
+    public static string Slugify(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(value.Length);
+
+        foreach (var ch in value.Trim())
+        {
+            if (invalid.Contains(ch))
+            {
+                continue;
+            }
+
+            builder.Append(char.IsWhiteSpace(ch) ? '_' : ch);
+        }
+
+        var slug = builder.ToString().Trim('_');
+
+        while (slug.Contains("__", StringComparison.Ordinal))
+        {
+            slug = slug.Replace("__", "_", StringComparison.Ordinal);
+        }
+
+        return slug;
     }
 
     private DocumentCatalogContext ResolveActiveContext()
@@ -698,6 +806,7 @@ public sealed class DocumentCatalogService : IDisposable
         public DateTimeOffset? UpdatedAt { get; init; }
         public string? DocumentType { get; init; }
         public int? SequenceNumber { get; init; }
+        public int? Version { get; init; }
     }
 
     public void Dispose()

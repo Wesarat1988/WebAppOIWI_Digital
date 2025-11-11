@@ -133,32 +133,53 @@ public sealed class DocumentUploadService
             }
 
             var destinationRoot = rootPath;
-            var createdDocumentDirectory = false;
+            string? currentDirectory = null;
+            string? versionsDirectory = null;
+            string? documentRoot = null;
+            var createdCurrentDirectory = false;
+            var createdVersionsDirectory = false;
 
             if (!string.IsNullOrWhiteSpace(documentCode))
             {
-                destinationRoot = Path.Combine(rootPath, documentCode);
-
                 try
                 {
-                    if (!Directory.Exists(destinationRoot))
+                    (currentDirectory, versionsDirectory) = _catalogService.GetDocumentDirectories(documentCode);
+
+                    if (!Directory.Exists(currentDirectory))
                     {
-                        Directory.CreateDirectory(destinationRoot);
-                        createdDocumentDirectory = true;
+                        Directory.CreateDirectory(currentDirectory!);
+                        createdCurrentDirectory = true;
                     }
                     else
                     {
-                        Directory.CreateDirectory(destinationRoot);
+                        Directory.CreateDirectory(currentDirectory!);
                     }
+
+                    if (!string.IsNullOrEmpty(versionsDirectory))
+                    {
+                        if (!Directory.Exists(versionsDirectory))
+                        {
+                            Directory.CreateDirectory(versionsDirectory);
+                            createdVersionsDirectory = true;
+                        }
+                        else
+                        {
+                            Directory.CreateDirectory(versionsDirectory);
+                        }
+                    }
+
+                    destinationRoot = currentDirectory!;
+                    documentRoot = Path.GetDirectoryName(currentDirectory);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to ensure document folder '{Folder}' exists before uploading.", destinationRoot);
+                    _logger.LogError(ex, "Failed to ensure document folder '{Folder}' exists before uploading.", documentCode);
                     return DocumentUploadResult.Failed("ไม่สามารถสร้างโฟลเดอร์สำหรับเลขเอกสารนี้ได้");
                 }
             }
 
-            var destinationPath = ResolveDestinationPath(destinationRoot, sanitizedFileName);
+            var destinationFileName = BuildCurrentFileName(request.DisplayName, sanitizedFileName);
+            var destinationPath = ResolveDestinationPath(destinationRoot, destinationFileName);
 
             try
             {
@@ -174,9 +195,19 @@ public sealed class DocumentUploadService
             {
                 _logger.LogError(ex, "Failed to save uploaded document to '{Destination}'.", destinationPath);
                 TryDeleteFile(destinationPath);
-                if (createdDocumentDirectory)
+                if (createdCurrentDirectory)
                 {
-                    TryDeleteDirectoryIfEmpty(destinationRoot);
+                    TryDeleteDirectoryIfEmpty(currentDirectory);
+                }
+
+                if (createdVersionsDirectory)
+                {
+                    TryDeleteDirectoryIfEmpty(versionsDirectory);
+                }
+
+                if (!string.IsNullOrEmpty(documentRoot))
+                {
+                    TryDeleteDirectoryIfEmpty(documentRoot);
                 }
                 return DocumentUploadResult.Failed("ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่อีกครั้ง");
             }
@@ -188,17 +219,29 @@ public sealed class DocumentUploadService
                     manifestPath,
                     manifest,
                     relativeFileName,
+                    relativeFileName,
                     request,
                     normalizedDocumentType,
                     preferredSequence,
+                    incrementVersion: false,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (!manifestUpdateResult.Succeeded)
             {
                 TryDeleteFile(destinationPath);
-                if (createdDocumentDirectory)
+                if (createdCurrentDirectory)
                 {
-                    TryDeleteDirectoryIfEmpty(destinationRoot);
+                    TryDeleteDirectoryIfEmpty(currentDirectory);
+                }
+
+                if (createdVersionsDirectory)
+                {
+                    TryDeleteDirectoryIfEmpty(versionsDirectory);
+                }
+
+                if (!string.IsNullOrEmpty(documentRoot))
+                {
+                    TryDeleteDirectoryIfEmpty(documentRoot);
                 }
                 return DocumentUploadResult.Failed("บันทึกไฟล์สำเร็จ แต่ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
             }
@@ -213,6 +256,8 @@ public sealed class DocumentUploadService
             }
 
             _catalogService.InvalidateCache();
+
+            _logger.LogInformation("Uploaded document {Code} to {Path}", documentCode ?? "(no-code)", destinationPath);
 
             return DocumentUploadResult.Success(
                 normalizedPath: relativeFileName,
@@ -290,22 +335,67 @@ public sealed class DocumentUploadService
                 return DocumentUpdateResult.Failed("ไม่สามารถแก้ไขไฟล์นอกโฟลเดอร์ที่กำหนดได้");
             }
 
-            var destinationDirectory = Path.GetDirectoryName(candidatePath);
-            if (!string.IsNullOrEmpty(destinationDirectory))
+            var documentCode = DocumentNumbering.FormatCode(existingNormalizedType, existingEntry.SequenceNumber);
+            string targetDirectory = Path.GetDirectoryName(candidatePath) ?? rootFullPath;
+            string? currentDirectory = null;
+            string? versionsDirectory = null;
+
+            if (!string.IsNullOrWhiteSpace(documentCode))
             {
                 try
                 {
-                    Directory.CreateDirectory(destinationDirectory);
+                    (currentDirectory, versionsDirectory) = _catalogService.GetDocumentDirectories(documentCode);
+                    Directory.CreateDirectory(currentDirectory!);
+                    if (!string.IsNullOrEmpty(versionsDirectory))
+                    {
+                        Directory.CreateDirectory(versionsDirectory);
+                    }
+
+                    targetDirectory = currentDirectory!;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to ensure destination directory '{Directory}' exists before updating document.", destinationDirectory);
+                    _logger.LogError(ex, "Failed to ensure document folder '{Folder}' exists before updating.", documentCode);
+                    return DocumentUpdateResult.Failed("ไม่สามารถสร้างโฟลเดอร์สำหรับเลขเอกสารนี้ได้");
+                }
+            }
+            else
+            {
+                try
+                {
+                    Directory.CreateDirectory(targetDirectory);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to ensure destination directory '{Directory}' exists before updating document.", targetDirectory);
                     return DocumentUpdateResult.Failed("ไม่สามารถสร้างโฟลเดอร์สำหรับไฟล์ได้");
                 }
             }
 
+            var existingExtension = Path.GetExtension(candidatePath);
+            var desiredBaseName = DocumentCatalogService.Slugify(request.DisplayName);
+            if (string.IsNullOrWhiteSpace(desiredBaseName))
+            {
+                desiredBaseName = DocumentCatalogService.Slugify(Path.GetFileNameWithoutExtension(candidatePath));
+            }
+
+            if (string.IsNullOrWhiteSpace(desiredBaseName))
+            {
+                desiredBaseName = Path.GetFileNameWithoutExtension(candidatePath) ?? "document";
+            }
+
+            var newFileName = string.IsNullOrWhiteSpace(existingExtension)
+                ? desiredBaseName
+                : desiredBaseName + existingExtension;
+            var newFullPath = Path.Combine(targetDirectory, newFileName);
+            var newRelativePath = Path.GetRelativePath(rootFullPath, newFullPath)
+                .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var pathChanged = !string.Equals(candidatePath, newFullPath, StringComparison.OrdinalIgnoreCase);
+
             string? backupPath = null;
             var fileReplaced = false;
+            var renameApplied = false;
+            string? tempPath = null;
 
             if (request.Content is not null)
             {
@@ -313,12 +403,19 @@ public sealed class DocumentUploadService
                 {
                     if (File.Exists(candidatePath))
                     {
-                        await _versionStore.SnapshotAsync(normalizedPath, candidatePath, request.UploadedBy, request.Comment, cancellationToken).ConfigureAwait(false);
+                        try
+                        {
+                            await _versionStore.SnapshotAsync(normalizedPath, candidatePath, request.UploadedBy, request.Comment, cancellationToken).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to snapshot document before updating {Path}.", normalizedPath);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to snapshot document before updating {Path}.", normalizedPath);
+                    _logger.LogError(ex, "Failed to prepare snapshot for {Path} before updating.", normalizedPath);
                 }
 
                 try
@@ -333,20 +430,69 @@ public sealed class DocumentUploadService
                         request.Content.Seek(0, SeekOrigin.Begin);
                     }
 
-                    await using var targetStream = File.Create(candidatePath);
-                    await request.Content.CopyToAsync(targetStream, cancellationToken).ConfigureAwait(false);
+                    tempPath = newFullPath + $".tmp-{Guid.NewGuid():N}";
+
+                    await using (var targetStream = File.Create(tempPath))
+                    {
+                        await request.Content.CopyToAsync(targetStream, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
+                    }
+                    catch (Exception dirEx)
+                    {
+                        _logger.LogWarning(dirEx, "Failed to ensure directory '{Directory}' before replacing file.", Path.GetDirectoryName(newFullPath));
+                    }
+
+                    File.Move(tempPath, newFullPath, overwrite: true);
                     fileReplaced = true;
+
+                    if (pathChanged)
+                    {
+                        TryDeleteFile(candidatePath);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to replace document content at '{Destination}'.", candidatePath);
+                    _logger.LogError(ex, "Failed to replace document content at '{Destination}'.", newFullPath);
                     if (!string.IsNullOrEmpty(backupPath))
                     {
                         TryRestoreFromBackup(backupPath, candidatePath);
                         TryDeleteFile(backupPath);
                         backupPath = null;
                     }
+
+                    if (!string.IsNullOrEmpty(tempPath))
+                    {
+                        TryDeleteFile(tempPath);
+                        tempPath = null;
+                    }
+
                     return DocumentUpdateResult.Failed("ไม่สามารถบันทึกไฟล์ที่แก้ไขได้ กรุณาลองใหม่อีกครั้ง");
+                }
+                finally
+                {
+                    if (!string.IsNullOrEmpty(tempPath))
+                    {
+                        TryDeleteFile(tempPath);
+                        tempPath = null;
+                    }
+                }
+            }
+            else if (pathChanged && File.Exists(candidatePath))
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
+                    File.Move(candidatePath, newFullPath, overwrite: true);
+                    renameApplied = true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to move document to '{Destination}'.", newFullPath);
+                    return DocumentUpdateResult.Failed("ไม่สามารถย้ายไฟล์ไปยังโฟลเดอร์ใหม่ได้");
                 }
             }
 
@@ -359,7 +505,7 @@ public sealed class DocumentUploadService
                 MachineName: request.MachineName,
                 UploadedBy: request.UploadedBy,
                 Comment: request.Comment,
-                OriginalFileName: Path.GetFileName(candidatePath),
+                OriginalFileName: Path.GetFileName(newFullPath),
                 Content: Stream.Null,
                 UploadedAt: request.UpdatedAt);
 
@@ -367,9 +513,11 @@ public sealed class DocumentUploadService
                     manifestPath,
                     manifest,
                     normalizedPath,
+                    newRelativePath,
                     metadataRequest,
                     existingNormalizedType,
                     existingEntry.SequenceNumber,
+                    incrementVersion: fileReplaced,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -384,6 +532,23 @@ public sealed class DocumentUploadService
                     _logger.LogWarning("Manifest update failed after replacing file '{File}'. Original backup was not available.", candidatePath);
                 }
 
+                if (renameApplied && pathChanged)
+                {
+                    try
+                    {
+                        File.Move(newFullPath, candidatePath, overwrite: true);
+                    }
+                    catch (Exception moveBackEx)
+                    {
+                        _logger.LogError(moveBackEx, "Failed to restore file location for '{Path}' after manifest error.", normalizedPath);
+                    }
+                }
+
+                if (fileReplaced && pathChanged)
+                {
+                    TryDeleteFile(newFullPath);
+                }
+
                 if (!string.IsNullOrEmpty(backupPath))
                 {
                     TryDeleteFile(backupPath);
@@ -396,7 +561,14 @@ public sealed class DocumentUploadService
                 TryDeleteFile(backupPath);
             }
 
+            if (pathChanged || fileReplaced)
+            {
+                normalizedPath = newRelativePath;
+            }
+
             _catalogService.InvalidateCache();
+
+            _logger.LogInformation("Updated document {Code} -> {Path}", documentCode ?? "(no-code)", newFullPath);
 
             return DocumentUpdateResult.Success(normalizedPath, manifestUpdateResult.DocumentType, manifestUpdateResult.SequenceNumber, manifestUpdateResult.DocumentCode);
         }
@@ -455,15 +627,17 @@ public sealed class DocumentUploadService
     private async Task<ManifestUpdateResult> UpdateManifestAsync(
         string manifestPath,
         ManifestDocument manifest,
-        string relativeFileName,
+        string lookupRelativeFileName,
+        string newRelativeFileName,
         DocumentUploadRequest request,
         string normalizedDocumentType,
         int? preferredSequence,
+        bool incrementVersion,
         CancellationToken cancellationToken)
     {
         var entry = new ManifestEntry
         {
-            FileName = relativeFileName,
+            FileName = newRelativeFileName,
             DisplayName = request.DisplayName?.Trim(),
             Line = request.Line?.Trim(),
             Station = request.Station?.Trim(),
@@ -475,7 +649,9 @@ public sealed class DocumentUploadService
             DocumentType = string.IsNullOrEmpty(normalizedDocumentType) ? null : normalizedDocumentType
         };
 
-        var existingIndex = manifest.Documents.FindIndex(d => string.Equals(d.FileName, relativeFileName, StringComparison.OrdinalIgnoreCase));
+        var lookupNormalized = NormalizeManifestPath(lookupRelativeFileName);
+        var existingIndex = manifest.Documents.FindIndex(d =>
+            string.Equals(NormalizeManifestPath(d.FileName), lookupNormalized, StringComparison.OrdinalIgnoreCase));
         ManifestEntry? existingEntry = existingIndex >= 0 ? manifest.Documents[existingIndex] : null;
 
         int? resolvedSequence = preferredSequence;
@@ -512,6 +688,18 @@ public sealed class DocumentUploadService
         }
 
         entry.SequenceNumber = resolvedSequence;
+
+        var previousVersion = existingEntry?.Version ?? 0;
+        if (previousVersion <= 0)
+        {
+            previousVersion = 1;
+        }
+
+        entry.Version = existingEntry is null
+            ? 1
+            : incrementVersion
+                ? previousVersion + 1
+                : previousVersion;
 
         if (existingIndex >= 0)
         {
@@ -709,6 +897,24 @@ public sealed class DocumentUploadService
         {
             _logger.LogError(restoreEx, "Failed to restore original file '{Destination}' from backup '{Backup}'.", destinationPath, backupPath);
         }
+    }
+
+    private static string BuildCurrentFileName(string displayName, string originalFileName)
+    {
+        var extension = Path.GetExtension(originalFileName);
+        var baseName = DocumentCatalogService.Slugify(displayName);
+
+        if (string.IsNullOrWhiteSpace(baseName))
+        {
+            baseName = DocumentCatalogService.Slugify(Path.GetFileNameWithoutExtension(originalFileName));
+        }
+
+        if (string.IsNullOrWhiteSpace(baseName))
+        {
+            baseName = Path.GetFileNameWithoutExtension(originalFileName) ?? "document";
+        }
+
+        return string.IsNullOrWhiteSpace(extension) ? baseName : baseName + extension;
     }
 
     private static string ResolveDestinationPath(string rootPath, string fileName)
@@ -914,6 +1120,7 @@ internal sealed class ManifestEntry
     public DateTimeOffset? UpdatedAt { get; set; }
     public string? DocumentType { get; set; }
     public int? SequenceNumber { get; set; }
+    public int? Version { get; set; }
 }
 
 internal sealed class DocumentManifestReadException : Exception
