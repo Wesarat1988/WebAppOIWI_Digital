@@ -4,12 +4,15 @@
 @using System
 @using System.ComponentModel.DataAnnotations
 @using System.IO
+@using System.Linq
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
 @using WepAppOIWI_Digital.Services
 
 @inject DocumentCatalogService DocumentCatalog
 @inject DocumentUploadService DocumentUploader
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 @inject ILogger<WepAppOIWI_Digital.Components.Pages.DocumentEdit> Logger
 
 <PageTitle>แก้ไขเอกสาร OI/WI</PageTitle>
@@ -125,47 +128,84 @@ else
     </EditForm>
 
     @* ===== History (ล่าสุด 5 รายการ) ===== *@
-    @if (versions.Count > 0)
-    {
-        <div class="card mt-4">
-            <div class="card-header fw-bold">History (ล่าสุด 5 รายการ)</div>
-            <div class="list-group list-group-flush">
-                @foreach (var v in versions)
+    <div class="card mt-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="mb-0">History (ล่าสุด 5 รายการ)</h5>
+                @if (!string.IsNullOrEmpty(historyLink))
                 {
-                    <div class="list-group-item d-flex align-items-center justify-content-between">
-                        <div class="flex-grow-1 me-3">
-                            <div class="fw-semibold">Version: @v.VersionId</div>
-                            <div class="text-muted small">
-                                @v.TimestampUtc.ToLocalTime():g
-                                @if (!string.IsNullOrWhiteSpace(v.Actor))
-                                {
-                                    <text> · by @v.Actor</text>
-                                }
-                                @if (!string.IsNullOrWhiteSpace(v.Comment))
-                                {
-                                    <text> · "@v.Comment"</text>
-                                }
-                                @if (v.SizeBytes is long s)
-                                {
-                                    <text> · @((s / 1024.0).ToString("F1")) KB</text>
-                                }
-                            </div>
-                        </div>
-                        <div>
-                            @if (v.IsActive)
-                            {
-                                <span class="badge bg-success">ใช้งานอยู่</span>
-                            }
-                            else
-                            {
-                                <button class="btn btn-sm btn-primary" disabled="@isSwitching" @onclick="() => SetActive(v)">ตั้งให้ใช้งาน</button>
-                            }
-                        </div>
-                    </div>
+                    <a href="@historyLink" class="small">แสดงทั้งหมด</a>
                 }
             </div>
+
+            @if (historyRows.Count > 0)
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Version</th>
+                                <th>เปลี่ยนเมื่อ</th>
+                                <th>ผู้แก้ไข</th>
+                                <th>เหตุผลการเปลี่ยน</th>
+                                <th class="text-end">ขนาด</th>
+                                <th>สถานะ</th>
+                                <th class="text-end">การทำงาน</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < historyRows.Count; i++)
+                            {
+                                var h = historyRows[i];
+                                var delta = DeltaFromPrev(i);
+                                var deltaLabel = delta is TimeSpan gap ? FormatDelta(gap) : null;
+                                <tr>
+                                    <td><code>@h.VersionLabel</code></td>
+                                    <td>
+                                        @h.Timestamp.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                                        <div class="text-muted small">
+                                            (@Rel(h.Timestamp))
+                                            @if (!string.IsNullOrEmpty(deltaLabel))
+                                            {
+                                                <span> • @deltaLabel</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td>@h.AuthorName</td>
+                                    <td class="text-truncate" style="max-width: 380px" title="@h.Comment">@h.Comment</td>
+                                    <td class="text-end">@(h.SizeKb is double size ? $"{size:F1} KB" : "-")</td>
+                                    <td>
+                                        @if (h.IsActive)
+                                        {
+                                            <span class="badge bg-success">ใช้งานอยู่</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">ไม่ได้ใช้งาน</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (h.IsActive)
+                                        {
+                                            <button class="btn btn-sm btn-outline-success" disabled>Using</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-primary" disabled="@isSwitching" @onclick="() => UseVersionAsync(h)">ตั้งให้ใช้งาน</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted mb-0">ยังไม่มีประวัติการเปลี่ยนแปลง</p>
+            }
         </div>
-    }
+    </div>
 }
 
 @if (!string.IsNullOrEmpty(successViewerUrl))
@@ -207,7 +247,9 @@ else
 
     // History
     private IReadOnlyList<VersionDescriptor> versions = Array.Empty<VersionDescriptor>();
+    private List<HistoryRow> historyRows = new();
     private bool isSwitching;
+    private string? historyLink;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -222,6 +264,7 @@ else
         statusMessage = null;
         statusCssClass = null;
         successViewerUrl = null;
+        historyLink = null;
         selectedFile = null;
         selectedFileName = null;
         fileError = null;
@@ -246,6 +289,7 @@ else
 
             ApplyRecordToForm(currentRecord);
             viewerUrl = BuildViewerUrl(normalizedPath, currentRecord.UpdatedAt);
+            historyLink = BuildHistoryLink(currentRecord);
         }
         catch (Exception ex)
         {
@@ -284,6 +328,21 @@ else
 
         var fileName = Path.GetFileName(record.FileName ?? string.Empty);
         currentFileName = string.IsNullOrEmpty(fileName) ? "-" : fileName;
+    }
+
+    private string? BuildHistoryLink(DocumentRecord record)
+    {
+        if (!string.IsNullOrWhiteSpace(record.DocumentCode))
+        {
+            return $"/documents/{Uri.EscapeDataString(record.DocumentCode)}/history";
+        }
+
+        if (!string.IsNullOrEmpty(currentNormalizedPath))
+        {
+            return $"/documents/history/{Uri.EscapeDataString(currentNormalizedPath)}";
+        }
+
+        return null;
     }
 
     private async Task HandleValidSubmit()
@@ -373,6 +432,7 @@ else
             if (refreshed is not null)
             {
                 currentRecord = refreshed;
+                historyLink = BuildHistoryLink(refreshed);
 
                 if (updateForm)
                 {
@@ -496,16 +556,124 @@ else
 
     private async Task LoadVersionsAsync()
     {
-        if (!string.IsNullOrEmpty(currentNormalizedPath))
+        if (string.IsNullOrEmpty(currentNormalizedPath))
         {
-            versions = await DocumentUploader.GetHistoryAsync(currentNormalizedPath!, 5);
-            StateHasChanged();
+            versions = Array.Empty<VersionDescriptor>();
+            historyRows = new List<HistoryRow>();
+            await InvokeAsync(StateHasChanged);
+            return;
         }
+
+        versions = await DocumentUploader.GetHistoryAsync(currentNormalizedPath!, 5);
+        historyRows = BuildHistoryRows(versions);
+        await InvokeAsync(StateHasChanged);
     }
 
-    private async Task SetActive(VersionDescriptor v)
+    private List<HistoryRow> BuildHistoryRows(IReadOnlyList<VersionDescriptor> source)
     {
-        if (string.IsNullOrEmpty(currentNormalizedPath))
+        if (source is null || source.Count == 0)
+        {
+            return new List<HistoryRow>();
+        }
+
+        var ordered = source
+            .OrderByDescending(v => v.TimestampUtc)
+            .Take(5)
+            .ToList();
+
+        var rows = new List<HistoryRow>(ordered.Count);
+
+        foreach (var descriptor in ordered)
+        {
+            var label = string.IsNullOrWhiteSpace(descriptor.VersionId) ? "-" : descriptor.VersionId.Trim();
+            var author = string.IsNullOrWhiteSpace(descriptor.Actor) ? "-" : descriptor.Actor!.Trim();
+            var comment = string.IsNullOrWhiteSpace(descriptor.Comment) ? "-" : descriptor.Comment!.Trim();
+            double? sizeKb = descriptor.SizeBytes.HasValue ? descriptor.SizeBytes.Value / 1024d : null;
+
+            rows.Add(new HistoryRow(
+                descriptor.VersionId,
+                label,
+                descriptor.TimestampUtc,
+                author,
+                comment,
+                sizeKb,
+                descriptor.IsActive));
+        }
+
+        return rows;
+    }
+
+    private static string Rel(DateTimeOffset timestamp)
+    {
+        var diff = DateTimeOffset.Now - timestamp;
+        if (diff < TimeSpan.Zero)
+        {
+            diff = TimeSpan.Zero;
+        }
+
+        if (diff.TotalSeconds < 60)
+        {
+            var seconds = Math.Max(0, (int)Math.Round(diff.TotalSeconds));
+            return $"{seconds}s ago";
+        }
+
+        if (diff.TotalMinutes < 60)
+        {
+            return $"{(int)Math.Round(diff.TotalMinutes)}m ago";
+        }
+
+        if (diff.TotalHours < 24)
+        {
+            return $"{(int)Math.Round(diff.TotalHours)}h ago";
+        }
+
+        return $"{(int)Math.Round(diff.TotalDays)}d ago";
+    }
+
+    private TimeSpan? DeltaFromPrev(int index)
+        => index + 1 < historyRows.Count
+            ? historyRows[index].Timestamp - historyRows[index + 1].Timestamp
+            : null;
+
+    private static string FormatDelta(TimeSpan delta)
+    {
+        var span = delta.Duration();
+
+        if (span.TotalSeconds < 60)
+        {
+            return $"Δ {(int)Math.Round(span.TotalSeconds)}s from prev.";
+        }
+
+        if (span.TotalMinutes < 60)
+        {
+            return $"Δ {(int)Math.Round(span.TotalMinutes)}m from prev.";
+        }
+
+        if (span.TotalHours < 24)
+        {
+            var hours = (int)Math.Floor(span.TotalHours);
+            var minutes = span.Minutes;
+            return minutes > 0
+                ? $"Δ {hours}h {minutes}m from prev."
+                : $"Δ {hours}h from prev.";
+        }
+
+        var days = (int)Math.Floor(span.TotalDays);
+        var remainderHours = span.Hours;
+        return remainderHours > 0
+            ? $"Δ {days}d {remainderHours}h from prev."
+            : $"Δ {days}d from prev.";
+    }
+
+    private async Task UseVersionAsync(HistoryRow row)
+    {
+        if (row.IsActive || string.IsNullOrEmpty(currentNormalizedPath))
+        {
+            return;
+        }
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"ตั้งค่าให้ใช้เวอร์ชัน {row.VersionLabel}?");
+        if (!confirmed)
         {
             return;
         }
@@ -518,7 +686,7 @@ else
         {
             var result = await DocumentUploader.SetActiveVersionAsync(
                 normalizedPath: currentNormalizedPath!,
-                versionId: v.VersionId,
+                versionId: row.VersionId,
                 actor: formModel.UploadedBy ?? currentRecord?.UploadedBy,
                 comment: null);
 
@@ -541,7 +709,7 @@ else
             viewerUrl = BuildViewerUrl(currentNormalizedPath, stamp);
 
             statusCssClass = "alert alert-success";
-            statusMessage = $"ตั้งเวอร์ชัน {v.VersionId} ให้ใช้งานเรียบร้อย";
+            statusMessage = $"ตั้งเวอร์ชัน {row.VersionLabel} ให้ใช้งานเรียบร้อย";
         }
         catch (Exception ex)
         {
@@ -554,4 +722,13 @@ else
             isSwitching = false;
         }
     }
+
+    private sealed record HistoryRow(
+        string VersionId,
+        string VersionLabel,
+        DateTimeOffset Timestamp,
+        string AuthorName,
+        string Comment,
+        double? SizeKb,
+        bool IsActive);
 }
