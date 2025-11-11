@@ -133,8 +133,8 @@ public sealed class FilesystemVersionStore : IVersionStore
             var descriptor = metadata?.Descriptor ?? new VersionDescriptor(
                 versionId,
                 new DateTimeOffset(File.GetLastWriteTimeUtc(binaryPath), TimeSpan.Zero),
-                actor: null,
-                comment: null,
+                Actor: null,
+                Comment: null,
                 SizeBytes: null,
                 PublicUrl: null,
                 IsActive: false);
