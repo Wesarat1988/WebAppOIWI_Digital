@@ -7,6 +7,10 @@
 		<AssemblyName>WepAppOIWI_Digital</AssemblyName>
 	</PropertyGroup>
 
+	<ItemGroup>
+	  <Folder Include="wwwroot\documents\.versions\" />
+	</ItemGroup>
+
 	<!-- ปิดโปรเซสที่อาจล็อกไฟล์ ก่อน Build/Rebuild/Publish -->
 	<Target Name="TerminateRunningAppInstance" BeforeTargets="Build;Rebuild;Publish">
 		<!-- ✅ เงื่อนไข MSBuild ที่ถูกต้อง (ไม่ต้องเทียบ == 'true') -->

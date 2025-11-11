@@ -1,7 +1,11 @@
 @page "/documents/edit/{Token}"
 @rendermode InteractiveServer
+
 @using System.ComponentModel.DataAnnotations
 @using System.IO
+@using Microsoft.AspNetCore.Components.Forms
+@using WepAppOIWI_Digital.Services
+
 @inject DocumentCatalogService DocumentCatalog
 @inject DocumentUploadService DocumentUploader
 @inject NavigationManager Navigation
@@ -118,6 +122,42 @@ else
             <button type="button" class="btn btn-outline-secondary ms-2" @onclick="NavigateHome">กลับหน้า Home</button>
         </div>
     </EditForm>
+
+    @* ===== History (ล่าสุด 5 รายการ) ===== *@
+    @if (versions.Count > 0)
+    {
+        <div class="card mt-4">
+            <div class="card-header fw-bold">History (ล่าสุด 5 รายการ)</div>
+            <div class="list-group list-group-flush">
+                @foreach (var v in versions)
+                {
+                    <div class="list-group-item d-flex align-items-center justify-content-between">
+                        <div>
+                            <div class="fw-semibold">Version: @v.VersionId</div>
+                            <div class="text-muted small">
+                                @v.TimestampUtc.ToLocalTime():g
+                                @if (!string.IsNullOrWhiteSpace(v.Actor))
+                                {
+                                    <text> · by @v.Actor</text>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(v.Comment))
+                                {
+                                    <text> · "@v.Comment"</text>
+                                }
+                                @if (v.SizeBytes is long s)
+                                {
+                                    <text> · @((s / 1024.0):F1) KB</text>
+                                }
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-warning" @onclick="() => Restore(v)">ย้อนเป็นเวอร์ชันนี้</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
 }
 
 @if (!string.IsNullOrEmpty(successViewerUrl))
@@ -157,9 +197,13 @@ else
     private string? viewerUrl;
     private string currentFileName = "-";
 
+    // History
+    private IReadOnlyList<VersionDescriptor> versions = Array.Empty<VersionDescriptor>();
+
     protected override async Task OnParametersSetAsync()
     {
         await LoadDocumentAsync();
+        await LoadVersionsAsync(); // โหลดประวัติหลังโหลดเอกสาร
     }
 
     private async Task LoadDocumentAsync()
@@ -228,6 +272,7 @@ else
         currentDocumentTypeLabel = string.IsNullOrEmpty(normalizedType)
             ? "-"
             : normalizedType;
+
         var fileName = Path.GetFileName(record.FileName ?? string.Empty);
         currentFileName = string.IsNullOrEmpty(fileName) ? "-" : fileName;
     }
@@ -298,6 +343,7 @@ else
             selectedFileName = null;
 
             await RefreshRecordAsync();
+            await LoadVersionsAsync(); // โหลดประวัติใหม่หลังบันทึก
         }
         finally
         {
@@ -424,6 +470,49 @@ else
                     "กรุณากรอก Machine name สำหรับเอกสาร WI",
                     new[] { nameof(MachineName) });
             }
+        }
+    }
+
+    private async Task LoadVersionsAsync()
+    {
+        if (!string.IsNullOrEmpty(currentNormalizedPath))
+        {
+            versions = await DocumentUploader.GetHistoryAsync(currentNormalizedPath!, 5);
+            StateHasChanged();
+        }
+    }
+
+    private async Task Restore(VersionDescriptor v)
+    {
+        if (currentRecord is null || string.IsNullOrEmpty(currentNormalizedPath))
+            return;
+
+        try
+        {
+            var ok = await DocumentUploader.RevertToAsync(
+                normalizedPath: currentNormalizedPath!,
+                versionId: v.VersionId,
+                actor: formModel.UploadedBy ?? "-",
+                comment: "Revert from UI");
+
+            if (ok)
+            {
+                statusCssClass = "alert alert-success";
+                statusMessage = $"คืนเป็นเวอร์ชัน {v.VersionId} เรียบร้อย";
+                await RefreshRecordAsync();
+                await LoadVersionsAsync();
+            }
+            else
+            {
+                statusCssClass = "alert alert-danger";
+                statusMessage = "คืนเวอร์ชันไม่สำเร็จ";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Restore failed");
+            statusCssClass = "alert alert-danger";
+            statusMessage = "เกิดข้อผิดพลาดขณะคืนเวอร์ชัน";
         }
     }
 }

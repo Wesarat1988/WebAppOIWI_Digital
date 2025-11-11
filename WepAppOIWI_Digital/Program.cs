@@ -23,6 +23,7 @@ builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
 builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
 builder.Services.AddSingleton<DocumentCatalogService>();
 builder.Services.AddSingleton<DocumentUploadService>();
+builder.Services.AddSingleton<IVersionStore, FilesystemVersionStore>();
 
 // DI: HttpClient ÊÓËÃÑº¤ÍÁâ¾à¹¹µì
 builder.Services.AddScoped<HttpClient>(sp =>

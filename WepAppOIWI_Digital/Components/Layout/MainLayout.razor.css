@@ -16,57 +16,62 @@
     height: 100vh;
     display: flex;
     flex-direction: column;
-    align-items: stretch;
+    align-items: center; /* แนวนอนกึ่งกลาง */
+    justify-content: center; /* แนวตั้งกึ่งกลาง */
     padding: 16px 0;
     overflow: hidden;
     -webkit-overflow-scrolling: touch;
-    background: linear-gradient(180deg, #0d47a1 0%, #1976d2 55%, #e3f2fd 100%);
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 14px 28px rgba(2, 6, 23, 0.18);
+    background: linear-gradient(180deg,#0d47a1 0%,#1976d2 55%,#e3f2fd 100%);
+    box-shadow: 0 0 0 1px rgba(0,0,0,.04),0 14px 28px rgba(2,6,23,.18);
     z-index: 1020;
-    transition: width 0.2s ease, transform 0.2s ease;
+    transition: width .2s ease, transform .2s ease;
 }
 
 .shell__content {
     display: flex;
     flex-direction: column;
-    margin-left: 260px;
+    margin-left: 260px; /* ความกว้าง sidebar ปกติ */
+    width: calc(100vw - 260px); /* <<< แก้จุดเกิดแถบขาว */
     min-width: 0;
     height: 100vh;
     overflow: auto;
-    background: #ffffff;
+    background: #fff;
 }
 
+/* ===== Brand / Logo ===== */
 .shell__sidebar .brand {
-    margin-top: auto;
+    width: 100%;
     display: flex;
     align-items: center;
-    justify-content: flex-start;
-    padding: 16px;
+    justify-content: center; /* จัดโลโก้กึ่งกลางแนวนอน */
+    padding: 16px 0;
+    margin: 0 0 18px 0; /* เว้นจากเมนูเล็กน้อย */
     box-sizing: border-box;
-    width: 100%;
 }
 
 .shell__sidebar .brand__link {
-    display: inline-flex;
-    justify-content: flex-start;
-    align-items: center;
-    width: 100%;
+    display: block;
+    width: auto;
 }
 
 .shell__sidebar .brand-logo {
-    width: 80%;
-    max-width: 140px;
+    display: block;
+    margin: 0 auto; /* จัดให้อยู่กลาง */
+    width: 85%;
+    max-width: 260px; /* ขนาดโลโก้ (ขยายได้) */
     height: auto;
-    transition: max-width 0.2s ease;
+    transition: max-width .2s ease;
 }
 
+/* ===== Menu ===== */
 .shell__sidebar .menu {
+    width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: .25rem;
     padding: 0 16px 24px;
     margin: 0;
-    flex: 1 1 auto;
+    flex: 1 1 auto; /* ให้เมนูยืดได้ */
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     min-height: 0;
@@ -81,7 +86,7 @@
     position: sticky;
     top: 0;
     z-index: 5;
-    background: #ffffff;
+    background: #fff;
     border-bottom: 1px solid #e5e7eb;
 }
 
@@ -90,6 +95,7 @@
     min-height: 0;
 }
 
+/* ===== Toggle FAB ===== */
 .shell-fab {
     display: inline-flex;
     align-items: center;
@@ -98,49 +104,58 @@
     height: 38px;
     border: 0;
     border-radius: 12px;
-    background: #ffffff;
+    background: #fff;
     color: #0d47a1;
-    box-shadow: 0 8px 20px rgba(13, 71, 161, 0.18);
+    box-shadow: 0 8px 20px rgba(13,71,161,.18);
     cursor: pointer;
-    transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+    transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
     margin-right: 8px;
 }
 
-.shell-fab:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 12px 26px rgba(13, 71, 161, 0.24);
-    background: #f8fbff;
-}
+    .shell-fab:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 26px rgba(13,71,161,.24);
+        background: #f8fbff;
+    }
 
 .shell-fab__icon {
     font-size: 20px;
     line-height: 1;
 }
 
-#app-shell.shell--collapsed .shell__sidebar {
-    width: 88px;
-    padding: 16px 0;
+/* ===== Collapsed ===== */
+#app-shell.shell--collapsed .shell__content {
+    margin-left: 88px;
+    width: calc(100vw - 88px); /* <<< สลับความกว้างตาม sidebar ที่ย่อ */
 }
 
 #app-shell.shell--collapsed .shell__content {
     margin-left: 88px;
 }
 
-#app-shell.shell--collapsed .brand-logo {
-    max-width: 60px;
+#app-shell.shell--collapsed .brand {
+    justify-content: center;
+    padding: 10px 0;
 }
 
-@media (max-width: 992px) {
+#app-shell.shell--collapsed .brand-logo {
+    max-width: 80px; /* ขนาดโลโก้ตอนย่อ */
+}
+
+/* ===== Mobile ===== */
+@media (max-width:992px) {
     .shell__sidebar {
         width: 80vw;
         max-width: 320px;
         transform: translateX(-100%);
-        transition: transform 0.2s ease;
+        transition: transform .2s ease;
         padding: 16px 0;
+        justify-content: flex-start; /* โหมด mobile เป็น drawer */
     }
 
-    #app-shell.shell--collapsed .shell__sidebar {
-        transform: translateX(-100%);
+    #app-shell.shell--collapsed .shell__content {
+        margin-left: 0;
+        width: 100vw;
     }
 
     #app-shell:not(.shell--collapsed) .shell__sidebar {
@@ -149,6 +164,7 @@
 
     .shell__content {
         margin-left: 0;
+        width: 100vw; /* <<< เต็มจอ */
         height: 100vh;
         overflow: auto;
     }
@@ -158,21 +174,22 @@
     }
 }
 
+/* ===== Blazor error panel ===== */
 #blazor-error-ui {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
     display: none;
-    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    padding: .6rem 1.25rem .7rem 1.25rem;
     background: lightyellow;
-    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 -1px 2px rgba(0,0,0,.2);
     z-index: 1000;
 }
 
-#blazor-error-ui .dismiss {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.75rem;
-    cursor: pointer;
-}
+    #blazor-error-ui .dismiss {
+        position: absolute;
+        top: .5rem;
+        right: .75rem;
+        cursor: pointer;
+    }

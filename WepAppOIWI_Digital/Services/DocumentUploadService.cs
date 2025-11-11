@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using WepAppOIWI_Digital.Services;
 
 namespace WepAppOIWI_Digital.Services;
 
@@ -16,6 +17,7 @@ public sealed class DocumentUploadService
     private readonly DocumentCatalogService _catalogService;
     private readonly DocumentCatalogOptions _options;
     private readonly ILogger<DocumentUploadService> _logger;
+    private readonly IVersionStore _versionStore; // <-- เพิ่มบรรทัดนี้
     private readonly SemaphoreSlim _uploadLock = new(1, 1);
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
@@ -27,11 +29,39 @@ public sealed class DocumentUploadService
     public DocumentUploadService(
         DocumentCatalogService catalogService,
         IOptions<DocumentCatalogOptions> options,
-        ILogger<DocumentUploadService> logger)
+        ILogger<DocumentUploadService> logger,
+        IVersionStore versionStore)
     {
         _catalogService = catalogService;
         _options = options.Value;
         _logger = logger;
+        _versionStore = versionStore; 
+    }
+
+    // ===== เพิ่มเมธอดใหม่ 2 ตัว =====
+    public Task<IReadOnlyList<VersionDescriptor>> GetHistoryAsync(string normalizedPath, int take = 5, CancellationToken ct = default)
+        => _versionStore.ListAsync(normalizedPath, take, ct);
+
+    public async Task<bool> RevertToAsync(string normalizedPath, string versionId, string? actor, string? comment, CancellationToken ct = default)
+    {
+        var ctx = await _catalogService.EnsureCatalogContextAsync(ct).ConfigureAwait(false);
+        var rootPath = ctx.ActiveRootPath;
+        if (string.IsNullOrWhiteSpace(rootPath)) return false;
+
+        var physical = Path.GetFullPath(Path.Combine(
+            rootPath,
+            normalizedPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)));
+
+        var ok = await _versionStore.RestoreAsync(
+            normalizedPath: normalizedPath,
+            versionId: versionId,
+            physicalPath: physical,
+            actor: actor,
+            comment: comment,
+            ct: ct).ConfigureAwait(false);
+
+        if (ok) _catalogService.InvalidateCache();
+        return ok;
     }
 
     public async Task<DocumentUploadResult> UploadAsync(DocumentUploadRequest request, CancellationToken cancellationToken = default)
