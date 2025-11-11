@@ -246,10 +246,11 @@ else
     private string currentFileName = "-";
 
     // History
-    private IReadOnlyList<VersionDescriptor> versions = Array.Empty<VersionDescriptor>();
+    private PagedResult<HistoryItem> historyPage = new(Array.Empty<HistoryItem>(), 0, 1, 5);
     private List<HistoryRow> historyRows = new();
     private bool isSwitching;
     private string? historyLink;
+    private string? historyLinkCandidate;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -265,6 +266,9 @@ else
         statusCssClass = null;
         successViewerUrl = null;
         historyLink = null;
+        historyLinkCandidate = BuildHistoryLinkCandidate();
+        historyPage = new PagedResult<HistoryItem>(Array.Empty<HistoryItem>(), 0, 1, 5);
+        historyRows = new List<HistoryRow>();
         selectedFile = null;
         selectedFileName = null;
         fileError = null;
@@ -289,7 +293,6 @@ else
 
             ApplyRecordToForm(currentRecord);
             viewerUrl = BuildViewerUrl(normalizedPath, currentRecord.UpdatedAt);
-            historyLink = BuildHistoryLink(currentRecord);
         }
         catch (Exception ex)
         {
@@ -330,19 +333,14 @@ else
         currentFileName = string.IsNullOrEmpty(fileName) ? "-" : fileName;
     }
 
-    private string? BuildHistoryLink(DocumentRecord record)
+    private string? BuildHistoryLinkCandidate()
     {
-        if (!string.IsNullOrWhiteSpace(record.DocumentCode))
+        if (string.IsNullOrWhiteSpace(Token))
         {
-            return $"/documents/{Uri.EscapeDataString(record.DocumentCode)}/history";
+            return null;
         }
 
-        if (!string.IsNullOrEmpty(currentNormalizedPath))
-        {
-            return $"/documents/history/{Uri.EscapeDataString(currentNormalizedPath)}";
-        }
-
-        return null;
+        return $"/documents/{Uri.EscapeDataString(Token)}/history";
     }
 
     private async Task HandleValidSubmit()
@@ -432,7 +430,8 @@ else
             if (refreshed is not null)
             {
                 currentRecord = refreshed;
-                historyLink = BuildHistoryLink(refreshed);
+                historyLinkCandidate = BuildHistoryLinkCandidate();
+                UpdateHistoryLinkVisibility();
 
                 if (updateForm)
                 {
@@ -558,18 +557,29 @@ else
     {
         if (string.IsNullOrEmpty(currentNormalizedPath))
         {
-            versions = Array.Empty<VersionDescriptor>();
+            historyPage = new PagedResult<HistoryItem>(Array.Empty<HistoryItem>(), 0, 1, 5);
             historyRows = new List<HistoryRow>();
+            UpdateHistoryLinkVisibility();
             await InvokeAsync(StateHasChanged);
             return;
         }
 
-        versions = await DocumentUploader.GetHistoryAsync(currentNormalizedPath!, 5);
-        historyRows = BuildHistoryRows(versions);
+        try
+        {
+            historyPage = await DocumentUploader.GetHistoryPageAsync(currentNormalizedPath!, 1, 5, null);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load version history for {Path}.", currentNormalizedPath);
+            historyPage = new PagedResult<HistoryItem>(Array.Empty<HistoryItem>(), 0, 1, 5);
+        }
+
+        historyRows = BuildHistoryRows(historyPage.Items);
+        UpdateHistoryLinkVisibility();
         await InvokeAsync(StateHasChanged);
     }
 
-    private List<HistoryRow> BuildHistoryRows(IReadOnlyList<VersionDescriptor> source)
+    private List<HistoryRow> BuildHistoryRows(IReadOnlyList<HistoryItem> source)
     {
         if (source is null || source.Count == 0)
         {
@@ -578,29 +588,36 @@ else
 
         var ordered = source
             .OrderByDescending(v => v.TimestampUtc)
+            .ThenByDescending(v => v.VersionId, StringComparer.Ordinal)
             .Take(5)
             .ToList();
 
         var rows = new List<HistoryRow>(ordered.Count);
 
-        foreach (var descriptor in ordered)
+        foreach (var item in ordered)
         {
-            var label = string.IsNullOrWhiteSpace(descriptor.VersionId) ? "-" : descriptor.VersionId.Trim();
-            var author = string.IsNullOrWhiteSpace(descriptor.Actor) ? "-" : descriptor.Actor!.Trim();
-            var comment = string.IsNullOrWhiteSpace(descriptor.Comment) ? "-" : descriptor.Comment!.Trim();
-            double? sizeKb = descriptor.SizeBytes.HasValue ? descriptor.SizeBytes.Value / 1024d : null;
+            var label = string.IsNullOrWhiteSpace(item.VersionLabel) ? "-" : item.VersionLabel.Trim();
+            var author = string.IsNullOrWhiteSpace(item.AuthorName) ? "-" : item.AuthorName!.Trim();
+            var comment = string.IsNullOrWhiteSpace(item.Comment) ? "-" : item.Comment!.Trim();
 
             rows.Add(new HistoryRow(
-                descriptor.VersionId,
+                item.VersionId,
                 label,
-                descriptor.TimestampUtc,
+                item.TimestampUtc,
                 author,
                 comment,
-                sizeKb,
-                descriptor.IsActive));
+                item.SizeKb,
+                item.IsActive));
         }
 
         return rows;
+    }
+
+    private void UpdateHistoryLinkVisibility()
+    {
+        historyLink = historyPage.TotalCount > historyPage.PageSize && !string.IsNullOrEmpty(historyLinkCandidate)
+            ? historyLinkCandidate
+            : null;
     }
 
     private static string Rel(DateTimeOffset timestamp)

@@ -41,7 +41,101 @@ public sealed class DocumentUploadService
     // ประวัติย้อนหลังของไฟล์ พร้อม flag เวอร์ชันที่ใช้งานปัจจุบัน
     public async Task<IReadOnlyList<VersionDescriptor>> GetHistoryAsync(string normalizedPath, int take = 5, CancellationToken ct = default)
     {
-        var history = await _versionStore.ListAsync(normalizedPath, take, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            return Array.Empty<VersionDescriptor>();
+        }
+
+        var descriptors = await LoadHistoryDescriptorsAsync(normalizedPath, ct).ConfigureAwait(false);
+
+        if (take > 0 && descriptors.Count > take)
+        {
+            return descriptors.Take(take).ToList();
+        }
+
+        return descriptors;
+    }
+
+    public async Task<PagedResult<HistoryItem>> GetHistoryPageAsync(
+        string normalizedPath,
+        int page,
+        int pageSize,
+        string? search,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            var fallbackSize = Math.Clamp(pageSize, 1, 100);
+            return new PagedResult<HistoryItem>(Array.Empty<HistoryItem>(), 0, 1, fallbackSize);
+        }
+
+        var descriptors = await LoadHistoryDescriptorsAsync(normalizedPath, ct).ConfigureAwait(false);
+
+        IEnumerable<VersionDescriptor> query = descriptors;
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(d => Matches(term, d.VersionId) || Matches(term, d.Actor) || Matches(term, d.Comment));
+        }
+
+        var ordered = query
+            .OrderByDescending(d => d.TimestampUtc)
+            .ThenByDescending(d => d.VersionId, StringComparer.Ordinal)
+            .ToList();
+
+        var sanitizedPageSize = Math.Clamp(pageSize, 1, 100);
+        var sanitizedPage = Math.Max(1, page);
+        var skip = (sanitizedPage - 1) * sanitizedPageSize;
+
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var pageItems = ordered
+            .Skip(skip)
+            .Take(sanitizedPageSize)
+            .Select(ToHistoryItem)
+            .ToList();
+
+        return new PagedResult<HistoryItem>(pageItems, ordered.Count, sanitizedPage, sanitizedPageSize);
+
+        static bool Matches(string term, string? candidate)
+            => !string.IsNullOrWhiteSpace(candidate) && candidate.IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0;
+
+        HistoryItem ToHistoryItem(VersionDescriptor descriptor)
+        {
+            double? sizeKb = descriptor.SizeBytes.HasValue
+                ? descriptor.SizeBytes.Value / 1024d
+                : null;
+
+            return new HistoryItem(
+                descriptor.VersionId,
+                descriptor.VersionId,
+                descriptor.TimestampUtc,
+                Normalize(descriptor.Actor),
+                Normalize(descriptor.Comment),
+                sizeKb,
+                descriptor.IsActive);
+        }
+
+        static string? Normalize(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            var trimmed = value.Trim();
+            return string.Equals(trimmed, "-", StringComparison.Ordinal) ? null : trimmed;
+        }
+    }
+
+    private async Task<List<VersionDescriptor>> LoadHistoryDescriptorsAsync(string normalizedPath, CancellationToken ct)
+    {
+        var history = await _versionStore.ListAsync(normalizedPath, int.MaxValue, ct).ConfigureAwait(false);
+        var descriptors = new List<VersionDescriptor>(history.Count);
 
         DocumentRecord? record = null;
         try
@@ -54,79 +148,84 @@ public sealed class DocumentUploadService
         }
 
         var activeId = record?.ActiveVersionId;
-        var list = history
-            .Select(d => string.Equals(d.VersionId, activeId, StringComparison.OrdinalIgnoreCase)
-                ? d with { IsActive = true }
-                : d with { IsActive = false })
-            .ToList();
 
-        if (!string.IsNullOrEmpty(activeId))
+        foreach (var descriptor in history)
         {
-            if (list.All(d => !string.Equals(d.VersionId, activeId, StringComparison.OrdinalIgnoreCase)))
+            var isActive = !string.IsNullOrEmpty(activeId)
+                && string.Equals(descriptor.VersionId, activeId, StringComparison.OrdinalIgnoreCase);
+            descriptors.Add(descriptor with { IsActive = isActive });
+        }
+
+        if (!string.IsNullOrWhiteSpace(activeId))
+        {
+            if (descriptors.All(d => !string.Equals(d.VersionId, activeId, StringComparison.OrdinalIgnoreCase)))
             {
                 var activeHandle = await _versionStore.TryGetAsync(normalizedPath, activeId!, ct).ConfigureAwait(false);
                 if (activeHandle?.Descriptor is not null)
                 {
-                    list.Insert(0, activeHandle.Descriptor with { IsActive = true });
+                    descriptors.Insert(0, activeHandle.Descriptor with { IsActive = true });
                 }
             }
         }
         else if (record is not null)
         {
-            var descriptor = CreateCurrentVersionDescriptor(record);
+            var descriptor = CreateCurrentVersionDescriptor(record, normalizedPath);
             if (descriptor is not null)
             {
-                list.Insert(0, descriptor);
+                descriptors.Insert(0, descriptor);
             }
         }
 
-        if (take > 0 && list.Count > take)
-        {
-            list = list.Take(take).ToList();
-        }
+        return descriptors
+            .OrderByDescending(d => d.TimestampUtc)
+            .ThenByDescending(d => d.VersionId, StringComparer.Ordinal)
+            .ToList();
+    }
 
-        return list;
-
-        VersionDescriptor? CreateCurrentVersionDescriptor(DocumentRecord current)
+    private VersionDescriptor? CreateCurrentVersionDescriptor(DocumentRecord current, string normalizedPath)
+    {
+        try
         {
+            var relativePath = string.IsNullOrWhiteSpace(current.FileName)
+                ? normalizedPath
+                : current.FileName;
+
+            var physicalPath = _catalogService.ResolvePhysicalPath(relativePath);
+            long? size = null;
+
             try
             {
-                var physicalPath = _catalogService.ResolvePhysicalPath(current.FileName);
-                long? size = null;
-                try
-                {
-                    size = File.Exists(physicalPath) ? new FileInfo(physicalPath).Length : null;
-                }
-                catch
-                {
-                    size = null;
-                }
-
-                static string? NormalizeField(string? value)
-                {
-                    if (string.IsNullOrWhiteSpace(value))
-                    {
-                        return null;
-                    }
-
-                    var trimmed = value.Trim();
-                    return string.Equals(trimmed, "-", StringComparison.Ordinal) ? null : trimmed;
-                }
-
-                return new VersionDescriptor(
-                    VersionId: "current",
-                    TimestampUtc: current.UpdatedAt ?? DateTimeOffset.UtcNow,
-                    Actor: NormalizeField(current.UploadedBy),
-                    Comment: NormalizeField(current.Comment),
-                    SizeBytes: size,
-                    PublicUrl: null,
-                    IsActive: true);
+                size = File.Exists(physicalPath) ? new FileInfo(physicalPath).Length : null;
             }
-            catch (Exception ex)
+            catch
             {
-                _logger.LogDebug(ex, "Failed to compose active version descriptor for {Path}.", normalizedPath);
+                size = null;
+            }
+
+            return new VersionDescriptor(
+                VersionId: "current",
+                TimestampUtc: current.UpdatedAt ?? DateTimeOffset.UtcNow,
+                Actor: NormalizeField(current.UploadedBy),
+                Comment: NormalizeField(current.Comment),
+                SizeBytes: size,
+                PublicUrl: null,
+                IsActive: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to compose active version descriptor for {Path}.", normalizedPath);
+            return null;
+        }
+
+        static string? NormalizeField(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
                 return null;
             }
+
+            var trimmed = value.Trim();
+            return string.Equals(trimmed, "-", StringComparison.Ordinal) ? null : trimmed;
         }
     }
 

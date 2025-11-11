@@ -17,3 +17,20 @@ public sealed record VersionSnapshotHandle(
     string FilePath,
     string FileName
 );
+
+public sealed record HistoryItem(
+    string VersionId,
+    string VersionLabel,
+    DateTimeOffset TimestampUtc,
+    string? AuthorName,
+    string? Comment,
+    double? SizeKb,
+    bool IsActive
+);
+
+public sealed record PagedResult<T>(
+    IReadOnlyList<T> Items,
+    int TotalCount,
+    int Page,
+    int PageSize
+);
