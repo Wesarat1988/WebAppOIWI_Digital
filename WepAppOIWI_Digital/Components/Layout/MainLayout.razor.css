@@ -1,5 +1,10 @@
 /* ==== Shell layout ==== */
 
+:root {
+    --sidebar-w: 260px;
+    --sidebar-w-collapsed: 88px;
+}
+
 #app-shell {
     display: flex;
     min-height: 100vh;
@@ -9,10 +14,16 @@
 
 .shell__sidebar {
     position: fixed;
-    inset: 0 auto 0 0;
-    width: 260px;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--sidebar-w);
     height: 100vh;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 16px 0;
+    overflow: hidden;
     -webkit-overflow-scrolling: touch;
     background: linear-gradient(180deg, #0d47a1 0%, #1976d2 55%, #e3f2fd 100%);
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 14px 28px rgba(2, 6, 23, 0.18);
@@ -23,11 +34,48 @@
 .shell__content {
     display: flex;
     flex-direction: column;
-    margin-left: 260px;
+    margin-left: var(--sidebar-w);
     min-width: 0;
     height: 100vh;
     overflow: auto;
     background: #ffffff;
+}
+
+.shell__sidebar .brand {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 16px;
+    box-sizing: border-box;
+    width: 100%;
+}
+
+.shell__sidebar .brand__link {
+    display: inline-flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 100%;
+}
+
+.shell__sidebar .brand-logo {
+    width: 80%;
+    max-width: 140px;
+    height: auto;
+    transition: max-width 0.2s ease;
+}
+
+.shell__sidebar .menu {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0 16px 24px;
+    margin: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
+    box-sizing: border-box;
 }
 
 .topbar {
@@ -74,37 +122,89 @@
     line-height: 1;
 }
 
-.shell--collapsed .shell__sidebar {
-    width: 88px;
+#app-shell.shell--collapsed .shell__sidebar {
+    width: var(--sidebar-w-collapsed);
+    padding: 16px 0;
 }
 
-.shell--collapsed .shell__content {
-    margin-left: 88px;
+#app-shell.shell--collapsed .shell__content {
+    margin-left: var(--sidebar-w-collapsed);
+}
+
+#app-shell.shell--collapsed .brand-logo {
+    max-width: 60px;
 }
 
 @media (max-width: 992px) {
-    #app-shell {
-        flex-direction: column;
-    }
-
     .shell__sidebar {
-        width: min(80vw, 320px);
+        width: 80vw;
         max-width: 320px;
         transform: translateX(-100%);
         transition: transform 0.2s ease;
+        padding: 16px 0;
+    }
+
+    #app-shell.shell--collapsed .shell__sidebar {
+        transform: translateX(-100%);
     }
 
     #app-shell:not(.shell--collapsed) .shell__sidebar {
         transform: translateX(0);
     }
 
-    .shell--collapsed .shell__sidebar {
-        width: min(80vw, 320px);
-    }
-
     .shell__content {
         margin-left: 0;
         height: 100vh;
+        overflow: auto;
+    }
+
+    #app-shell.shell--collapsed .shell__content {
+        margin-left: 0;
+    }
+}
+
+/* ปุ่มแท็บ DELTA ลอยชิดซ้ายของคอนเทนต์ */
+.brand-tab {
+    position: fixed;
+    left: calc(var(--sidebar-w) + 12px);
+    top: 88px;
+    z-index: 1050;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 84px;
+    height: 64px;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #0d47a1 0%, #1976d2 55%, #90caf9 100%);
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.2);
+    text-decoration: none;
+}
+
+.brand-tab img {
+    max-width: 70%;
+    height: auto;
+    display: block;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.15));
+}
+
+.brand-tab:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px rgba(2, 6, 23, 0.26);
+}
+
+.brand-tab:active {
+    transform: translateY(0);
+    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.18);
+}
+
+#app-shell.shell--collapsed .brand-tab {
+    left: calc(var(--sidebar-w-collapsed) + 12px);
+}
+
+@media (max-width: 992px) {
+    .brand-tab {
+        left: 12px;
+        top: 84px;
     }
 }
 
