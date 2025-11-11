@@ -25,6 +25,7 @@ public sealed class DocumentUploadService
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+    private const string MissingFileSelectionMessage = "ต้องเลือกไฟล์ก่อนบันทึกการแก้ไข";
 
     public DocumentUploadService(
         DocumentCatalogService catalogService,
@@ -666,6 +667,26 @@ public sealed class DocumentUploadService
         if (request is null)
         {
             throw new ArgumentNullException(nameof(request));
+        }
+
+        if (request.Content is null || ReferenceEquals(request.Content, Stream.Null))
+        {
+            return DocumentUpdateResult.Failed(MissingFileSelectionMessage);
+        }
+
+        if (request.Content.CanSeek)
+        {
+            try
+            {
+                if (request.Content.Length <= 0)
+                {
+                    return DocumentUpdateResult.Failed(MissingFileSelectionMessage);
+                }
+            }
+            catch (NotSupportedException)
+            {
+                // ignore and continue when length is unavailable even though seeking is allowed
+            }
         }
 
         await _uploadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
