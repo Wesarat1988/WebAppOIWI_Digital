@@ -37,6 +37,7 @@ public sealed record DocumentRecord(
     string Comment,
     string DocumentType,
     int? SequenceNumber,
+    string? ActiveVersionId,
     string? DocumentCode,
     int Version
 )
@@ -411,6 +412,7 @@ public sealed class DocumentCatalogService : IDisposable
             NormalizeMetadata(entry.Comment),
             displayDocumentType,
             sequenceNumber,
+            entry.ActiveVersionId,
             documentCode,
             version)
         {
@@ -437,6 +439,7 @@ public sealed class DocumentCatalogService : IDisposable
             "-",
             "-",
             "-",
+            null,
             null,
             null,
             1
@@ -807,6 +810,7 @@ public sealed class DocumentCatalogService : IDisposable
         public string? DocumentType { get; init; }
         public int? SequenceNumber { get; init; }
         public int? Version { get; init; }
+        public string? ActiveVersionId { get; init; }
     }
 
     public void Dispose()

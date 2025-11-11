@@ -88,6 +88,108 @@ public sealed class FilesystemVersionStore : IVersionStore
         }
     }
 
+    public async Task<VersionSnapshotHandle?> TryGetAsync(string normalizedPath, string versionId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(versionId))
+        {
+            return null;
+        }
+
+        try
+        {
+            var versionDirectory = await GetVersionDirectoryAsync(normalizedPath, ensureExists: false, ct).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(versionDirectory) || !Directory.Exists(versionDirectory))
+            {
+                return null;
+            }
+
+            var metadataPath = Path.Combine(versionDirectory, versionId + ".json");
+            SnapshotMetadata? metadata = null;
+
+            if (File.Exists(metadataPath))
+            {
+                metadata = await ReadMetadataAsync(metadataPath, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                var fallbackMetadata = Directory
+                    .EnumerateFiles(versionDirectory, versionId + "*.json", SearchOption.TopDirectoryOnly)
+                    .FirstOrDefault();
+                if (!string.IsNullOrEmpty(fallbackMetadata))
+                {
+                    metadataPath = fallbackMetadata;
+                    metadata = await ReadMetadataAsync(metadataPath, ct).ConfigureAwait(false);
+                }
+            }
+            else
+            {
+                var fallbackMetadata = Directory
+                    .EnumerateFiles(versionDirectory, versionId + "*.json", SearchOption.TopDirectoryOnly)
+                    .FirstOrDefault();
+                if (!string.IsNullOrEmpty(fallbackMetadata))
+                {
+                    metadataPath = fallbackMetadata;
+                    metadata = await ReadMetadataAsync(metadataPath, ct).ConfigureAwait(false);
+                }
+            }
+
+            var binaryPath = ResolveVersionFilePath(metadataPath, metadata) ??
+                Directory.EnumerateFiles(versionDirectory, versionId + ".*", SearchOption.TopDirectoryOnly).FirstOrDefault();
+
+            if (string.IsNullOrEmpty(binaryPath) || !File.Exists(binaryPath))
+            {
+                _logger.LogWarning("Snapshot {VersionId} for {NormalizedPath} not found.", versionId, normalizedPath);
+                return false;
+            }
+
+            if (File.Exists(physicalPath))
+            {
+                var snapshotComment = string.IsNullOrWhiteSpace(comment)
+                    ? $"Snapshot before restore to {versionId}"
+                    : $"{comment} (before restore)";
+
+            var versionFile = ResolveVersionFilePath(metadataPath, metadata) ??
+                Directory.EnumerateFiles(versionDirectory, versionId + ".*", SearchOption.TopDirectoryOnly).FirstOrDefault();
+
+            if (string.IsNullOrEmpty(versionFile) || !File.Exists(versionFile))
+            {
+                return null;
+            }
+
+            var descriptor = metadata?.Descriptor;
+            if (descriptor is null)
+            {
+                var timestamp = new DateTimeOffset(File.GetLastWriteTimeUtc(versionFile), TimeSpan.Zero);
+                descriptor = new VersionDescriptor(
+                    Path.GetFileNameWithoutExtension(versionFile),
+                    timestamp,
+                    actor: null,
+                    comment: null,
+                    SizeBytes: null,
+                    PublicUrl: null);
+            }
+
+            descriptor = descriptor with
+            {
+                SizeBytes = TryGetFileLength(versionFile)
+            };
+
+            return new VersionSnapshotHandle(
+                descriptor,
+                versionFile,
+                Path.GetFileName(versionFile));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve snapshot {VersionId} for {NormalizedPath}.", versionId, normalizedPath);
+            return null;
+        }
+    }
+
     public Task<bool> SnapshotAsync(
         string normalizedPath,
         string physicalPath,
@@ -213,6 +315,7 @@ public sealed class FilesystemVersionStore : IVersionStore
             _logger.LogDebug("Skipping snapshot for {NormalizedPath} because the file '{PhysicalPath}' does not exist.", normalizedPath, physicalPath);
             return false;
         }
+    }
 
         string? versionFilePath = null;
         string? metadataPath = null;
@@ -528,6 +631,38 @@ public sealed class FilesystemVersionStore : IVersionStore
         {
             // Best-effort.
         }
+    }
+
+    private static void TryDeleteFile(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch
+        {
+            // Best-effort cleanup.
+        }
+    }
+
+    private sealed class SnapshotMetadata
+    {
+        [JsonPropertyName("descriptor")]
+        public VersionDescriptor? Descriptor { get; set; }
+
+        [JsonPropertyName("originalFileName")]
+        public string? OriginalFileName { get; set; }
+
+        [JsonPropertyName("storedFileName")]
+        public string? StoredFileName { get; set; }
     }
 
     private static void TryDeleteFile(string? path)

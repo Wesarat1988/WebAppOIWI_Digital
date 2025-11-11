@@ -8,5 +8,12 @@ public sealed record VersionDescriptor(
     string? Actor,
     string? Comment,
     long? SizeBytes,
-    string? PublicUrl = null
+    string? PublicUrl = null,
+    bool IsActive = false
+);
+
+public sealed record VersionSnapshotHandle(
+    VersionDescriptor Descriptor,
+    string FilePath,
+    string FileName
 );

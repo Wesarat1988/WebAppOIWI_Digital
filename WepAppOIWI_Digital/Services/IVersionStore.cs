@@ -8,6 +8,8 @@ public interface IVersionStore
 {
     Task<IReadOnlyList<VersionDescriptor>> ListAsync(string normalizedPath, int take = 5, CancellationToken ct = default);
 
+    Task<VersionSnapshotHandle?> TryGetAsync(string normalizedPath, string versionId, CancellationToken ct = default);
+
     Task<bool> SnapshotAsync(
         string normalizedPath,
         string physicalPath,
