@@ -1,5 +1,5 @@
 ﻿.btn.GetMO {
-    background: linear-gradient(135deg,#6366f1,#4f46e5);
+    background: linear-gradient(135deg, #60a5fa, #2563eb);
     color: #fff;
     box-shadow: 0 12px 25px rgba(99,102,241,.35);
     border: none;
@@ -14,46 +14,46 @@
     will-change: transform;
 }
 
-    /* ยกขึ้นนิด ๆ ตอน hover */
-    .btn.GetMO:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 16px 30px rgba(99,102,241,.45);
-    }
+/* ยกขึ้นนิด ๆ ตอน hover */
+.btn.GetMO:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 16px 30px rgba(99,102,241,.45);
+}
 
-    /* กดลงนิด ๆ ตอน active */
-    .btn.GetMO:active {
-        transform: translateY(0) scale(.98);
-        box-shadow: 0 8px 18px rgba(99,102,241,.30);
-        filter: brightness(.98);
-    }
+/* กดลงนิด ๆ ตอน active */
+.btn.GetMO:active {
+    transform: translateY(0) scale(.98);
+    box-shadow: 0 8px 18px rgba(99,102,241,.30);
+    filter: brightness(.98);
+}
 
-    /* วงแหวนโฟกัสสำหรับคีย์บอร์ด */
-    .btn.GetMO:focus-visible {
-        outline: none;
-        box-shadow: 0 12px 25px rgba(99,102,241,.35), 0 0 0 4px rgba(99,102,241,.25);
-    }
+/* วงแหวนโฟกัสสำหรับคีย์บอร์ด */
+.btn.GetMO:focus-visible {
+    outline: none;
+    box-shadow: 0 12px 25px rgba(99,102,241,.35), 0 0 0 4px rgba(99,102,241,.25);
+}
 
-    /* จุดกำเนิด ripple (ตรงกลาง) */
-    .btn.GetMO::after {
-        content: "";
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: 10px;
-        height: 10px;
-        background: rgba(255,255,255,.6);
-        border-radius: 50%;
-        transform: translate(-50%,-50%) scale(0);
-        opacity: 0;
-        transition: transform .35s ease, opacity .45s ease;
-        pointer-events: none;
-    }
+/* จุดกำเนิด ripple (ตรงกลาง) */
+.btn.GetMO::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    background: rgba(255,255,255,.6);
+    border-radius: 50%;
+    transform: translate(-50%,-50%) scale(0);
+    opacity: 0;
+    transition: transform .35s ease, opacity .45s ease;
+    pointer-events: none;
+}
 
-    /* ขณะคลิกให้วงกระจายออก */
-    .btn.GetMO:active::after {
-        transform: translate(-50%,-50%) scale(18);
-        opacity: 0;
-    }
+/* ขณะคลิกให้วงกระจายออก */
+.btn.GetMO:active::after {
+    transform: translate(-50%,-50%) scale(18);
+    opacity: 0;
+}
 
 @media (prefers-reduced-motion: reduce) {
     .btn.GetMO {
@@ -181,7 +181,7 @@ label span {
             box-shadow: 0 16px 28px rgba(99, 102, 241, 0.4);
         }
 
-    .btn.secondary { 
+    .btn.secondary {
         background: rgba(59, 130, 246, 0.12);
         margin-top: 18px;
         color: #1d4ed8;
@@ -377,10 +377,10 @@ tbody tr:hover {
     gap: 1.25rem;
 }
 
-.panel.locked {
-    border: 1px solid rgba(148, 163, 184, 0.4);
-    box-shadow: none;
-}
+    .panel.locked {
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        box-shadow: none;
+    }
 
 
 .panel-header {
@@ -391,12 +391,12 @@ tbody tr:hover {
     gap: 1rem;
 }
 
-.panel-header h2 {
-    margin: 0;
-    font-size: 1.35rem;
-    font-weight: 700;
-    color: #312e81;
-}
+    .panel-header h2 {
+        margin: 0;
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: #312e81;
+    }
 
 .filter-row {
     margin-top: 0.5rem;
@@ -404,20 +404,20 @@ tbody tr:hover {
     justify-content: flex-start;
 }
 
-.filter-row label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    font-weight: 600;
-    color: #334155;
-    max-width: 210px;
-    width: 100%;
-}
+    .filter-row label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        font-weight: 600;
+        color: #334155;
+        max-width: 210px;
+        width: 100%;
+    }
 
-.filter-row .input {
-    width: 100%;
-    min-width: 0;
-}
+    .filter-row .input {
+        width: 100%;
+        min-width: 0;
+    }
 
 .selected-summary {
     display: flex;
@@ -431,9 +431,9 @@ tbody tr:hover {
     color: #3730a3;
 }
 
-.selected-summary strong {
-    color: #312e81;
-}
+    .selected-summary strong {
+        color: #312e81;
+    }
 
 .lock-message {
     margin: 0;
@@ -473,14 +473,14 @@ tbody tr.selected {
         width: 100%;
     }
 
-    .filter-row label {
-        max-width: none;
-    }
+        .filter-row label {
+            max-width: none;
+        }
 
-    .filter-row .input {
-        width: 100%;
-        min-width: unset;
-    }
+        .filter-row .input {
+            width: 100%;
+            min-width: unset;
+        }
 }
 
 @media (max-width: 720px) {

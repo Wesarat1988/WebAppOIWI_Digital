@@ -113,3 +113,225 @@
     background: #fff;
     box-shadow: 0 8px 24px rgba(0,0,0,.10);
 }
+
+/* ===== Sidebar / Brand Logo ===== */
+
+/* ความกว้าง sidebar */
+.shell__sidebar {
+    width: 240px;
+    background: linear-gradient(180deg,#0d47a1 0%, #1976d2 55%, #e3f2fd 100%);
+    padding: 16px 12px;
+}
+
+/* กล่องวางโลโก้ ให้อยู่กึ่งกลาง และเว้นระยะ */
+.brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 8px;
+}
+
+.brand--flush {
+    padding: 12px 8px;
+}
+/* คงสไตล์ flush แต่ยังมีระยะนิดหน่อยให้โค้งไม่ชนขอบ */
+
+/* ลิงก์ห่อโลโก้ให้เป็นบล็อกคลิกทั้งรูป */
+.brand__link {
+    display: block;
+}
+
+/* — โลโก้: ย่อขนาด + ทำขอบมน — */
+.brand-logo {
+    display: block;
+    width: 68%; /* ปรับขนาดที่นี่ (เช่น 60–80%) */
+    max-width: 140px; /* กันบานเมื่อจอใหญ่ */
+    height: auto;
+    border-radius: 16px; /* ขอบมน */
+    background: #fff; /* พื้นหลังขาวให้ดูคม */
+    padding: 6px; /* ระยะจากขอบมน */
+    border: 1px solid rgba(255,255,255,.6);
+    box-shadow: 0 6px 18px rgba(13,71,161,.18);
+    object-fit: contain; /* ป้องกันยืดภาพ */
+}
+
+/* Hover เล็กน้อย */
+.brand__link:hover .brand-logo {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(13,71,161,.22);
+    transition: all .15s ease;
+}
+
+/* ===== โหมดย่อแถบ (มี class shell--collapsed ที่ div#app-shell อยู่แล้ว) ===== */
+.shell--collapsed .shell__sidebar {
+    width: 84px;
+    padding-inline: 10px;
+}
+
+.shell--collapsed .menu__text {
+    display: none;
+}
+/* ซ่อนชื่อเมนู เหลือแต่ไอคอน */
+.shell--collapsed .brand-logo {
+    width: 48px; /* ย่อโลโก้ให้เล็กลง */
+    max-width: 48px;
+    padding: 4px;
+    border-radius: 12px;
+}
+
+/* ให้คอนเทนต์หลักชิดดีเมื่อ sidebar ย่อ/ขยาย */
+.shell__content {
+    min-width: 0;
+}
+
+/* ===== Sidebar / Brand Logo ===== */
+.shell__sidebar {
+    width: 260px; /* เดิม 240px → เผื่อพื้นที่โลโก้ใหญ่ขึ้น */
+    background: linear-gradient(180deg,#0d47a1 0%, #1976d2 55%, #e3f2fd 100%);
+    padding: 16px 12px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 10px;
+    min-height: 92px; /* เพิ่มความสูงกล่องโลโก้ให้ดูโปร่ง */
+}
+
+.brand--flush {
+    padding: 14px 10px;
+}
+
+.brand__link {
+    display: block;
+}
+
+/* โลโก้: ขยายให้ใหญ่ขึ้น */
+.brand-logo {
+    display: block;
+    width: 88%; /* เดิม ~68% → ใหญ่ขึ้นชัด */
+    max-width: 200px; /* กันบานเกินไปบนจอใหญ่ */
+    height: auto;
+    border-radius: 16px;
+    background: #fff;
+    padding: 8px; /* เพิ่ม padding เพื่อให้ขอบมนดูสวย */
+    border: 1px solid rgba(255,255,255,.6);
+    box-shadow: 0 8px 22px rgba(13,71,161,.22);
+    object-fit: contain;
+}
+
+/* Hover */
+.brand__link:hover .brand-logo {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 28px rgba(13,71,161,.26);
+    transition: all .15s ease;
+}
+
+/* โหมดย่อแถบ */
+.shell--collapsed .shell__sidebar {
+    width: 90px;
+    padding-inline: 10px;
+}
+
+.shell--collapsed .menu__text {
+    display: none;
+}
+
+.shell--collapsed .brand-logo {
+    width: 64px; /* เดิม 48px → ให้โลโก้ในโหมดย่อใหญ่ขึ้นนิด */
+    max-width: 64px;
+    padding: 6px;
+    border-radius: 12px;
+}
+
+/* === Fix Bootstrap Modal to light theme === */
+.modal-backdrop.show {
+    background: rgba(15,23,42,.45); /* เงาหลังจอ */
+    backdrop-filter: blur(2px);
+}
+
+/* กล่อง modal */
+.modal .modal-dialog {
+    margin: 1.25rem auto;
+}
+
+.modal .modal-content {
+    background: #ffffff; /* พื้นสว่าง */
+    color: #111827; /* ตัวอักษรเข้มอ่านง่าย */
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    box-shadow: 0 24px 48px rgba(15,23,42,.28);
+    overflow: hidden;
+}
+
+/* ส่วนหัว */
+.modal .modal-header {
+    background: #f8fafc; /* เทาอ่อน */
+    border-bottom: 1px solid #e5e7eb;
+    padding: .9rem 1.1rem;
+}
+
+.modal .modal-title {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+/* ปุ่มปิดให้มองเห็นบนพื้นสว่าง */
+.modal .btn-close {
+    filter: none; /* ลบ invert ที่อาจเคยใส่ไว้ */
+    opacity: .7;
+}
+
+    .modal .btn-close:hover {
+        opacity: 1;
+    }
+
+/* ส่วนเนื้อหา/ท้าย */
+.modal .modal-body {
+    padding: 1rem 1.1rem;
+}
+
+.modal .modal-footer {
+    border-top: 1px solid #e5e7eb;
+    padding: .75rem 1.1rem 1rem;
+    background: #fff;
+}
+
+/* ฟอร์มภายใน popup */
+.modal .form-label {
+    color: #334155;
+    font-weight: 600;
+}
+
+.modal .form-text {
+    color: #64748b;
+}
+
+.modal .form-control,
+.modal select,
+.modal textarea {
+    background: #fff;
+    color: #111827;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+}
+
+    .modal .form-control:focus,
+    .modal select:focus,
+    .modal textarea:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59,130,246,.18);
+        outline: none;
+    }
+
+/* ตาราง/เส้นแบ่งใน popup */
+.modal hr,
+.modal .table > :not(caption) > * > * {
+    border-color: #e5e7eb;
+}
+
+/* ป้องกันธีมมืดจากที่อื่นมาทับ (เช่น body.dark) */
+.modal * {
+    color-scheme: light;
+}
