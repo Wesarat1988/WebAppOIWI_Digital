@@ -1,12 +1,25 @@
-﻿namespace WepAppOIWI_Digital.Services
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace WepAppOIWI_Digital.Services;
+
+public interface IVersionStore
 {
-    public interface IVersionStore
-    {
-        Task<DocumentVersion> SaveAsync(string normalizedPath, string fileName, Stream currentFileStream,
-                                string savedBy, string? note, CancellationToken ct = default);
+    Task<IReadOnlyList<VersionDescriptor>> ListAsync(string normalizedPath, int take = 5, CancellationToken ct = default);
 
-        Task<IReadOnlyList<DocumentVersion>> ListAsync(string normalizedPath, int take = 5, CancellationToken ct = default);
+    Task<bool> SnapshotAsync(
+        string normalizedPath,
+        string physicalPath,
+        string? actor,
+        string? comment,
+        CancellationToken ct = default);
 
-        Task<bool> RestoreAsync(DocumentVersion version, string livePhysicalPath, CancellationToken ct = default);
-    }
+    Task<bool> RestoreAsync(
+        string normalizedPath,
+        string versionId,
+        string physicalPath,
+        string? actor,
+        string? comment,
+        CancellationToken ct = default);
 }

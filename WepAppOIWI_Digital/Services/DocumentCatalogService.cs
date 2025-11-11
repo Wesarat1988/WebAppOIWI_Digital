@@ -137,6 +137,19 @@ public sealed class DocumentCatalogService : IDisposable
         return GetCatalogContext();
     }
 
+    public string ResolvePhysicalPath(string normalizedPath)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            throw new ArgumentException("Value cannot be null or whitespace.", nameof(normalizedPath));
+        }
+
+        var context = GetCatalogContext();
+        var root = context.ActiveRootPath ?? throw new InvalidOperationException("Catalog root not set.");
+        var relative = normalizedPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        return Path.GetFullPath(Path.Combine(root, relative));
+    }
+
     public void InvalidateCache()
     {
         lock (_cacheLock)

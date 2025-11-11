@@ -146,7 +146,7 @@ else
                                 }
                                 @if (v.SizeBytes is long s)
                                 {
-                                    <text> · @((s / 1024.0):F1) KB</text>
+                                    <text> · @((s / 1024.0).ToString("F1")) KB</text>
                                 }
                             </div>
                         </div>
