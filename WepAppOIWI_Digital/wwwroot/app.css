@@ -1,24 +1,16 @@
 /* ========== Sidebar Layout (ãËÁè·Ñé§ËÁ´) ========== */
 :root {
     --shell-sidebar-w: 260px;
-    --shell-sidebar-w-collapsed: 64px;
+    --shell-sidebar-w-collapsed: 88px;
     --shell-bg: linear-gradient(180deg,#0d47a1,#1976d2);
 }
 
-/* â¤Ã§ËÅÑ¡à»ç¹ 2 ¤ÍÅÑÁ¹ì: sidebar + content */
+/* โครงพื้นฐานให้ sidebar + content ดูสอดคล้องกับ layout */
 .shell {
-    display: grid;
-    grid-template-columns: var(--shell-sidebar-w) 1fr;
     min-height: 100vh;
     overflow: hidden;
     background: #f8fafc;
-    transition: grid-template-columns .25s ease;
 }
-
-    /* ÂØº = àËÅ×ÍÊÑ¹ 64px */
-    .shell.shell--collapsed {
-        grid-template-columns: var(--shell-sidebar-w-collapsed) 1fr;
-    }
 
 /* -------- Sidebar -------- */
 .shell__sidebar {
@@ -121,55 +113,7 @@
     overflow: hidden;
 }
 
-/* ====== à¾ÔèÁ motion: slide à¢éÒ/ÍÍ¡ “·Ø¡¢¹Ò´¨Í” ====== */
-/* ºÑ§¤Ñºâ¤Ã§ grid ¢Í§¤Í¹à·¹à¹ÍÃìãËéá¹è¹áÅÐäÁèâ´¹·Ñº */
-#app-shell.shell {
-    display: grid;
-    grid-template-columns: var(--shell-sidebar-w) 1fr !important;
-}
-
-    #app-shell.shell.shell--collapsed {
-        grid-template-columns: var(--shell-sidebar-w-collapsed) 1fr !important;
-    }
-/* ·ÓãËé sidebar slide ä´é */
-#app-shell .shell__sidebar {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    transform: translateX(0);
-    transition: transform .25s ease;
-    z-index: 3;
-}
-/* µÍ¹¾Ñº: àÅ×èÍ¹ÍÍ¡ àËÅ×ÍÊÑ¹ 64px */
-#app-shell.shell.shell--collapsed .shell__sidebar {
-    transform: translateX(calc(-100% + var(--shell-sidebar-w-collapsed)));
-}
-/* ¡Ñ¹ sidebar ÁÕ width Í×è¹ÁÒ·Ñº */
-#app-shell .shell__sidebar {
-    width: auto !important;
-}
-
-/* ---------- Responsive (optional) ---------- */
-/* ¨ÍàÅç¡: ãËéá¶ºà»ç¹ overlay ¨ÃÔ§ æ */
-@media (max-width: 992px) {
-    .shell {
-        grid-template-columns: 0 1fr;
-    }
-
-    #app-shell .shell__sidebar {
-        position: fixed;
-        inset: 0 auto 0 0;
-        width: var(--shell-sidebar-w);
-    }
-    /* à»Ô´: slide in */
-    #app-shell:not(.shell--collapsed) .shell__sidebar {
-        transform: translateX(0);
-    }
-    /* »Ô´: slide out */
-    #app-shell.shell--collapsed .shell__sidebar {
-        transform: translateX(-100%);
-    }
-}
+/* ยังคงจัดการ motion/spacing ของเมนูด้วย utilities อื่น ๆ */
 
 /* ====== ¿Í¹µì·Ñé§àÇçº (¶éÒÅÔ§¡ìäÇéã¹ App.razor) ====== */
 body {
