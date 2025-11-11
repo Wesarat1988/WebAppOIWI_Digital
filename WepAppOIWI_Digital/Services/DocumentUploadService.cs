@@ -17,7 +17,7 @@ public sealed class DocumentUploadService
     private readonly DocumentCatalogService _catalogService;
     private readonly DocumentCatalogOptions _options;
     private readonly ILogger<DocumentUploadService> _logger;
-    private readonly IVersionStore _versionStore; // <-- เพิ่มบรรทัดนี้
+    private readonly IVersionStore _versionStore; // จัดการ snapshot/version history
     private readonly SemaphoreSlim _uploadLock = new(1, 1);
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
@@ -38,30 +38,320 @@ public sealed class DocumentUploadService
         _versionStore = versionStore; 
     }
 
-    // ===== เพิ่มเมธอดใหม่ 2 ตัว =====
-    public Task<IReadOnlyList<VersionDescriptor>> GetHistoryAsync(string normalizedPath, int take = 5, CancellationToken ct = default)
-        => _versionStore.ListAsync(normalizedPath, take, ct);
+    // ประวัติย้อนหลังของไฟล์ พร้อม flag เวอร์ชันที่ใช้งานปัจจุบัน
+    public async Task<IReadOnlyList<VersionDescriptor>> GetHistoryAsync(string normalizedPath, int take = 5, CancellationToken ct = default)
+    {
+        var history = await _versionStore.ListAsync(normalizedPath, take, ct).ConfigureAwait(false);
+
+        DocumentRecord? record = null;
+        try
+        {
+            record = await _catalogService.TryGetDocumentAsync(normalizedPath, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to load document metadata for history at {Path}.", normalizedPath);
+        }
+
+        var activeId = record?.ActiveVersionId;
+        var list = history
+            .Select(d => string.Equals(d.VersionId, activeId, StringComparison.OrdinalIgnoreCase)
+                ? d with { IsActive = true }
+                : d with { IsActive = false })
+            .ToList();
+
+        if (!string.IsNullOrEmpty(activeId))
+        {
+            if (list.All(d => !string.Equals(d.VersionId, activeId, StringComparison.OrdinalIgnoreCase)))
+            {
+                var activeHandle = await _versionStore.TryGetAsync(normalizedPath, activeId!, ct).ConfigureAwait(false);
+                if (activeHandle?.Descriptor is not null)
+                {
+                    list.Insert(0, activeHandle.Descriptor with { IsActive = true });
+                }
+            }
+        }
+        else if (record is not null)
+        {
+            var descriptor = CreateCurrentVersionDescriptor(record);
+            if (descriptor is not null)
+            {
+                list.Insert(0, descriptor);
+            }
+        }
+
+        if (take > 0 && list.Count > take)
+        {
+            list = list.Take(take).ToList();
+        }
+
+        return list;
+
+        VersionDescriptor? CreateCurrentVersionDescriptor(DocumentRecord current)
+        {
+            try
+            {
+                var physicalPath = _catalogService.ResolvePhysicalPath(current.FileName);
+                long? size = null;
+                try
+                {
+                    size = File.Exists(physicalPath) ? new FileInfo(physicalPath).Length : null;
+                }
+                catch
+                {
+                    size = null;
+                }
+
+                static string? NormalizeField(string? value)
+                {
+                    if (string.IsNullOrWhiteSpace(value))
+                    {
+                        return null;
+                    }
+
+                    var trimmed = value.Trim();
+                    return string.Equals(trimmed, "-", StringComparison.Ordinal) ? null : trimmed;
+                }
+
+                return new VersionDescriptor(
+                    VersionId: "current",
+                    TimestampUtc: current.UpdatedAt ?? DateTimeOffset.UtcNow,
+                    Actor: NormalizeField(current.UploadedBy),
+                    Comment: NormalizeField(current.Comment),
+                    SizeBytes: size,
+                    PublicUrl: null,
+                    IsActive: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to compose active version descriptor for {Path}.", normalizedPath);
+                return null;
+            }
+        }
+    }
 
     public async Task<bool> RevertToAsync(string normalizedPath, string versionId, string? actor, string? comment, CancellationToken ct = default)
     {
-        var ctx = await _catalogService.EnsureCatalogContextAsync(ct).ConfigureAwait(false);
-        var rootPath = ctx.ActiveRootPath;
-        if (string.IsNullOrWhiteSpace(rootPath)) return false;
+        await _catalogService.EnsureCatalogContextAsync(ct).ConfigureAwait(false);
 
-        var physical = Path.GetFullPath(Path.Combine(
-            rootPath,
-            normalizedPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)));
+        string physical;
+        try
+        {
+            physical = _catalogService.ResolvePhysicalPath(normalizedPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve physical path for {Path} while reverting.", normalizedPath);
+            return false;
+        }
 
-        var ok = await _versionStore.RestoreAsync(
-            normalizedPath: normalizedPath,
-            versionId: versionId,
-            physicalPath: physical,
-            actor: actor,
-            comment: comment,
-            ct: ct).ConfigureAwait(false);
+        var ok = await _versionStore.RestoreAsync(normalizedPath, versionId, physical, actor, comment, ct).ConfigureAwait(false);
 
         if (ok) _catalogService.InvalidateCache();
         return ok;
+    }
+
+    public async Task<VersionActivationResult> SetActiveVersionAsync(
+        string normalizedPath,
+        string versionId,
+        string? actor,
+        string? comment,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedPath) || string.IsNullOrWhiteSpace(versionId))
+        {
+            return VersionActivationResult.Failure("Missing document path or version identifier.");
+        }
+
+        await _uploadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var normalized = NormalizeManifestPath(normalizedPath);
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return VersionActivationResult.Failure("ไม่พบเอกสารที่ต้องการตั้งค่า");
+            }
+
+            var context = await _catalogService.EnsureCatalogContextAsync(cancellationToken).ConfigureAwait(false);
+            var rootPath = context.ActiveRootPath;
+
+            if (string.IsNullOrWhiteSpace(rootPath))
+            {
+                _logger.LogWarning("Cannot set active version because the catalog root path is not configured.");
+                return VersionActivationResult.Failure("ยังไม่ได้กำหนดโฟลเดอร์สำหรับเก็บเอกสาร OI/WI");
+            }
+
+            var manifestPath = Path.Combine(rootPath, GetManifestFileName());
+            ManifestDocument manifest;
+            try
+            {
+                manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
+            }
+            catch (DocumentManifestReadException ex)
+            {
+                _logger.LogError(ex, "Cannot set active version because the manifest could not be read.");
+                return VersionActivationResult.Failure("ไม่สามารถอ่านข้อมูลเอกสารได้");
+            }
+
+            var lookupIndex = manifest.Documents.FindIndex(entry =>
+                string.Equals(NormalizeManifestPath(entry.FileName), normalized, StringComparison.OrdinalIgnoreCase));
+
+            if (lookupIndex < 0)
+            {
+                return VersionActivationResult.Failure("ไม่พบเอกสารที่ต้องการตั้งค่า");
+            }
+
+            var entry = manifest.Documents[lookupIndex];
+            var existingRelative = entry.FileName ?? normalized;
+            var rootFullPath = Path.GetFullPath(rootPath);
+            var existingFullPath = Path.GetFullPath(Path.Combine(rootFullPath, existingRelative.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar)));
+
+            var versionHandle = await _versionStore.TryGetAsync(normalized, versionId, cancellationToken).ConfigureAwait(false);
+            if (versionHandle is null)
+            {
+                return VersionActivationResult.Failure("ไม่พบไฟล์เวอร์ชันที่เลือก");
+            }
+
+            var versionFilePath = versionHandle.FilePath;
+            if (!File.Exists(versionFilePath))
+            {
+                return VersionActivationResult.Failure("ไม่พบไฟล์เวอร์ชันที่เลือก");
+            }
+
+            var normalizedType = DocumentNumbering.NormalizeType(entry.DocumentType);
+            var documentCode = DocumentNumbering.FormatCode(normalizedType, entry.SequenceNumber);
+
+            var targetDirectory = Path.GetDirectoryName(existingFullPath) ?? rootFullPath;
+            try
+            {
+                if (!string.IsNullOrEmpty(documentCode))
+                {
+                    (targetDirectory, _) = _catalogService.GetDocumentDirectories(documentCode);
+                }
+
+                Directory.CreateDirectory(targetDirectory);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to prepare destination directory for activating {Path}.", normalized);
+                return VersionActivationResult.Failure("ไม่สามารถเตรียมโฟลเดอร์ปลายทางได้");
+            }
+
+            var displayName = string.IsNullOrWhiteSpace(entry.DisplayName)
+                ? Path.GetFileNameWithoutExtension(versionHandle.FileName)
+                : entry.DisplayName!;
+            var targetFileName = BuildCurrentFileName(displayName, versionHandle.FileName);
+            var newFullPath = Path.Combine(targetDirectory, targetFileName);
+            var newRelativePath = Path.GetRelativePath(rootFullPath, newFullPath)
+                .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            string? backupPath = null;
+            string? tempPath = null;
+            try
+            {
+                if (File.Exists(newFullPath))
+                {
+                    backupPath = CreateBackup(newFullPath);
+                }
+                else if (File.Exists(existingFullPath))
+                {
+                    backupPath = CreateBackup(existingFullPath);
+                }
+
+                tempPath = newFullPath + $".tmp-{Guid.NewGuid():N}";
+                Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
+                File.Copy(versionFilePath, tempPath, overwrite: true);
+                File.Move(tempPath, newFullPath, overwrite: true);
+
+                if (!string.Equals(existingFullPath, newFullPath, StringComparison.OrdinalIgnoreCase)
+                    && File.Exists(existingFullPath))
+                {
+                    TryDeleteFile(existingFullPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to activate version {VersionId} for {Path}.", versionId, normalized);
+                if (!string.IsNullOrEmpty(tempPath))
+                {
+                    TryDeleteFile(tempPath);
+                }
+
+                if (!string.IsNullOrEmpty(backupPath))
+                {
+                    TryRestoreFromBackup(backupPath, existingFullPath);
+                }
+
+                return VersionActivationResult.Failure("ไม่สามารถตั้งไฟล์ให้ใช้งานได้");
+            }
+            finally
+            {
+                if (!string.IsNullOrEmpty(tempPath))
+                {
+                    TryDeleteFile(tempPath);
+                }
+            }
+
+            var request = new DocumentUploadRequest(
+                DisplayName: displayName,
+                DocumentType: normalizedType ?? string.Empty,
+                Line: entry.Line,
+                Station: entry.Station,
+                Model: entry.Model,
+                MachineName: entry.MachineName,
+                UploadedBy: string.IsNullOrWhiteSpace(actor) ? entry.UploadedBy : actor,
+                Comment: string.IsNullOrWhiteSpace(comment) ? entry.Comment : comment,
+                OriginalFileName: Path.GetFileName(newFullPath),
+                Content: Stream.Null,
+                UploadedAt: DateTimeOffset.UtcNow,
+                ActiveVersionId: versionId);
+
+            var manifestUpdateResult = await UpdateManifestAsync(
+                    manifestPath,
+                    manifest,
+                    existingRelative,
+                    newRelativePath,
+                    request,
+                    normalizedType ?? string.Empty,
+                    entry.SequenceNumber,
+                    incrementVersion: false,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!manifestUpdateResult.Succeeded)
+            {
+                if (!string.IsNullOrEmpty(backupPath))
+                {
+                    TryRestoreFromBackup(backupPath, existingFullPath);
+                    TryDeleteFile(backupPath);
+                }
+                else
+                {
+                    _logger.LogWarning("Manifest update failed after activating version '{VersionId}' for '{Path}'.", versionId, normalized);
+                }
+
+                if (!string.Equals(existingFullPath, newFullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    TryDeleteFile(newFullPath);
+                }
+
+                return VersionActivationResult.Failure("ไม่สามารถอัปเดตข้อมูลเอกสารได้");
+            }
+
+            if (!string.IsNullOrEmpty(backupPath))
+            {
+                TryDeleteFile(backupPath);
+            }
+
+            _catalogService.InvalidateCache();
+            _logger.LogInformation("Set active version {Version} for {Path}", versionId, newRelativePath);
+
+            return VersionActivationResult.Success(versionId, request.UploadedAt, manifestUpdateResult.DocumentCode ?? documentCode, newRelativePath);
+        }
+        finally
+        {
+            _uploadLock.Release();
+        }
     }
 
     public async Task<DocumentUploadResult> UploadAsync(DocumentUploadRequest request, CancellationToken cancellationToken = default)
@@ -134,32 +424,53 @@ public sealed class DocumentUploadService
             }
 
             var destinationRoot = rootPath;
-            var createdDocumentDirectory = false;
+            string? currentDirectory = null;
+            string? versionsDirectory = null;
+            string? documentRoot = null;
+            var createdCurrentDirectory = false;
+            var createdVersionsDirectory = false;
 
             if (!string.IsNullOrWhiteSpace(documentCode))
             {
-                destinationRoot = Path.Combine(rootPath, documentCode);
-
                 try
                 {
-                    if (!Directory.Exists(destinationRoot))
+                    (currentDirectory, versionsDirectory) = _catalogService.GetDocumentDirectories(documentCode);
+
+                    if (!Directory.Exists(currentDirectory))
                     {
-                        Directory.CreateDirectory(destinationRoot);
-                        createdDocumentDirectory = true;
+                        Directory.CreateDirectory(currentDirectory!);
+                        createdCurrentDirectory = true;
                     }
                     else
                     {
-                        Directory.CreateDirectory(destinationRoot);
+                        Directory.CreateDirectory(currentDirectory!);
                     }
+
+                    if (!string.IsNullOrEmpty(versionsDirectory))
+                    {
+                        if (!Directory.Exists(versionsDirectory))
+                        {
+                            Directory.CreateDirectory(versionsDirectory);
+                            createdVersionsDirectory = true;
+                        }
+                        else
+                        {
+                            Directory.CreateDirectory(versionsDirectory);
+                        }
+                    }
+
+                    destinationRoot = currentDirectory!;
+                    documentRoot = Path.GetDirectoryName(currentDirectory);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to ensure document folder '{Folder}' exists before uploading.", destinationRoot);
+                    _logger.LogError(ex, "Failed to ensure document folder '{Folder}' exists before uploading.", documentCode);
                     return DocumentUploadResult.Failed("ไม่สามารถสร้างโฟลเดอร์สำหรับเลขเอกสารนี้ได้");
                 }
             }
 
-            var destinationPath = ResolveDestinationPath(destinationRoot, sanitizedFileName);
+            var destinationFileName = BuildCurrentFileName(request.DisplayName, sanitizedFileName);
+            var destinationPath = ResolveDestinationPath(destinationRoot, destinationFileName);
 
             try
             {
@@ -175,9 +486,19 @@ public sealed class DocumentUploadService
             {
                 _logger.LogError(ex, "Failed to save uploaded document to '{Destination}'.", destinationPath);
                 TryDeleteFile(destinationPath);
-                if (createdDocumentDirectory)
+                if (createdCurrentDirectory)
                 {
-                    TryDeleteDirectoryIfEmpty(destinationRoot);
+                    TryDeleteDirectoryIfEmpty(currentDirectory);
+                }
+
+                if (createdVersionsDirectory)
+                {
+                    TryDeleteDirectoryIfEmpty(versionsDirectory);
+                }
+
+                if (!string.IsNullOrEmpty(documentRoot))
+                {
+                    TryDeleteDirectoryIfEmpty(documentRoot);
                 }
                 return DocumentUploadResult.Failed("ไม่สามารถบันทึกไฟล์ได้ กรุณาลองใหม่อีกครั้ง");
             }
@@ -189,22 +510,45 @@ public sealed class DocumentUploadService
                     manifestPath,
                     manifest,
                     relativeFileName,
+                    relativeFileName,
                     request,
                     normalizedDocumentType,
                     preferredSequence,
+                    incrementVersion: false,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (!manifestUpdateResult.Succeeded)
             {
                 TryDeleteFile(destinationPath);
-                if (createdDocumentDirectory)
+                if (createdCurrentDirectory)
                 {
-                    TryDeleteDirectoryIfEmpty(destinationRoot);
+                    TryDeleteDirectoryIfEmpty(currentDirectory);
+                }
+
+                if (createdVersionsDirectory)
+                {
+                    TryDeleteDirectoryIfEmpty(versionsDirectory);
+                }
+
+                if (!string.IsNullOrEmpty(documentRoot))
+                {
+                    TryDeleteDirectoryIfEmpty(documentRoot);
                 }
                 return DocumentUploadResult.Failed("บันทึกไฟล์สำเร็จ แต่ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
             }
 
+            try
+            {
+                await _versionStore.SnapshotAsync(relativeFileName, destinationPath, request.UploadedBy, request.Comment, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to snapshot newly uploaded document {Path}.", relativeFileName);
+            }
+
             _catalogService.InvalidateCache();
+
+            _logger.LogInformation("Uploaded document {Code} to {Path}", documentCode ?? "(no-code)", destinationPath);
 
             return DocumentUploadResult.Success(
                 normalizedPath: relativeFileName,
@@ -282,25 +626,89 @@ public sealed class DocumentUploadService
                 return DocumentUpdateResult.Failed("ไม่สามารถแก้ไขไฟล์นอกโฟลเดอร์ที่กำหนดได้");
             }
 
-            var destinationDirectory = Path.GetDirectoryName(candidatePath);
-            if (!string.IsNullOrEmpty(destinationDirectory))
+            var documentCode = DocumentNumbering.FormatCode(existingNormalizedType, existingEntry.SequenceNumber);
+            string targetDirectory = Path.GetDirectoryName(candidatePath) ?? rootFullPath;
+            string? currentDirectory = null;
+            string? versionsDirectory = null;
+
+            if (!string.IsNullOrWhiteSpace(documentCode))
             {
                 try
                 {
-                    Directory.CreateDirectory(destinationDirectory);
+                    (currentDirectory, versionsDirectory) = _catalogService.GetDocumentDirectories(documentCode);
+                    Directory.CreateDirectory(currentDirectory!);
+                    if (!string.IsNullOrEmpty(versionsDirectory))
+                    {
+                        Directory.CreateDirectory(versionsDirectory);
+                    }
+
+                    targetDirectory = currentDirectory!;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to ensure destination directory '{Directory}' exists before updating document.", destinationDirectory);
+                    _logger.LogError(ex, "Failed to ensure document folder '{Folder}' exists before updating.", documentCode);
+                    return DocumentUpdateResult.Failed("ไม่สามารถสร้างโฟลเดอร์สำหรับเลขเอกสารนี้ได้");
+                }
+            }
+            else
+            {
+                try
+                {
+                    Directory.CreateDirectory(targetDirectory);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to ensure destination directory '{Directory}' exists before updating document.", targetDirectory);
                     return DocumentUpdateResult.Failed("ไม่สามารถสร้างโฟลเดอร์สำหรับไฟล์ได้");
                 }
             }
 
+            var existingExtension = Path.GetExtension(candidatePath);
+            var desiredBaseName = DocumentCatalogService.Slugify(request.DisplayName);
+            if (string.IsNullOrWhiteSpace(desiredBaseName))
+            {
+                desiredBaseName = DocumentCatalogService.Slugify(Path.GetFileNameWithoutExtension(candidatePath));
+            }
+
+            if (string.IsNullOrWhiteSpace(desiredBaseName))
+            {
+                desiredBaseName = Path.GetFileNameWithoutExtension(candidatePath) ?? "document";
+            }
+
+            var newFileName = string.IsNullOrWhiteSpace(existingExtension)
+                ? desiredBaseName
+                : desiredBaseName + existingExtension;
+            var newFullPath = Path.Combine(targetDirectory, newFileName);
+            var newRelativePath = Path.GetRelativePath(rootFullPath, newFullPath)
+                .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var pathChanged = !string.Equals(candidatePath, newFullPath, StringComparison.OrdinalIgnoreCase);
+
             string? backupPath = null;
             var fileReplaced = false;
+            var renameApplied = false;
+            string? tempPath = null;
 
             if (request.Content is not null)
             {
+                try
+                {
+                    if (File.Exists(candidatePath))
+                    {
+                        try
+                        {
+                            await _versionStore.SnapshotAsync(normalizedPath, candidatePath, request.UploadedBy, request.Comment, cancellationToken).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to snapshot document before updating {Path}.", normalizedPath);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to prepare snapshot for {Path} before updating.", normalizedPath);
+                }
+
                 try
                 {
                     if (File.Exists(candidatePath))
@@ -313,20 +721,69 @@ public sealed class DocumentUploadService
                         request.Content.Seek(0, SeekOrigin.Begin);
                     }
 
-                    await using var targetStream = File.Create(candidatePath);
-                    await request.Content.CopyToAsync(targetStream, cancellationToken).ConfigureAwait(false);
+                    tempPath = newFullPath + $".tmp-{Guid.NewGuid():N}";
+
+                    await using (var targetStream = File.Create(tempPath))
+                    {
+                        await request.Content.CopyToAsync(targetStream, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
+                    }
+                    catch (Exception dirEx)
+                    {
+                        _logger.LogWarning(dirEx, "Failed to ensure directory '{Directory}' before replacing file.", Path.GetDirectoryName(newFullPath));
+                    }
+
+                    File.Move(tempPath, newFullPath, overwrite: true);
                     fileReplaced = true;
+
+                    if (pathChanged)
+                    {
+                        TryDeleteFile(candidatePath);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to replace document content at '{Destination}'.", candidatePath);
+                    _logger.LogError(ex, "Failed to replace document content at '{Destination}'.", newFullPath);
                     if (!string.IsNullOrEmpty(backupPath))
                     {
                         TryRestoreFromBackup(backupPath, candidatePath);
                         TryDeleteFile(backupPath);
                         backupPath = null;
                     }
+
+                    if (!string.IsNullOrEmpty(tempPath))
+                    {
+                        TryDeleteFile(tempPath);
+                        tempPath = null;
+                    }
+
                     return DocumentUpdateResult.Failed("ไม่สามารถบันทึกไฟล์ที่แก้ไขได้ กรุณาลองใหม่อีกครั้ง");
+                }
+                finally
+                {
+                    if (!string.IsNullOrEmpty(tempPath))
+                    {
+                        TryDeleteFile(tempPath);
+                        tempPath = null;
+                    }
+                }
+            }
+            else if (pathChanged && File.Exists(candidatePath))
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(newFullPath)!);
+                    File.Move(candidatePath, newFullPath, overwrite: true);
+                    renameApplied = true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to move document to '{Destination}'.", newFullPath);
+                    return DocumentUpdateResult.Failed("ไม่สามารถย้ายไฟล์ไปยังโฟลเดอร์ใหม่ได้");
                 }
             }
 
@@ -339,7 +796,7 @@ public sealed class DocumentUploadService
                 MachineName: request.MachineName,
                 UploadedBy: request.UploadedBy,
                 Comment: request.Comment,
-                OriginalFileName: Path.GetFileName(candidatePath),
+                OriginalFileName: Path.GetFileName(newFullPath),
                 Content: Stream.Null,
                 UploadedAt: request.UpdatedAt);
 
@@ -347,9 +804,11 @@ public sealed class DocumentUploadService
                     manifestPath,
                     manifest,
                     normalizedPath,
+                    newRelativePath,
                     metadataRequest,
                     existingNormalizedType,
                     existingEntry.SequenceNumber,
+                    incrementVersion: fileReplaced,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -364,6 +823,23 @@ public sealed class DocumentUploadService
                     _logger.LogWarning("Manifest update failed after replacing file '{File}'. Original backup was not available.", candidatePath);
                 }
 
+                if (renameApplied && pathChanged)
+                {
+                    try
+                    {
+                        File.Move(newFullPath, candidatePath, overwrite: true);
+                    }
+                    catch (Exception moveBackEx)
+                    {
+                        _logger.LogError(moveBackEx, "Failed to restore file location for '{Path}' after manifest error.", normalizedPath);
+                    }
+                }
+
+                if (fileReplaced && pathChanged)
+                {
+                    TryDeleteFile(newFullPath);
+                }
+
                 if (!string.IsNullOrEmpty(backupPath))
                 {
                     TryDeleteFile(backupPath);
@@ -376,7 +852,14 @@ public sealed class DocumentUploadService
                 TryDeleteFile(backupPath);
             }
 
+            if (pathChanged || fileReplaced)
+            {
+                normalizedPath = newRelativePath;
+            }
+
             _catalogService.InvalidateCache();
+
+            _logger.LogInformation("Updated document {Code} -> {Path}", documentCode ?? "(no-code)", newFullPath);
 
             return DocumentUpdateResult.Success(normalizedPath, manifestUpdateResult.DocumentType, manifestUpdateResult.SequenceNumber, manifestUpdateResult.DocumentCode);
         }
@@ -435,15 +918,17 @@ public sealed class DocumentUploadService
     private async Task<ManifestUpdateResult> UpdateManifestAsync(
         string manifestPath,
         ManifestDocument manifest,
-        string relativeFileName,
+        string lookupRelativeFileName,
+        string newRelativeFileName,
         DocumentUploadRequest request,
         string normalizedDocumentType,
         int? preferredSequence,
+        bool incrementVersion,
         CancellationToken cancellationToken)
     {
         var entry = new ManifestEntry
         {
-            FileName = relativeFileName,
+            FileName = newRelativeFileName,
             DisplayName = request.DisplayName?.Trim(),
             Line = request.Line?.Trim(),
             Station = request.Station?.Trim(),
@@ -455,7 +940,9 @@ public sealed class DocumentUploadService
             DocumentType = string.IsNullOrEmpty(normalizedDocumentType) ? null : normalizedDocumentType
         };
 
-        var existingIndex = manifest.Documents.FindIndex(d => string.Equals(d.FileName, relativeFileName, StringComparison.OrdinalIgnoreCase));
+        var lookupNormalized = NormalizeManifestPath(lookupRelativeFileName);
+        var existingIndex = manifest.Documents.FindIndex(d =>
+            string.Equals(NormalizeManifestPath(d.FileName), lookupNormalized, StringComparison.OrdinalIgnoreCase));
         ManifestEntry? existingEntry = existingIndex >= 0 ? manifest.Documents[existingIndex] : null;
 
         int? resolvedSequence = preferredSequence;
@@ -493,6 +980,27 @@ public sealed class DocumentUploadService
 
         entry.SequenceNumber = resolvedSequence;
 
+        var previousVersion = existingEntry?.Version ?? 0;
+        if (previousVersion <= 0)
+        {
+            previousVersion = 1;
+        }
+
+        entry.Version = existingEntry is null
+            ? 1
+            : incrementVersion
+                ? previousVersion + 1
+                : previousVersion;
+
+        if (incrementVersion)
+        {
+            entry.ActiveVersionId = null;
+        }
+        else
+        {
+            entry.ActiveVersionId = request.ActiveVersionId ?? existingEntry?.ActiveVersionId;
+        }
+
         if (existingIndex >= 0)
         {
             manifest.Documents[existingIndex] = entry;
@@ -504,6 +1012,33 @@ public sealed class DocumentUploadService
 
         manifest.Documents.Sort(CompareManifestEntries);
 
+        var persisted = await PersistManifestAsync(manifestPath, manifest, cancellationToken).ConfigureAwait(false);
+        return persisted
+            ? ManifestUpdateResult.Success(entry.DocumentType, entry.SequenceNumber)
+            : ManifestUpdateResult.Failure(entry.DocumentType, entry.SequenceNumber);
+    }
+
+    private async Task<ManifestDocument> LoadManifestAsync(string manifestPath, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(manifestPath))
+        {
+            return new ManifestDocument();
+        }
+
+        try
+        {
+            await using var stream = File.OpenRead(manifestPath);
+            var manifest = await JsonSerializer.DeserializeAsync<ManifestDocument>(stream, _serializerOptions, cancellationToken).ConfigureAwait(false);
+            return manifest ?? new ManifestDocument();
+        }
+        catch (Exception ex)
+        {
+            throw new DocumentManifestReadException($"Failed to read manifest '{manifestPath}'.", ex);
+        }
+    }
+
+    private async Task<bool> PersistManifestAsync(string manifestPath, ManifestDocument manifest, CancellationToken cancellationToken)
+    {
         var manifestDirectory = Path.GetDirectoryName(manifestPath);
         var tempDirectory = string.IsNullOrEmpty(manifestDirectory) ? Path.GetTempPath() : manifestDirectory;
         var tempManifestPath = Path.Combine(tempDirectory, $"{Path.GetFileName(manifestPath)}.tmp-{Guid.NewGuid():N}");
@@ -523,32 +1058,13 @@ public sealed class DocumentUploadService
             File.Copy(tempManifestPath, manifestPath, overwrite: true);
             File.Delete(tempManifestPath);
 
-            return ManifestUpdateResult.Success(entry.DocumentType, entry.SequenceNumber);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to write manifest '{Manifest}'.", manifestPath);
             TryDeleteFile(tempManifestPath);
-            return ManifestUpdateResult.Failure(entry.DocumentType, entry.SequenceNumber);
-        }
-    }
-
-    private async Task<ManifestDocument> LoadManifestAsync(string manifestPath, CancellationToken cancellationToken)
-    {
-        if (!File.Exists(manifestPath))
-        {
-            return new ManifestDocument();
-        }
-
-        try
-        {
-            await using var stream = File.OpenRead(manifestPath);
-            var manifest = await JsonSerializer.DeserializeAsync<ManifestDocument>(stream, _serializerOptions, cancellationToken).ConfigureAwait(false);
-            return manifest ?? new ManifestDocument();
-        }
-        catch (Exception ex)
-        {
-            throw new DocumentManifestReadException($"Failed to read manifest '{manifestPath}'.", ex);
+            return false;
         }
     }
 
@@ -689,6 +1205,24 @@ public sealed class DocumentUploadService
         {
             _logger.LogError(restoreEx, "Failed to restore original file '{Destination}' from backup '{Backup}'.", destinationPath, backupPath);
         }
+    }
+
+    private static string BuildCurrentFileName(string displayName, string originalFileName)
+    {
+        var extension = Path.GetExtension(originalFileName);
+        var baseName = DocumentCatalogService.Slugify(displayName);
+
+        if (string.IsNullOrWhiteSpace(baseName))
+        {
+            baseName = DocumentCatalogService.Slugify(Path.GetFileNameWithoutExtension(originalFileName));
+        }
+
+        if (string.IsNullOrWhiteSpace(baseName))
+        {
+            baseName = Path.GetFileNameWithoutExtension(originalFileName) ?? "document";
+        }
+
+        return string.IsNullOrWhiteSpace(extension) ? baseName : baseName + extension;
     }
 
     private static string ResolveDestinationPath(string rootPath, string fileName)
@@ -843,7 +1377,8 @@ public sealed record DocumentUploadRequest(
     string? Comment,
     string OriginalFileName,
     Stream Content,
-    DateTimeOffset UploadedAt);
+    DateTimeOffset UploadedAt,
+    string? ActiveVersionId = null);
 
 public sealed record DocumentUploadResult(bool Succeeded, string? NormalizedPath, string? ErrorMessage, string? DocumentType, int? SequenceNumber, string? DocumentCode)
 {
@@ -876,6 +1411,21 @@ public sealed record DocumentUpdateResult(bool Succeeded, string? NormalizedPath
         => new(false, null, error, null, null, null);
 }
 
+public sealed record VersionActivationResult(
+    bool Succeeded,
+    string? ActiveVersionId,
+    DateTimeOffset? UpdatedAtUtc,
+    string? DocumentCode,
+    string? NormalizedPath,
+    string? ErrorMessage)
+{
+    public static VersionActivationResult Success(string activeVersionId, DateTimeOffset updatedAtUtc, string? documentCode, string? normalizedPath)
+        => new(true, activeVersionId, updatedAtUtc, documentCode, normalizedPath, null);
+
+    public static VersionActivationResult Failure(string? error)
+        => new(false, null, null, null, null, error);
+}
+
 internal sealed class ManifestDocument
 {
     public List<ManifestEntry> Documents { get; set; } = new();
@@ -894,6 +1444,8 @@ internal sealed class ManifestEntry
     public DateTimeOffset? UpdatedAt { get; set; }
     public string? DocumentType { get; set; }
     public int? SequenceNumber { get; set; }
+    public int? Version { get; set; }
+    public string? ActiveVersionId { get; set; }
 }
 
 internal sealed class DocumentManifestReadException : Exception
