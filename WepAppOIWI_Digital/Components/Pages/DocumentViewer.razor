@@ -131,8 +131,7 @@ else
 
         try
         {
-            var records = await DocumentCatalog.GetDocumentsAsync();
-            document = records.FirstOrDefault(r => string.Equals(r.FileName, normalizedPath, StringComparison.OrdinalIgnoreCase));
+            document = await DocumentCatalog.TryGetDocumentAsync(normalizedPath);
             if (document is null)
             {
                 errorMessage = "ไม่พบไฟล์ที่คุณต้องการดู";

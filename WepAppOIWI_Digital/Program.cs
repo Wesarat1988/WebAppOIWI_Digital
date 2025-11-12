@@ -29,12 +29,19 @@ var catalogConnectionString = ResolveCatalogConnectionString(builder);
 builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
 builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
 builder.Services.Configure<OiwiOptions>(builder.Configuration.GetSection("Oiwi"));
+builder.Services.Configure<OiwiIndexerOptions>(builder.Configuration.GetSection("OiwiIndexer"));
 builder.Services.AddMemoryCache();
 builder.Services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(catalogConnectionString));
 builder.Services.AddSingleton<DocumentCatalogService>();
 builder.Services.AddSingleton<DocumentUploadService>();
 builder.Services.AddSingleton<IVersionStore, FilesystemVersionStore>();
 builder.Services.AddHostedService<OiwiIndexer>();
+
+var indexerEnabled = builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true);
+if (indexerEnabled)
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
 
 // DI: HttpClient ÊÓËÃÑº¤ÍÁâ¾à¹¹µì
 builder.Services.AddScoped<HttpClient>(sp =>

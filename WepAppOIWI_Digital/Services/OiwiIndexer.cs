@@ -19,35 +19,50 @@ public sealed class OiwiIndexer : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<OiwiIndexer> _logger;
     private readonly IOptionsMonitor<OiwiOptions> _options;
+    private readonly IOptionsMonitor<OiwiIndexerOptions> _indexerOptions;
 
     public OiwiIndexer(
         IServiceProvider serviceProvider,
         ILogger<OiwiIndexer> logger,
-        IOptionsMonitor<OiwiOptions> options)
+        IOptionsMonitor<OiwiOptions> options,
+        IOptionsMonitor<OiwiIndexerOptions> indexerOptions)
     {
         _serviceProvider = serviceProvider;
         _logger = logger;
         _options = options;
+        _indexerOptions = indexerOptions;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
+            var control = _indexerOptions.CurrentValue;
+
+            if (control.Enabled)
             {
-                await RunIndexAsync(stoppingToken).ConfigureAwait(false);
+                try
+                {
+                    await RunIndexAsync(stoppingToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Unexpected error while indexing OI/WI documents.");
+                }
             }
-            catch (OperationCanceledException)
+            else
             {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unexpected error while indexing OI/WI documents.");
+                _logger.LogTrace("OI/WI indexer disabled via configuration; skipping run.");
             }
 
-            var intervalSeconds = Math.Max(30, _options.CurrentValue.ScanIntervalSeconds);
+            var intervalSeconds = control.IntervalSeconds > 0
+                ? control.IntervalSeconds
+                : _options.CurrentValue.ScanIntervalSeconds;
+            intervalSeconds = Math.Max(30, intervalSeconds);
 
             try
             {
@@ -62,6 +77,12 @@ public sealed class OiwiIndexer : BackgroundService
 
     private async Task RunIndexAsync(CancellationToken cancellationToken)
     {
+        var control = _indexerOptions.CurrentValue;
+        if (!control.Enabled)
+        {
+            return;
+        }
+
         var options = _options.CurrentValue;
         if (string.IsNullOrWhiteSpace(options.SharePath))
         {
@@ -105,6 +126,7 @@ public sealed class OiwiIndexer : BackgroundService
         var batchSize = Math.Clamp(options.BatchSize, 50, 2000);
         var changes = 0;
         var hasMutations = false;
+        var mutationCount = 0;
 
         var scanResults = new System.Collections.Concurrent.ConcurrentBag<DocumentScanResult>();
         var parallelOptions = new ParallelOptions
@@ -169,6 +191,7 @@ public sealed class OiwiIndexer : BackgroundService
                 existing[result.NormalizedPath] = entity;
                 changes++;
                 hasMutations = true;
+                mutationCount++;
             }
 
             var updated = ApplyRecord(entity, result.Record, result.NormalizedPath, result.SizeBytes, result.LastWriteUtc, now);
@@ -176,6 +199,7 @@ public sealed class OiwiIndexer : BackgroundService
             {
                 changes++;
                 hasMutations = true;
+                mutationCount++;
             }
 
             if (changes >= batchSize)
@@ -200,11 +224,12 @@ public sealed class OiwiIndexer : BackgroundService
             dbContext.Documents.RemoveRange(removals);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             hasMutations = true;
+            mutationCount += removals.Count;
         }
 
         if (processed.Count == 0 && removals.Count == 0)
         {
-            _logger.LogInformation("OI/WI indexer found no documents to process.");
+            _logger.LogDebug("OI/WI indexer found no documents to process.");
             return;
         }
 
@@ -213,10 +238,19 @@ public sealed class OiwiIndexer : BackgroundService
             catalog.InvalidateCache();
         }
 
+        if (mutationCount == 0)
+        {
+            _logger.LogDebug("OI/WI index refresh complete without changes. Checked {Processed} entries.", processed.Count);
+            return;
+        }
+
+        var removalCount = removals.Count;
+        var updateCount = Math.Max(0, mutationCount - removalCount);
+
         _logger.LogInformation(
-            "OI/WI index refresh complete. Processed {Processed} documents, removed {Removed} entries.",
-            processed.Count,
-            removals.Count);
+            "OI/WI index refresh complete. Applied {Updated} updates and {Removed} removals.",
+            updateCount,
+            removalCount);
     }
 
     private static string NormalizePath(string path)
@@ -336,7 +370,11 @@ public sealed class OiwiIndexer : BackgroundService
         changed |= UpdateStruct(entity, static e => e.UpdatedAtUnixMs, static (e, v) => e.UpdatedAtUnixMs = v, unixMs);
         changed |= UpdateStruct(entity, static e => e.SizeBytes, static (e, v) => e.SizeBytes = v, effectiveSize);
         changed |= UpdateNullableStruct(entity, static e => e.LastWriteUtc, static (e, v) => e.LastWriteUtc = v, effectiveLastWrite?.ToUniversalTime());
-        changed |= UpdateStruct(entity, static e => e.IndexedAtUtc, static (e, v) => e.IndexedAtUtc = v, indexedAt);
+
+        if (changed && entity.IndexedAtUtc != indexedAt)
+        {
+            entity.IndexedAtUtc = indexedAt;
+        }
 
         return changed;
     }

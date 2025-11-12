@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -105,6 +106,7 @@ public sealed class DocumentCatalogService : IDisposable
         AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30)
     };
     private const string DocumentsCacheKey = "catalog:documents";
+    private const string LatestCachePrefix = "catalog:latest:";
 
     private DocumentCatalogContext _currentContext = DocumentCatalogContext.Uninitialized;
     private string? _connectionError;
@@ -137,7 +139,8 @@ public sealed class DocumentCatalogService : IDisposable
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
         var entities = await dbContext.Documents
             .AsNoTracking()
-            .OrderBy(d => d.DisplayName)
+            .OrderByDescending(d => d.UpdatedAtUnixMs)
+            .ThenByDescending(d => d.UpdatedAt ?? DateTimeOffset.MinValue)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -146,6 +149,35 @@ public sealed class DocumentCatalogService : IDisposable
             .ToList();
 
         _memoryCache.Set(DocumentsCacheKey, records, DocumentCacheOptions);
+
+        return records;
+    }
+
+    public async Task<IReadOnlyList<DocumentRecord>> GetLatestDocumentsAsync(int take = 5, CancellationToken cancellationToken = default)
+    {
+        var sanitizedTake = Math.Clamp(take, 1, 50);
+        var cacheKey = LatestCachePrefix + sanitizedTake.ToStringInvariant();
+
+        if (_memoryCache.TryGetValue(cacheKey, out IReadOnlyList<DocumentRecord>? cachedDocuments))
+        {
+            return cachedDocuments;
+        }
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var entities = await dbContext.Documents
+            .AsNoTracking()
+            .OrderByDescending(entity => entity.UpdatedAtUnixMs)
+            .ThenByDescending(entity => entity.UpdatedAt ?? DateTimeOffset.MinValue)
+            .Take(sanitizedTake)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var records = entities
+            .Select(ToDocumentRecord)
+            .ToList();
+
+        _memoryCache.Set(cacheKey, records, DocumentCacheOptions);
+        _pageCacheKeys[cacheKey] = 0;
 
         return records;
     }
@@ -368,13 +400,16 @@ public sealed class DocumentCatalogService : IDisposable
             .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             .Trim();
 
-        var records = await GetDocumentsAsync(cancellationToken).ConfigureAwait(false);
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
-        return records.FirstOrDefault(record =>
-            string.Equals(
-                record.FileName?.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-                comparisonPath,
-                StringComparison.OrdinalIgnoreCase));
+        var entity = await dbContext.Documents
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                d => d.NormalizedPath == comparisonPath,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return entity is null ? null : ToDocumentRecord(entity);
     }
 
     public DocumentCatalogContext GetCatalogContext()
@@ -1125,4 +1160,10 @@ public sealed class DocumentCatalogService : IDisposable
     {
         _networkConnector?.Dispose();
     }
+}
+
+internal static class DocumentCatalogFormattingExtensions
+{
+    public static string ToStringInvariant(this int value)
+        => value.ToString(CultureInfo.InvariantCulture);
 }
