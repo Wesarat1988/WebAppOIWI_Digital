@@ -1,5 +1,6 @@
 @page "/documents/viewer/{Token}"
 @rendermode InteractiveServer
+@using System
 @using System.Linq
 @inject DocumentCatalogService DocumentCatalog
 @inject NavigationManager Navigation
@@ -130,8 +131,7 @@ else
 
         try
         {
-            var records = await DocumentCatalog.GetDocumentsAsync();
-            document = records.FirstOrDefault(r => string.Equals(r.FileName, normalizedPath, StringComparison.OrdinalIgnoreCase));
+            document = await DocumentCatalog.TryGetDocumentAsync(normalizedPath);
             if (document is null)
             {
                 errorMessage = "ไม่พบไฟล์ที่คุณต้องการดู";
@@ -145,8 +145,9 @@ else
                 return;
             }
 
-            previewSource = $"/documents/preview/{Uri.EscapeDataString(Token)}";
-            downloadSource = $"/documents/download/{Uri.EscapeDataString(Token)}";
+            var cacheBust = (document?.UpdatedAt?.UtcTicks ?? DateTimeOffset.UtcNow.UtcTicks).ToString();
+            previewSource = $"/documents/preview/{Uri.EscapeDataString(Token)}?v={cacheBust}";
+            downloadSource = $"/documents/download/{Uri.EscapeDataString(Token)}?v={cacheBust}";
             canPreviewInline = string.Equals(fileHandle.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase);
             pendingPdfRender = canPreviewInline && !string.IsNullOrEmpty(previewSource);
             pdfRenderAttempts = 0;

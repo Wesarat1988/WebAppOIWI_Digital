@@ -1,14 +1,18 @@
 @page "/documents/edit/{Token}"
 @rendermode InteractiveServer
 
+@using System
 @using System.ComponentModel.DataAnnotations
 @using System.IO
+@using System.Linq
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
 @using WepAppOIWI_Digital.Services
 
 @inject DocumentCatalogService DocumentCatalog
 @inject DocumentUploadService DocumentUploader
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 @inject ILogger<WepAppOIWI_Digital.Components.Pages.DocumentEdit> Logger
 
 <PageTitle>แก้ไขเอกสาร OI/WI</PageTitle>
@@ -106,58 +110,114 @@ else
 
         <div class="mb-3">
             <label class="form-label">อัปโหลดไฟล์ใหม่ (ถ้าต้องการ)</label>
-            <InputFile OnChange="HandleFileSelected" />
+            <InputFile OnChange="OnFileSelected"
+                       accept=".pdf,.xlsx,.xls,.doc,.docx"
+                       class="form-control"
+                       aria-invalid="@(showTriedSave && !CanSave)">
+            </InputFile>
             @if (!string.IsNullOrEmpty(selectedFileName))
             {
-                <div class="form-text">ไฟล์ที่เลือก: @selectedFileName</div>
-            }
-            @if (!string.IsNullOrEmpty(fileError))
-            {
-                <div class="text-danger">@fileError</div>
+                <div class="form-text">
+                    เลือกแล้ว: @selectedFileName
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-2" @onclick="ClearFile">ลบไฟล์</button>
+                </div>
             }
         </div>
 
-        <div class="d-flex align-items-center">
-            <button type="submit" class="btn btn-primary" disabled="@isSubmitting">@(isSubmitting ? "กำลังบันทึก..." : "บันทึกการแก้ไข")</button>
-            <button type="button" class="btn btn-outline-secondary ms-2" @onclick="NavigateHome">กลับหน้า Home</button>
+        @if (!string.IsNullOrEmpty(validationMessage))
+        {
+            <div class="alert alert-warning alert-dismissible fade show d-flex align-items-start" role="alert" aria-live="polite" tabindex="-1" @ref="alertRef">
+                <div class="me-2">⚠️</div>
+                <div>@validationMessage</div>
+                <button type="button" class="btn-close ms-auto" @onclick="DismissValidationMessage" aria-label="Close"></button>
+            </div>
+        }
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary" disabled="@(!CanSave || isSubmitting)">@(isSubmitting ? "กำลังบันทึก..." : "บันทึกการแก้ไข")</button>
+            <button type="button" class="btn btn-outline-secondary" @onclick="NavigateHome">กลับหน้า Home</button>
         </div>
     </EditForm>
 
     @* ===== History (ล่าสุด 5 รายการ) ===== *@
-    @if (versions.Count > 0)
-    {
-        <div class="card mt-4">
-            <div class="card-header fw-bold">History (ล่าสุด 5 รายการ)</div>
-            <div class="list-group list-group-flush">
-                @foreach (var v in versions)
+    <div class="card mt-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="mb-0">History (ล่าสุด 5 รายการ)</h5>
+                @if (!string.IsNullOrEmpty(historyLink))
                 {
-                    <div class="list-group-item d-flex align-items-center justify-content-between">
-                        <div>
-                            <div class="fw-semibold">Version: @v.VersionId</div>
-                            <div class="text-muted small">
-                                @v.TimestampUtc.ToLocalTime():g
-                                @if (!string.IsNullOrWhiteSpace(v.Actor))
-                                {
-                                    <text> · by @v.Actor</text>
-                                }
-                                @if (!string.IsNullOrWhiteSpace(v.Comment))
-                                {
-                                    <text> · "@v.Comment"</text>
-                                }
-                                @if (v.SizeBytes is long s)
-                                {
-                                    <text> · @((s / 1024.0):F1) KB</text>
-                                }
-                            </div>
-                        </div>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-sm btn-warning" @onclick="() => Restore(v)">ย้อนเป็นเวอร์ชันนี้</button>
-                        </div>
-                    </div>
+                    <a href="@historyLink" class="small">แสดงทั้งหมด</a>
                 }
             </div>
+
+            @if (historyRows.Count > 0)
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Version</th>
+                                <th>เปลี่ยนเมื่อ</th>
+                                <th>ผู้แก้ไข</th>
+                                <th>เหตุผลการเปลี่ยน</th>
+                                <th class="text-end">ขนาด</th>
+                                <th>สถานะ</th>
+                                <th class="text-end">การทำงาน</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < historyRows.Count; i++)
+                            {
+                                var h = historyRows[i];
+                                var delta = DeltaFromPrev(i);
+                                var deltaLabel = delta is TimeSpan gap ? FormatDelta(gap) : null;
+                                <tr>
+                                    <td><code>@h.VersionLabel</code></td>
+                                    <td>
+                                        @h.Timestamp.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                                        <div class="text-muted small">
+                                            (@Rel(h.Timestamp))
+                                            @if (!string.IsNullOrEmpty(deltaLabel))
+                                            {
+                                                <span> • @deltaLabel</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td>@h.AuthorName</td>
+                                    <td class="text-truncate" style="max-width: 380px" title="@h.Comment">@h.Comment</td>
+                                    <td class="text-end">@(h.SizeKb is double size ? $"{size:F1} KB" : "-")</td>
+                                    <td>
+                                        @if (h.IsActive)
+                                        {
+                                            <span class="badge bg-success">ใช้งานอยู่</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">ไม่ได้ใช้งาน</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        @if (h.IsActive)
+                                        {
+                                            <button class="btn btn-sm btn-outline-success" disabled>Using</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-primary" disabled="@isSwitching" @onclick="() => UseVersionAsync(h)">ตั้งให้ใช้งาน</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <p class="text-muted mb-0">ยังไม่มีประวัติการเปลี่ยนแปลง</p>
+            }
         </div>
-    }
+    </div>
 }
 
 @if (!string.IsNullOrEmpty(successViewerUrl))
@@ -177,14 +237,18 @@ else
 
 @code {
     private const long MaxFileSize = 200 * 1024 * 1024;
+    private const string FileRequiredMessage = "กรุณาเลือกไฟล์เพื่ออัปเดตเอกสาร (รองรับ: PDF/Excel/Word)";
 
     [Parameter]
     public string Token { get; set; } = string.Empty;
 
     private readonly UpdateFormModel formModel = new();
-    private IBrowserFile? selectedFile;
+    private IBrowserFile? SelectedFile { get; set; }
     private string? selectedFileName;
-    private string? fileError;
+    private bool showTriedSave;
+    private string? validationMessage;
+    private ElementReference alertRef;
+    private bool shouldFocusAlert;
     private bool isSubmitting;
     private bool isLoading = true;
     private string? loadError;
@@ -197,8 +261,14 @@ else
     private string? viewerUrl;
     private string currentFileName = "-";
 
+    private bool CanSave => SelectedFile is not null;
+
     // History
-    private IReadOnlyList<VersionDescriptor> versions = Array.Empty<VersionDescriptor>();
+    private PagedResult<HistoryItem> historyPage = new(Array.Empty<HistoryItem>(), 0, 1, 5);
+    private List<HistoryRow> historyRows = new();
+    private bool isSwitching;
+    private string? historyLink;
+    private string? historyLinkCandidate;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -213,9 +283,15 @@ else
         statusMessage = null;
         statusCssClass = null;
         successViewerUrl = null;
-        selectedFile = null;
+        historyLink = null;
+        historyLinkCandidate = BuildHistoryLinkCandidate();
+        historyPage = new PagedResult<HistoryItem>(Array.Empty<HistoryItem>(), 0, 1, 5);
+        historyRows = new List<HistoryRow>();
+        SelectedFile = null;
         selectedFileName = null;
-        fileError = null;
+        validationMessage = null;
+        showTriedSave = false;
+        shouldFocusAlert = false;
 
         if (!DocumentCatalogService.TryDecodeDocumentToken(Token, out var normalizedPath))
         {
@@ -236,7 +312,7 @@ else
             }
 
             ApplyRecordToForm(currentRecord);
-            viewerUrl = BuildViewerUrl(normalizedPath);
+            viewerUrl = BuildViewerUrl(normalizedPath, currentRecord.UpdatedAt);
         }
         catch (Exception ex)
         {
@@ -277,6 +353,16 @@ else
         currentFileName = string.IsNullOrEmpty(fileName) ? "-" : fileName;
     }
 
+    private string? BuildHistoryLinkCandidate()
+    {
+        if (string.IsNullOrWhiteSpace(Token))
+        {
+            return null;
+        }
+
+        return $"/documents/{Uri.EscapeDataString(Token)}/history";
+    }
+
     private async Task HandleValidSubmit()
     {
         if (currentRecord is null || string.IsNullOrEmpty(currentNormalizedPath))
@@ -284,43 +370,43 @@ else
             return;
         }
 
-        fileError = null;
+        validationMessage = null;
+        showTriedSave = false;
+        shouldFocusAlert = false;
         statusMessage = null;
         statusCssClass = null;
         successViewerUrl = null;
+
+        if (SelectedFile is null)
+        {
+            ShowFileRequiredMessage();
+            return;
+        }
 
         isSubmitting = true;
 
         try
         {
-            Stream? updateStream = null;
+            Stream updateStream;
 
-            if (selectedFile is not null)
+            try
             {
-                try
-                {
-                    updateStream = selectedFile.OpenReadStream(MaxFileSize);
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning(ex, "Failed to open selected file for update.");
-                    fileError = "ไม่สามารถเปิดไฟล์ที่เลือกได้";
-                    return;
-                }
+                updateStream = SelectedFile.OpenReadStream(MaxFileSize);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to open selected file for update.");
+                SelectedFile = null;
+                selectedFileName = null;
+                SetValidationMessage("ไม่สามารถเปิดไฟล์ที่เลือกได้");
+                return;
             }
 
             DocumentUpdateResult result;
 
-            if (updateStream is not null)
+            await using (updateStream)
             {
-                await using (updateStream)
-                {
-                    result = await DocumentUploader.UpdateAsync(CreateUpdateRequest(updateStream));
-                }
-            }
-            else
-            {
-                result = await DocumentUploader.UpdateAsync(CreateUpdateRequest(null));
+                result = await DocumentUploader.UpdateAsync(CreateUpdateRequest(updateStream));
             }
 
             if (!result.Succeeded)
@@ -337,10 +423,13 @@ else
 
             statusCssClass = "alert alert-success";
             statusMessage = "บันทึกการแก้ไขเรียบร้อยแล้ว";
-            successViewerUrl = BuildViewerUrl(currentNormalizedPath);
+            successViewerUrl = BuildViewerUrl(currentNormalizedPath, DateTimeOffset.UtcNow);
 
-            selectedFile = null;
+            SelectedFile = null;
             selectedFileName = null;
+            showTriedSave = false;
+            validationMessage = null;
+            shouldFocusAlert = false;
 
             await RefreshRecordAsync();
             await LoadVersionsAsync(); // โหลดประวัติใหม่หลังบันทึก
@@ -351,7 +440,7 @@ else
         }
     }
 
-    private async Task RefreshRecordAsync()
+    private async Task RefreshRecordAsync(bool updateForm = true)
     {
         if (string.IsNullOrEmpty(currentNormalizedPath))
         {
@@ -360,11 +449,24 @@ else
 
         try
         {
-            currentRecord = await DocumentCatalog.TryGetDocumentAsync(currentNormalizedPath);
-            if (currentRecord is not null)
+            var refreshed = await DocumentCatalog.TryGetDocumentAsync(currentNormalizedPath);
+            if (refreshed is not null)
             {
-                ApplyRecordToForm(currentRecord);
-                viewerUrl = BuildViewerUrl(currentNormalizedPath);
+                currentRecord = refreshed;
+                historyLinkCandidate = BuildHistoryLinkCandidate();
+                UpdateHistoryLinkVisibility();
+
+                if (updateForm)
+                {
+                    ApplyRecordToForm(refreshed);
+                }
+                else
+                {
+                    var fileName = Path.GetFileName(refreshed.FileName ?? string.Empty);
+                    currentFileName = string.IsNullOrEmpty(fileName) ? "-" : fileName;
+                }
+
+                viewerUrl = BuildViewerUrl(currentNormalizedPath, refreshed.UpdatedAt);
             }
         }
         catch (Exception ex)
@@ -373,11 +475,18 @@ else
         }
     }
 
-    private void HandleFileSelected(InputFileChangeEventArgs args)
+    private void OnFileSelected(InputFileChangeEventArgs args)
     {
-        fileError = null;
+        validationMessage = null;
+        showTriedSave = false;
+        shouldFocusAlert = false;
         selectedFileName = null;
-        selectedFile = null;
+        SelectedFile = null;
+
+        if (args.FileCount <= 0)
+        {
+            return;
+        }
 
         var file = args.File;
         if (file is null)
@@ -385,14 +494,69 @@ else
             return;
         }
 
-        if (file.Size > MaxFileSize)
+        if (file.Size <= 0)
         {
-            fileError = $"ไฟล์มีขนาดใหญ่เกิน {MaxFileSize / (1024 * 1024)} MB";
+            SetValidationMessage(FileRequiredMessage);
             return;
         }
 
-        selectedFile = file;
+        if (file.Size > MaxFileSize)
+        {
+            SetValidationMessage($"ไฟล์มีขนาดใหญ่เกิน {MaxFileSize / (1024 * 1024)} MB");
+            return;
+        }
+
+        SelectedFile = file;
         selectedFileName = file.Name;
+    }
+
+    private Task ClearFile()
+    {
+        ShowFileRequiredMessage();
+        return Task.CompletedTask;
+    }
+
+    private void DismissValidationMessage()
+    {
+        validationMessage = null;
+        showTriedSave = false;
+        shouldFocusAlert = false;
+    }
+
+    private void ShowFileRequiredMessage()
+    {
+        SelectedFile = null;
+        selectedFileName = null;
+        SetValidationMessage(FileRequiredMessage);
+    }
+
+    private void SetValidationMessage(string message)
+    {
+        validationMessage = message;
+        showTriedSave = true;
+        shouldFocusAlert = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await base.OnAfterRenderAsync(firstRender);
+
+        if (shouldFocusAlert && !string.IsNullOrEmpty(validationMessage))
+        {
+            shouldFocusAlert = false;
+            try
+            {
+                await JS.InvokeVoidAsync("blazorFocus", alertRef);
+            }
+            catch (JSException)
+            {
+                // no-op: focus helper unavailable
+            }
+            catch (InvalidOperationException)
+            {
+                // component disposed before focus
+            }
+        }
     }
 
     private static string ConvertPlaceholder(string? value)
@@ -400,7 +564,7 @@ else
             ? string.Empty
             : value ?? string.Empty;
 
-    private static string? BuildViewerUrl(string? normalizedPath)
+    private static string? BuildViewerUrl(string? normalizedPath, DateTimeOffset? updatedAt)
     {
         if (string.IsNullOrWhiteSpace(normalizedPath))
         {
@@ -410,7 +574,8 @@ else
         try
         {
             var token = DocumentCatalogService.EncodeDocumentToken(normalizedPath);
-            return $"/documents/viewer/{Uri.EscapeDataString(token)}";
+            var stamp = (updatedAt?.UtcTicks ?? DateTimeOffset.UtcNow.UtcTicks).ToString();
+            return $"/documents/viewer/{Uri.EscapeDataString(token)}?v={stamp}";
         }
         catch
         {
@@ -475,44 +640,197 @@ else
 
     private async Task LoadVersionsAsync()
     {
-        if (!string.IsNullOrEmpty(currentNormalizedPath))
+        if (string.IsNullOrEmpty(currentNormalizedPath))
         {
-            versions = await DocumentUploader.GetHistoryAsync(currentNormalizedPath!, 5);
-            StateHasChanged();
-        }
-    }
-
-    private async Task Restore(VersionDescriptor v)
-    {
-        if (currentRecord is null || string.IsNullOrEmpty(currentNormalizedPath))
+            historyPage = new PagedResult<HistoryItem>(Array.Empty<HistoryItem>(), 0, 1, 5);
+            historyRows = new List<HistoryRow>();
+            UpdateHistoryLinkVisibility();
+            await InvokeAsync(StateHasChanged);
             return;
+        }
 
         try
         {
-            var ok = await DocumentUploader.RevertToAsync(
-                normalizedPath: currentNormalizedPath!,
-                versionId: v.VersionId,
-                actor: formModel.UploadedBy ?? "-",
-                comment: "Revert from UI");
-
-            if (ok)
-            {
-                statusCssClass = "alert alert-success";
-                statusMessage = $"คืนเป็นเวอร์ชัน {v.VersionId} เรียบร้อย";
-                await RefreshRecordAsync();
-                await LoadVersionsAsync();
-            }
-            else
-            {
-                statusCssClass = "alert alert-danger";
-                statusMessage = "คืนเวอร์ชันไม่สำเร็จ";
-            }
+            historyPage = await DocumentUploader.GetHistoryPageAsync(currentNormalizedPath!, 1, 5, null);
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Restore failed");
+            Logger.LogWarning(ex, "Failed to load version history for {Path}.", currentNormalizedPath);
+            historyPage = new PagedResult<HistoryItem>(Array.Empty<HistoryItem>(), 0, 1, 5);
+        }
+
+        historyRows = BuildHistoryRows(historyPage.Items);
+        UpdateHistoryLinkVisibility();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private List<HistoryRow> BuildHistoryRows(IReadOnlyList<HistoryItem> source)
+    {
+        if (source is null || source.Count == 0)
+        {
+            return new List<HistoryRow>();
+        }
+
+        var ordered = source
+            .OrderByDescending(v => v.TimestampUtc)
+            .ThenByDescending(v => v.VersionId, StringComparer.Ordinal)
+            .Take(5)
+            .ToList();
+
+        var rows = new List<HistoryRow>(ordered.Count);
+
+        foreach (var item in ordered)
+        {
+            var label = string.IsNullOrWhiteSpace(item.VersionLabel) ? "-" : item.VersionLabel.Trim();
+            var author = string.IsNullOrWhiteSpace(item.AuthorName) ? "-" : item.AuthorName!.Trim();
+            var comment = string.IsNullOrWhiteSpace(item.Comment) ? "-" : item.Comment!.Trim();
+
+            rows.Add(new HistoryRow(
+                item.VersionId,
+                label,
+                item.TimestampUtc,
+                author,
+                comment,
+                item.SizeKb,
+                item.IsActive));
+        }
+
+        return rows;
+    }
+
+    private void UpdateHistoryLinkVisibility()
+    {
+        historyLink = historyPage.TotalCount > historyPage.PageSize && !string.IsNullOrEmpty(historyLinkCandidate)
+            ? historyLinkCandidate
+            : null;
+    }
+
+    private static string Rel(DateTimeOffset timestamp)
+    {
+        var diff = DateTimeOffset.Now - timestamp;
+        if (diff < TimeSpan.Zero)
+        {
+            diff = TimeSpan.Zero;
+        }
+
+        if (diff.TotalSeconds < 60)
+        {
+            var seconds = Math.Max(0, (int)Math.Round(diff.TotalSeconds));
+            return $"{seconds}s ago";
+        }
+
+        if (diff.TotalMinutes < 60)
+        {
+            return $"{(int)Math.Round(diff.TotalMinutes)}m ago";
+        }
+
+        if (diff.TotalHours < 24)
+        {
+            return $"{(int)Math.Round(diff.TotalHours)}h ago";
+        }
+
+        return $"{(int)Math.Round(diff.TotalDays)}d ago";
+    }
+
+    private TimeSpan? DeltaFromPrev(int index)
+        => index + 1 < historyRows.Count
+            ? historyRows[index].Timestamp - historyRows[index + 1].Timestamp
+            : null;
+
+    private static string FormatDelta(TimeSpan delta)
+    {
+        var span = delta.Duration();
+
+        if (span.TotalSeconds < 60)
+        {
+            return $"Δ {(int)Math.Round(span.TotalSeconds)}s from prev.";
+        }
+
+        if (span.TotalMinutes < 60)
+        {
+            return $"Δ {(int)Math.Round(span.TotalMinutes)}m from prev.";
+        }
+
+        if (span.TotalHours < 24)
+        {
+            var hours = (int)Math.Floor(span.TotalHours);
+            var minutes = span.Minutes;
+            return minutes > 0
+                ? $"Δ {hours}h {minutes}m from prev."
+                : $"Δ {hours}h from prev.";
+        }
+
+        var days = (int)Math.Floor(span.TotalDays);
+        var remainderHours = span.Hours;
+        return remainderHours > 0
+            ? $"Δ {days}d {remainderHours}h from prev."
+            : $"Δ {days}d from prev.";
+    }
+
+    private async Task UseVersionAsync(HistoryRow row)
+    {
+        if (row.IsActive || string.IsNullOrEmpty(currentNormalizedPath))
+        {
+            return;
+        }
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"ตั้งค่าให้ใช้เวอร์ชัน {row.VersionLabel}?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        isSwitching = true;
+        statusCssClass = null;
+        statusMessage = null;
+
+        try
+        {
+            var result = await DocumentUploader.SetActiveVersionAsync(
+                normalizedPath: currentNormalizedPath!,
+                versionId: row.VersionId,
+                actor: formModel.UploadedBy ?? currentRecord?.UploadedBy,
+                comment: null);
+
+            if (!result.Succeeded)
+            {
+                statusCssClass = "alert alert-danger";
+                statusMessage = result.ErrorMessage ?? "ไม่สามารถตั้งเวอร์ชันนี้ให้ใช้งานได้";
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(result.NormalizedPath))
+            {
+                currentNormalizedPath = result.NormalizedPath;
+            }
+
+            await RefreshRecordAsync(updateForm: false);
+            await LoadVersionsAsync();
+
+            var stamp = result.UpdatedAtUtc ?? currentRecord?.UpdatedAt ?? DateTimeOffset.UtcNow;
+            viewerUrl = BuildViewerUrl(currentNormalizedPath, stamp);
+
+            statusCssClass = "alert alert-success";
+            statusMessage = $"ตั้งเวอร์ชัน {row.VersionLabel} ให้ใช้งานเรียบร้อย";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to set active version for {Path}", currentNormalizedPath);
             statusCssClass = "alert alert-danger";
-            statusMessage = "เกิดข้อผิดพลาดขณะคืนเวอร์ชัน";
+            statusMessage = "ไม่สามารถตั้งเวอร์ชันนี้ให้ใช้งานได้";
+        }
+        finally
+        {
+            isSwitching = false;
         }
     }
+
+    private sealed record HistoryRow(
+        string VersionId,
+        string VersionLabel,
+        DateTimeOffset Timestamp,
+        string AuthorName,
+        string Comment,
+        double? SizeKb,
+        bool IsActive);
 }
