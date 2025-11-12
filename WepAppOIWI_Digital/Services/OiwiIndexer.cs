@@ -252,39 +252,6 @@ public sealed class OiwiIndexer : BackgroundService
         return false;
     }
 
-    private static bool SetIfDifferent<T>(ref T target, T value) where T : class
-    {
-        if (EqualityComparer<T>.Default.Equals(target, value))
-        {
-            return false;
-        }
-
-        target = value;
-        return true;
-    }
-
-    private static bool SetStructIfDifferent<T>(ref T target, T value) where T : struct
-    {
-        if (EqualityComparer<T>.Default.Equals(target, value))
-        {
-            return false;
-        }
-
-        target = value;
-        return true;
-    }
-
-    private static bool SetNullableStructIfDifferent<T>(ref T? target, T? value) where T : struct
-    {
-        if (Nullable.Equals(target, value))
-        {
-            return false;
-        }
-
-        target = value;
-        return true;
-    }
-
     private static string? TrimOrNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -298,32 +265,78 @@ public sealed class OiwiIndexer : BackgroundService
     {
         var changed = false;
 
-        changed |= SetIfDifferent(ref entity.FileName, Path.GetFileName(normalizedPath));
-        changed |= SetIfDifferent(ref entity.RelativePath, normalizedPath);
-        changed |= SetIfDifferent(ref entity.DisplayName, record.DisplayName ?? string.Empty);
-        changed |= SetIfDifferent(ref entity.Line, TrimOrNull(record.Line));
-        changed |= SetIfDifferent(ref entity.Station, TrimOrNull(record.Station));
-        changed |= SetIfDifferent(ref entity.Model, TrimOrNull(record.Model));
-        changed |= SetIfDifferent(ref entity.Machine, TrimOrNull(record.Machine));
-        changed |= SetNullableStructIfDifferent(ref entity.UpdatedAt, record.UpdatedAt?.ToUniversalTime());
-        changed |= SetIfDifferent(ref entity.UploadedBy, TrimOrNull(record.UploadedBy));
-        changed |= SetIfDifferent(ref entity.Comment, TrimOrNull(record.Comment));
-        changed |= SetIfDifferent(ref entity.DocumentType, TrimOrNull(record.DocumentType));
-        changed |= SetNullableStructIfDifferent(ref entity.SequenceNumber, record.SequenceNumber);
-        changed |= SetIfDifferent(ref entity.ActiveVersionId, TrimOrNull(record.ActiveVersionId));
-        changed |= SetIfDifferent(ref entity.DocumentCode, TrimOrNull(record.DocumentCode));
-        changed |= SetStructIfDifferent(ref entity.Version, record.Version);
-        changed |= SetIfDifferent(ref entity.LinkUrl, record.LinkUrl);
+        static bool UpdateString(
+            DocumentEntity e,
+            Func<DocumentEntity, string?> getter,
+            Action<DocumentEntity, string?> setter,
+            string? value)
+        {
+            var current = getter(e);
+            if (string.Equals(current, value, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            setter(e, value);
+            return true;
+        }
+
+        static bool UpdateStruct<T>(
+            DocumentEntity e,
+            Func<DocumentEntity, T> getter,
+            Action<DocumentEntity, T> setter,
+            T value) where T : struct
+        {
+            if (EqualityComparer<T>.Default.Equals(getter(e), value))
+            {
+                return false;
+            }
+
+            setter(e, value);
+            return true;
+        }
+
+        static bool UpdateNullableStruct<T>(
+            DocumentEntity e,
+            Func<DocumentEntity, T?> getter,
+            Action<DocumentEntity, T?> setter,
+            T? value) where T : struct
+        {
+            if (Nullable.Equals(getter(e), value))
+            {
+                return false;
+            }
+
+            setter(e, value);
+            return true;
+        }
+
+        changed |= UpdateString(entity, static e => e.FileName, static (e, v) => e.FileName = v, Path.GetFileName(normalizedPath));
+        changed |= UpdateString(entity, static e => e.RelativePath, static (e, v) => e.RelativePath = v, normalizedPath);
+        changed |= UpdateString(entity, static e => e.DisplayName, static (e, v) => e.DisplayName = v, record.DisplayName ?? string.Empty);
+        changed |= UpdateString(entity, static e => e.Line, static (e, v) => e.Line = v, TrimOrNull(record.Line));
+        changed |= UpdateString(entity, static e => e.Station, static (e, v) => e.Station = v, TrimOrNull(record.Station));
+        changed |= UpdateString(entity, static e => e.Model, static (e, v) => e.Model = v, TrimOrNull(record.Model));
+        changed |= UpdateString(entity, static e => e.Machine, static (e, v) => e.Machine = v, TrimOrNull(record.Machine));
+        changed |= UpdateNullableStruct(entity, static e => e.UpdatedAt, static (e, v) => e.UpdatedAt = v, record.UpdatedAt?.ToUniversalTime());
+        changed |= UpdateString(entity, static e => e.UploadedBy, static (e, v) => e.UploadedBy = v, TrimOrNull(record.UploadedBy));
+        changed |= UpdateString(entity, static e => e.Comment, static (e, v) => e.Comment = v, TrimOrNull(record.Comment));
+        changed |= UpdateString(entity, static e => e.DocumentType, static (e, v) => e.DocumentType = v, TrimOrNull(record.DocumentType));
+        changed |= UpdateNullableStruct(entity, static e => e.SequenceNumber, static (e, v) => e.SequenceNumber = v, record.SequenceNumber);
+        changed |= UpdateString(entity, static e => e.ActiveVersionId, static (e, v) => e.ActiveVersionId = v, TrimOrNull(record.ActiveVersionId));
+        changed |= UpdateString(entity, static e => e.DocumentCode, static (e, v) => e.DocumentCode = v, TrimOrNull(record.DocumentCode));
+        changed |= UpdateStruct(entity, static e => e.Version, static (e, v) => e.Version = v, record.Version);
+        changed |= UpdateString(entity, static e => e.LinkUrl, static (e, v) => e.LinkUrl = v, record.LinkUrl);
 
         var effectiveSize = sizeBytes > 0 ? sizeBytes : entity.SizeBytes;
         var effectiveLastWrite = lastWriteUtc ?? entity.LastWriteUtc ?? record.UpdatedAt;
 
         var updatedAt = entity.UpdatedAt ?? effectiveLastWrite ?? DateTimeOffset.MinValue;
         var unixMs = updatedAt.ToUniversalTime().ToUnixTimeMilliseconds();
-        changed |= SetStructIfDifferent(ref entity.UpdatedAtUnixMs, unixMs);
-        changed |= SetStructIfDifferent(ref entity.SizeBytes, effectiveSize);
-        changed |= SetNullableStructIfDifferent(ref entity.LastWriteUtc, effectiveLastWrite?.ToUniversalTime());
-        changed |= SetStructIfDifferent(ref entity.IndexedAtUtc, indexedAt);
+        changed |= UpdateStruct(entity, static e => e.UpdatedAtUnixMs, static (e, v) => e.UpdatedAtUnixMs = v, unixMs);
+        changed |= UpdateStruct(entity, static e => e.SizeBytes, static (e, v) => e.SizeBytes = v, effectiveSize);
+        changed |= UpdateNullableStruct(entity, static e => e.LastWriteUtc, static (e, v) => e.LastWriteUtc = v, effectiveLastWrite?.ToUniversalTime());
+        changed |= UpdateStruct(entity, static e => e.IndexedAtUtc, static (e, v) => e.IndexedAtUtc = v, indexedAt);
 
         return changed;
     }
