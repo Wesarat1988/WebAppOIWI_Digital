@@ -6,6 +6,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.AspNetCore.WebUtilities
 @using WepAppOIWI_Digital.Services
+@implements IDisposable
 @inject DocumentCatalogService DocumentCatalog
 @inject ILogger<WepAppOIWI_Digital.Components.Pages.Home> Logger
 @inject NavigationManager Nav
@@ -164,13 +165,58 @@
     <div class="@statusAlertClass" role="alert">@statusMessage</div>
 }
 
-@if (!string.IsNullOrEmpty(errorMessage))
+@if (isLoading)
 {
-    <div class="alert alert-danger" role="alert">@errorMessage</div>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th style="width:72px;">No.</th>
+                    <th>เลขเอกสาร</th>
+                    <th>OI/WI Name</th>
+                    <th>Line</th>
+                    <th>Station</th>
+                    <th>Model</th>
+                    <th>Machine name</th>
+                    <th>Time</th>
+                    <th>Name</th>
+                    <th>Comment</th>
+                    <th>การจัดการ</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < 10; i++)
+                {
+                    <tr class="skeleton-row">
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="text-muted small mt-1">กำลังโหลดข้อมูล… หากนานผิดปกติ แสดงว่าเครือข่ายหรือเซิร์ฟเวอร์ตอบสนองช้า</div>
+    @if (showSlowMessage)
+    {
+        <div class="text-muted small mt-1">ใช้เวลานานกว่าปกติ กำลังติดต่อเซิร์ฟเวอร์…</div>
+    }
 }
-else if (isLoading)
+else if (isError)
 {
-    <p class="text-muted">กำลังโหลดข้อมูลเอกสาร...</p>
+    <div class="alert alert-warning d-flex align-items-start" role="alert">
+        <div class="me-2">⚠️</div>
+        <div>@(string.IsNullOrWhiteSpace(errorMessage) ? "ไม่สามารถโหลดข้อมูลได้" : errorMessage)</div>
+        <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="RetryAsync">ลองอีกครั้ง</button>
+    </div>
 }
 else
 {
@@ -335,7 +381,9 @@ else
 
     private DocumentCatalogService.DocumentCatalogContext catalogContext = DocumentCatalogService.DocumentCatalogContext.Uninitialized;
     private bool isLoading = true;
+    private bool isError;
     private string? errorMessage;
+    private bool showSlowMessage;
     private string? activeDirectoryPath;
     private string? statusAlertClass;
     private string? statusMessage;
@@ -343,6 +391,8 @@ else
     private bool _documentsLoaded;
     private bool _pendingScroll;
     private bool _pendingFocus;
+    private bool _loadQueued;
+    private CancellationTokenSource? _cts;
 
     private int currentPage = 1;
     private int currentPageSize = 20;
@@ -376,9 +426,9 @@ else
         }
     }
 
-    protected override async Task OnParametersSetAsync()
+    protected override void OnParametersSet()
     {
-        isLoading = true;
+        CancelPending();
 
         currentPage = Math.Max(1, PageNumberQuery);
         currentPageSize = pageSizes.Contains(PageSizeQuery) ? PageSizeQuery : 20;
@@ -393,24 +443,25 @@ else
         selectedModel = filters.Model ?? string.Empty;
         selectedUploader = filters.Uploader ?? string.Empty;
 
-        if (!_documentsLoaded)
-        {
-            await LoadDocumentsAsync();
-            _documentsLoaded = true;
-        }
-        else
-        {
-            catalogContext = DocumentCatalog.GetCatalogContext();
-            UpdateCatalogStatus(catalogContext);
-        }
+        catalogContext = DocumentCatalog.GetCatalogContext();
+        UpdateCatalogStatus(catalogContext);
 
-        await ReloadPageDataAsync();
+        isLoading = true;
+        isError = false;
+        errorMessage = null;
+        showSlowMessage = false;
         JumpInput = string.Empty;
-        isLoading = false;
+        _loadQueued = true;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_loadQueued)
+        {
+            _loadQueued = false;
+            await LoadFirstPageAsync();
+        }
+
         if (_pendingScroll)
         {
             _pendingScroll = false;
@@ -438,26 +489,46 @@ else
         }
     }
 
-    private async Task LoadDocumentsAsync()
+    private async Task LoadFilterOptionsAsync(CancellationToken cancellationToken)
     {
+        if (_documentsLoaded)
+        {
+            return;
+        }
+
         try
         {
-            var result = await DocumentCatalog.GetDocumentsAsync();
+            var result = await DocumentCatalog.GetDocumentsAsync(cancellationToken).ConfigureAwait(false);
             documents.Clear();
             documents.AddRange(result);
             catalogContext = DocumentCatalog.GetCatalogContext();
             UpdateCatalogStatus(catalogContext);
-            errorMessage = null;
+            _documentsLoaded = true;
+        }
+        catch (OperationCanceledException)
+        {
+            // ignored when navigation cancels the load
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to load OI/WI documents from the server file system.");
-            errorMessage = "ไม่สามารถโหลดรายการเอกสารได้ กรุณาลองใหม่อีกครั้ง";
+            Logger.LogDebug(ex, "Failed to refresh filter dataset.");
         }
     }
 
-    private async Task ReloadPageDataAsync()
+    private async Task LoadFirstPageAsync()
     {
+        var localCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        _cts = localCts;
+        var token = localCts.Token;
+
+        isLoading = true;
+        isError = false;
+        errorMessage = null;
+        showSlowMessage = false;
+        StateHasChanged();
+
+        _ = ShowSlowNoticeAsync(localCts);
+
         try
         {
             var filters = new OiwiSearchFilters(
@@ -474,21 +545,108 @@ else
                 currentPageSize,
                 searchPayload,
                 currentSortColumn,
-                currentSortDescending);
+                currentSortDescending,
+                token);
+
+            isError = false;
             errorMessage = null;
+            _pendingScroll = true;
+            _pendingFocus = true;
+            await LoadFilterOptionsAsync(token);
+        }
+        catch (OperationCanceledException) when (!ReferenceEquals(_cts, localCts))
+        {
+            // cancelled due to navigation or manual refresh; no user-facing error
+        }
+        catch (OperationCanceledException)
+        {
+            isError = true;
+            errorMessage = "การเชื่อมต่อช้าเกินไป โปรดลองอีกครั้ง";
+            pageData = new PagedResult<OiwiRow>(Array.Empty<OiwiRow>(), 0, currentPage, currentPageSize);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Failed to load paged OI/WI data.");
-            errorMessage = "ไม่สามารถโหลดรายการเอกสารได้ กรุณาลองใหม่อีกครั้ง";
-            pageData = new PagedResult<OiwiRow>(Array.Empty<OiwiRow>(), 0, 1, currentPageSize);
+            isError = true;
+            errorMessage = $"ไม่สามารถโหลดรายการเอกสารได้: {ex.Message}";
+            pageData = new PagedResult<OiwiRow>(Array.Empty<OiwiRow>(), 0, currentPage, currentPageSize);
         }
         finally
         {
-            _pendingScroll = true;
-            _pendingFocus = true;
+            showSlowMessage = false;
+            isLoading = false;
+
+            if (ReferenceEquals(_cts, localCts))
+            {
+                _cts.Dispose();
+                _cts = null;
+            }
+            else
+            {
+                localCts.Dispose();
+            }
+
+            StateHasChanged();
         }
     }
+
+    private async Task ShowSlowNoticeAsync(CancellationTokenSource source)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3), source.Token).ConfigureAwait(false);
+            if (!source.IsCancellationRequested)
+            {
+                showSlowMessage = true;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // expected when the load completes quickly or is cancelled
+        }
+    }
+
+    private void CancelPending()
+    {
+        if (_cts is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            _cts.Dispose();
+            _cts = null;
+        }
+    }
+
+    private async Task TriggerReloadAsync(bool refreshFilters = false)
+    {
+        if (refreshFilters)
+        {
+            _documentsLoaded = false;
+        }
+
+        CancelPending();
+
+        isLoading = true;
+        isError = false;
+        errorMessage = null;
+        showSlowMessage = false;
+        StateHasChanged();
+
+        await LoadFirstPageAsync();
+    }
+
+    private Task RetryAsync() => TriggerReloadAsync();
 
     private static string? NullIfEmpty(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -758,20 +916,14 @@ else
         }
     }
 
-    private async Task RefreshNow()
+    private Task RefreshNow()
     {
         DocumentCatalog.InvalidateCache();
-        _documentsLoaded = false;
-        isLoading = true;
-        StateHasChanged();
-
-        await LoadDocumentsAsync();
-        _documentsLoaded = true;
-        await ReloadPageDataAsync();
-
-        isLoading = false;
-        StateHasChanged();
+        return TriggerReloadAsync(refreshFilters: true);
     }
+
+    public void Dispose()
+        => CancelPending();
 
     private static string DisplayOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) || value == "-"
