@@ -1,25 +1,30 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-	<PropertyGroup>
-		<TargetFramework>net8.0</TargetFramework>
-		<Nullable>enable</Nullable>
-		<ImplicitUsings>enable</ImplicitUsings>
-		<AssemblyName>WepAppOIWI_Digital</AssemblyName>
-	</PropertyGroup>
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <AssemblyName>WepAppOIWI_Digital</AssemblyName>
+    </PropertyGroup>
 
-	<ItemGroup>
-	  <Folder Include="wwwroot\documents\.versions\" />
-	</ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.4" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.4" />
+    </ItemGroup>
 
-	<!-- ปิดโปรเซสที่อาจล็อกไฟล์ ก่อน Build/Rebuild/Publish -->
-	<Target Name="TerminateRunningAppInstance" BeforeTargets="Build;Rebuild;Publish">
-		<!-- ✅ เงื่อนไข MSBuild ที่ถูกต้อง (ไม่ต้องเทียบ == 'true') -->
-		<Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))" Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-Process -Name '$(AssemblyName)','iisexpress','dotnet' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue&quot;" IgnoreExitCode="true" />
-	</Target>
+    <ItemGroup>
+        <Folder Include="wwwroot\documents\.versions\" />
+    </ItemGroup>
 
-	<!-- ปิด build servers หลัง Clean -->
-	<Target Name="ShutdownDotNetBuildServer" AfterTargets="Clean">
-		<Exec Command="dotnet build-server shutdown" IgnoreExitCode="true" />
-	</Target>
+    <!-- ปิดโปรเซสที่อาจล็อกไฟล์ ก่อน Build/Rebuild/Publish -->
+    <Target Name="TerminateRunningAppInstance" BeforeTargets="Build;Rebuild;Publish">
+        <!-- ✅ เงื่อนไข MSBuild ที่ถูกต้อง (ไม่ต้องเทียบ == 'true') -->
+        <Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))" Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Get-Process -Name '$(AssemblyName)','iisexpress','dotnet' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue&quot;" IgnoreExitCode="true" />
+    </Target>
+
+    <!-- ปิด build servers หลัง Clean -->
+    <Target Name="ShutdownDotNetBuildServer" AfterTargets="Clean">
+        <Exec Command="dotnet build-server shutdown" IgnoreExitCode="true" />
+    </Target>
 
 </Project>
