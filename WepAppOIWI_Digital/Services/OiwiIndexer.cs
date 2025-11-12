@@ -11,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WepAppOIWI_Digital.Data;
+using WepAppOIWI_Digital.Stamps;
 
 namespace WepAppOIWI_Digital.Services;
 
@@ -361,6 +362,8 @@ public sealed class OiwiIndexer : BackgroundService
         changed |= UpdateString(entity, static e => e.DocumentCode, static (e, v) => e.DocumentCode = v, TrimOrNull(record.DocumentCode));
         changed |= UpdateStruct(entity, static e => e.Version, static (e, v) => e.Version = v, record.Version);
         changed |= UpdateString(entity, static e => e.LinkUrl, static (e, v) => e.LinkUrl = v, record.LinkUrl);
+        changed |= UpdateStruct(entity, static e => e.StampMode, static (e, v) => e.StampMode = v, record.StampMode);
+        changed |= UpdateNullableStruct(entity, static e => e.StampDate, static (e, v) => e.StampDate = v, record.StampDate);
 
         var effectiveSize = sizeBytes > 0 ? sizeBytes : entity.SizeBytes;
         var effectiveLastWrite = lastWriteUtc ?? entity.LastWriteUtc ?? record.UpdatedAt;
