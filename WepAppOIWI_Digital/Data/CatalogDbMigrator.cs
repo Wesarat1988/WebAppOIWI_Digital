@@ -11,7 +11,7 @@ public static class CatalogDbMigrator
 {
     public static async Task EnsureSchemaAsync(
         IDbContextFactory<AppDbContext> factory,
-        ILogger<CatalogDbMigrator> logger,
+        ILogger logger,
         CancellationToken cancellationToken = default)
     {
         await using var context = await factory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
