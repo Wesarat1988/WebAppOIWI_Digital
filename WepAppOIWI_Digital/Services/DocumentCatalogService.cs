@@ -1,16 +1,20 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using WepAppOIWI_Digital.Data;
 
 namespace WepAppOIWI_Digital.Services;
 
@@ -37,11 +41,40 @@ public sealed record DocumentRecord(
     string Comment,
     string DocumentType,
     int? SequenceNumber,
-    string? DocumentCode
+    string? ActiveVersionId,
+    string? DocumentCode,
+    int Version
 )
 {
     public string? LinkUrl { get; init; }
 }
+
+public sealed record OiwiRow(
+    string FileName,
+    string DisplayName,
+    string Line,
+    string Station,
+    string Model,
+    string Machine,
+    DateTimeOffset? UpdatedAt,
+    string UploadedBy,
+    string Comment,
+    string DocumentType,
+    int? SequenceNumber,
+    string? ActiveVersionId,
+    string? DocumentCode,
+    int Version,
+    string? LinkUrl
+);
+
+public readonly record struct OiwiSearchFilters(
+    string? Keyword,
+    string? DocumentType,
+    string? Line,
+    string? Station,
+    string? Model,
+    string? Uploader
+);
 
 public sealed class DocumentCatalogService : IDisposable
 {
@@ -59,11 +92,19 @@ public sealed class DocumentCatalogService : IDisposable
         AllowTrailingCommas = true
     };
     private readonly FileExtensionContentTypeProvider _contentTypeProvider = new();
-
-    private IReadOnlyList<DocumentRecord>? _cachedDocuments;
-    private DateTime _lastCacheTimeUtc;
-    private readonly TimeSpan _cacheDuration = TimeSpan.FromMinutes(5);
-    private readonly object _cacheLock = new();
+    private readonly IDbContextFactory<AppDbContext> _dbContextFactory;
+    private readonly IMemoryCache _memoryCache;
+    private readonly ConcurrentDictionary<string, byte> _pageCacheKeys = new(StringComparer.Ordinal);
+    private static readonly int[] AllowedPageSizes = new[] { 10, 20, 50, 100 };
+    private static readonly MemoryCacheEntryOptions DocumentCacheOptions = new()
+    {
+        AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30)
+    };
+    private static readonly MemoryCacheEntryOptions PageCacheOptions = new()
+    {
+        AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(30)
+    };
+    private const string DocumentsCacheKey = "catalog:documents";
 
     private DocumentCatalogContext _currentContext = DocumentCatalogContext.Uninitialized;
     private string? _connectionError;
@@ -71,11 +112,15 @@ public sealed class DocumentCatalogService : IDisposable
     public DocumentCatalogService(
         IWebHostEnvironment environment,
         IOptions<DocumentCatalogOptions> options,
-        ILogger<DocumentCatalogService> logger)
+        ILogger<DocumentCatalogService> logger,
+        IDbContextFactory<AppDbContext> dbContextFactory,
+        IMemoryCache memoryCache)
     {
         _environment = environment;
         _logger = logger;
         _options = options.Value;
+        _dbContextFactory = dbContextFactory;
+        _memoryCache = memoryCache;
 
         _configuredAbsolutePath = ResolveAbsoluteDirectory();
         _relativeSettings = ResolveRelativeDirectory();
@@ -84,29 +129,225 @@ public sealed class DocumentCatalogService : IDisposable
 
     public async Task<IReadOnlyList<DocumentRecord>> GetDocumentsAsync(CancellationToken cancellationToken = default)
     {
-        if (_cachedDocuments is not null && DateTime.UtcNow - _lastCacheTimeUtc < _cacheDuration)
+        if (_memoryCache.TryGetValue(DocumentsCacheKey, out IReadOnlyList<DocumentRecord>? cachedDocuments))
         {
-            return _cachedDocuments;
+            return cachedDocuments;
         }
 
-        lock (_cacheLock)
-        {
-            if (_cachedDocuments is not null && DateTime.UtcNow - _lastCacheTimeUtc < _cacheDuration)
-            {
-                return _cachedDocuments;
-            }
-        }
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var entities = await dbContext.Documents
+            .AsNoTracking()
+            .OrderBy(d => d.DisplayName)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
 
-        var records = await LoadDocumentsAsync(cancellationToken).ConfigureAwait(false);
+        var records = entities
+            .Select(ToDocumentRecord)
+            .ToList();
 
-        lock (_cacheLock)
-        {
-            _cachedDocuments = records;
-            _lastCacheTimeUtc = DateTime.UtcNow;
-        }
+        _memoryCache.Set(DocumentsCacheKey, records, DocumentCacheOptions);
 
         return records;
     }
+
+    public async Task<PagedResult<OiwiRow>> GetOiwiPageAsync(
+        int page,
+        int pageSize,
+        string? search,
+        string? sortColumn,
+        bool sortDesc,
+        CancellationToken cancellationToken = default)
+    {
+        var sanitizedPage = Math.Max(1, page);
+        var sanitizedPageSize = SanitizePageSize(pageSize);
+        var cacheKey = BuildPageCacheKey(sanitizedPage, sanitizedPageSize, search, sortColumn, sortDesc);
+
+        if (_memoryCache.TryGetValue(cacheKey, out PagedResult<OiwiRow>? cachedPage))
+        {
+            return cachedPage;
+        }
+
+        var filters = ParseOiwiSearchQuery(search);
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var query = dbContext.Documents.AsNoTracking();
+        query = ApplyFilters(query, filters);
+        query = ApplySort(query, sortColumn, sortDesc);
+
+        var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+        var skip = (sanitizedPage - 1) * sanitizedPageSize;
+        if (skip < 0)
+        {
+            skip = 0;
+        }
+
+        var items = await query
+            .Skip(skip)
+            .Take(sanitizedPageSize)
+            .Select(static entity => new OiwiRow(
+                entity.NormalizedPath,
+                entity.DisplayName,
+                entity.Line ?? "-",
+                entity.Station ?? "-",
+                entity.Model ?? "-",
+                entity.Machine ?? "-",
+                entity.UpdatedAt,
+                entity.UploadedBy ?? "-",
+                entity.Comment ?? "-",
+                entity.DocumentType ?? "-",
+                entity.SequenceNumber,
+                entity.ActiveVersionId,
+                entity.DocumentCode,
+                entity.Version,
+                entity.LinkUrl))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var result = new PagedResult<OiwiRow>(items, totalCount, sanitizedPage, sanitizedPageSize);
+        _memoryCache.Set(cacheKey, result, PageCacheOptions);
+        _pageCacheKeys[cacheKey] = 0;
+
+        return result;
+    }
+
+    private static int SanitizePageSize(int value)
+    {
+        if (Array.IndexOf(AllowedPageSizes, value) >= 0)
+        {
+            return value;
+        }
+
+        if (value < AllowedPageSizes[0])
+        {
+            return AllowedPageSizes[0];
+        }
+
+        if (value > AllowedPageSizes[^1])
+        {
+            return AllowedPageSizes[^1];
+        }
+
+        return Array.IndexOf(AllowedPageSizes, 20) >= 0 ? 20 : AllowedPageSizes[0];
+    }
+
+    private static IQueryable<DocumentEntity> ApplyFilters(
+        IQueryable<DocumentEntity> query,
+        OiwiSearchFilters filters)
+    {
+        if (!string.IsNullOrWhiteSpace(filters.DocumentType))
+        {
+            var documentType = filters.DocumentType.Trim();
+            query = query.Where(entity => entity.DocumentType != null && entity.DocumentType == documentType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.Line))
+        {
+            var line = filters.Line.Trim();
+            query = query.Where(entity => entity.Line != null && entity.Line == line);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.Station))
+        {
+            var station = filters.Station.Trim();
+            query = query.Where(entity => entity.Station != null && entity.Station == station);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.Model))
+        {
+            var model = filters.Model.Trim();
+            query = query.Where(entity => entity.Model != null && entity.Model == model);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.Uploader))
+        {
+            var uploader = filters.Uploader.Trim();
+            query = query.Where(entity => entity.UploadedBy != null && entity.UploadedBy == uploader);
+        }
+
+        if (!string.IsNullOrWhiteSpace(filters.Keyword))
+        {
+            var keyword = filters.Keyword.Trim();
+            if (!string.IsNullOrEmpty(keyword))
+            {
+                var like = $"%{keyword}%";
+                query = query.Where(entity =>
+                    (entity.DisplayName != null && EF.Functions.Like(entity.DisplayName, like)) ||
+                    (entity.DocumentCode != null && EF.Functions.Like(entity.DocumentCode, like)) ||
+                    (entity.Line != null && EF.Functions.Like(entity.Line, like)) ||
+                    (entity.Station != null && EF.Functions.Like(entity.Station, like)) ||
+                    (entity.Model != null && EF.Functions.Like(entity.Model, like)) ||
+                    (entity.Machine != null && EF.Functions.Like(entity.Machine, like)) ||
+                    (entity.UploadedBy != null && EF.Functions.Like(entity.UploadedBy, like)) ||
+                    (entity.Comment != null && EF.Functions.Like(entity.Comment, like)));
+            }
+        }
+
+        return query;
+    }
+
+    private static IQueryable<DocumentEntity> ApplySort(
+        IQueryable<DocumentEntity> query,
+        string? sortColumn,
+        bool sortDesc)
+    {
+        var normalized = string.IsNullOrWhiteSpace(sortColumn)
+            ? "time"
+            : sortColumn.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            "documentcode" => sortDesc
+                ? query.OrderByDescending(entity => entity.DocumentCode ?? string.Empty)
+                : query.OrderBy(entity => entity.DocumentCode ?? string.Empty),
+            "displayname" or "name" => sortDesc
+                ? query.OrderByDescending(entity => entity.DisplayName)
+                : query.OrderBy(entity => entity.DisplayName),
+            "line" => sortDesc
+                ? query.OrderByDescending(entity => entity.Line ?? string.Empty)
+                : query.OrderBy(entity => entity.Line ?? string.Empty),
+            "station" => sortDesc
+                ? query.OrderByDescending(entity => entity.Station ?? string.Empty)
+                : query.OrderBy(entity => entity.Station ?? string.Empty),
+            "model" => sortDesc
+                ? query.OrderByDescending(entity => entity.Model ?? string.Empty)
+                : query.OrderBy(entity => entity.Model ?? string.Empty),
+            "machine" => sortDesc
+                ? query.OrderByDescending(entity => entity.Machine ?? string.Empty)
+                : query.OrderBy(entity => entity.Machine ?? string.Empty),
+            "uploadedby" => sortDesc
+                ? query.OrderByDescending(entity => entity.UploadedBy ?? string.Empty)
+                : query.OrderBy(entity => entity.UploadedBy ?? string.Empty),
+            "comment" => sortDesc
+                ? query.OrderByDescending(entity => entity.Comment ?? string.Empty)
+                : query.OrderBy(entity => entity.Comment ?? string.Empty),
+            _ => sortDesc
+                ? query.OrderByDescending(entity => entity.UpdatedAt ?? DateTimeOffset.MinValue)
+                : query.OrderBy(entity => entity.UpdatedAt ?? DateTimeOffset.MinValue)
+        };
+    }
+
+    private static string BuildPageCacheKey(int page, int pageSize, string? search, string? sortColumn, bool sortDesc)
+        => $"catalog:page:{page}:{pageSize}:{search ?? string.Empty}:{sortColumn ?? string.Empty}:{sortDesc}";
+
+    private static DocumentRecord ToDocumentRecord(DocumentEntity entity)
+        => new(
+            entity.NormalizedPath,
+            entity.DisplayName,
+            entity.Line ?? "-",
+            entity.Station ?? "-",
+            entity.Model ?? "-",
+            entity.Machine ?? "-",
+            entity.UpdatedAt,
+            entity.UploadedBy ?? "-",
+            entity.Comment ?? "-",
+            entity.DocumentType ?? "-",
+            entity.SequenceNumber,
+            entity.ActiveVersionId,
+            entity.DocumentCode,
+            entity.Version)
+        {
+            LinkUrl = entity.LinkUrl
+        };
 
     public async Task<DocumentRecord?> TryGetDocumentAsync(string? normalizedPath, CancellationToken cancellationToken = default)
     {
@@ -131,18 +372,56 @@ public sealed class DocumentCatalogService : IDisposable
     public DocumentCatalogContext GetCatalogContext()
         => Volatile.Read(ref _currentContext);
 
-    public async Task<DocumentCatalogContext> EnsureCatalogContextAsync(CancellationToken cancellationToken = default)
+    public Task<DocumentCatalogContext> EnsureCatalogContextAsync(CancellationToken cancellationToken = default)
     {
-        await GetDocumentsAsync(cancellationToken).ConfigureAwait(false);
-        return GetCatalogContext();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        EnsureNetworkShareConnection();
+        var context = ResolveActiveContext();
+        Volatile.Write(ref _currentContext, context);
+        return Task.FromResult(context);
+    }
+
+    public string ResolvePhysicalPath(string normalizedPath)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+        {
+            throw new ArgumentException("Value cannot be null or whitespace.", nameof(normalizedPath));
+        }
+
+        var context = GetCatalogContext();
+        var root = context.ActiveRootPath ?? throw new InvalidOperationException("Catalog root not set.");
+        var relative = normalizedPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        return Path.GetFullPath(Path.Combine(root, relative));
+    }
+
+    public string GetDocumentRootPath(string documentCode)
+    {
+        if (string.IsNullOrWhiteSpace(documentCode))
+        {
+            throw new ArgumentException("Value cannot be null or whitespace.", nameof(documentCode));
+        }
+
+        var context = GetCatalogContext();
+        var root = context.ActiveRootPath ?? throw new InvalidOperationException("Catalog root not set.");
+        var safeCode = Slugify(documentCode);
+        return Path.Combine(root, safeCode);
+    }
+
+    public (string CurrentDirectory, string VersionsDirectory) GetDocumentDirectories(string documentCode)
+    {
+        var root = GetDocumentRootPath(documentCode);
+        return (Path.Combine(root, "current"), Path.Combine(root, "versions"));
     }
 
     public void InvalidateCache()
     {
-        lock (_cacheLock)
+        _memoryCache.Remove(DocumentsCacheKey);
+
+        foreach (var key in _pageCacheKeys.Keys)
         {
-            _cachedDocuments = null;
-            _lastCacheTimeUtc = DateTime.MinValue;
+            _memoryCache.Remove(key);
+            _pageCacheKeys.TryRemove(key, out _);
         }
     }
 
@@ -155,6 +434,61 @@ public sealed class DocumentCatalogService : IDisposable
 
         var bytes = Encoding.UTF8.GetBytes(normalizedPath);
         return WebEncoders.Base64UrlEncode(bytes);
+    }
+
+    public static string BuildOiwiSearchQuery(OiwiSearchFilters filters)
+    {
+        static string? Normalize(string? value)
+            => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+        var builder = new List<string>();
+
+        void Add(string key, string? value)
+        {
+            var normalized = Normalize(value);
+            if (!string.IsNullOrEmpty(normalized))
+            {
+                builder.Add($"{key}={normalized}");
+            }
+        }
+
+        Add("keyword", filters.Keyword);
+        Add("type", filters.DocumentType);
+        Add("line", filters.Line);
+        Add("station", filters.Station);
+        Add("model", filters.Model);
+        Add("uploader", filters.Uploader);
+
+        return string.Join('&', builder);
+    }
+
+    public static OiwiSearchFilters ParseOiwiSearchQuery(string? search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return new OiwiSearchFilters(null, null, null, null, null, null);
+        }
+
+        var query = QueryHelpers.ParseQuery(search.StartsWith("?") ? search : "?" + search);
+
+        string? Read(string key)
+        {
+            if (!query.TryGetValue(key, out var value))
+            {
+                return null;
+            }
+
+            var candidate = value.ToString();
+            return string.IsNullOrWhiteSpace(candidate) ? null : candidate.Trim();
+        }
+
+        return new OiwiSearchFilters(
+            Read("keyword"),
+            Read("type"),
+            Read("line"),
+            Read("station"),
+            Read("model"),
+            Read("uploader"));
     }
 
     public static bool TryDecodeDocumentToken(string? token, out string normalizedPath)
@@ -187,7 +521,7 @@ public sealed class DocumentCatalogService : IDisposable
         }
     }
 
-    private async Task<IReadOnlyList<DocumentRecord>> LoadDocumentsAsync(CancellationToken cancellationToken)
+    internal async Task<IReadOnlyList<DocumentRecord>> LoadDocumentsFromSourceAsync(CancellationToken cancellationToken = default)
     {
         EnsureNetworkShareConnection();
 
@@ -360,6 +694,12 @@ public sealed class DocumentCatalogService : IDisposable
         var sequenceNumber = entry.SequenceNumber;
         var documentCode = DocumentNumbering.FormatCode(normalizedDocumentType, sequenceNumber);
 
+        var version = entry.Version.GetValueOrDefault();
+        if (version <= 0)
+        {
+            version = 1;
+        }
+
         return new DocumentRecord(
             normalizedRelativePath,
             string.IsNullOrWhiteSpace(displayName) ? fallbackDisplayName : displayName,
@@ -372,7 +712,9 @@ public sealed class DocumentCatalogService : IDisposable
             NormalizeMetadata(entry.Comment),
             displayDocumentType,
             sequenceNumber,
-            documentCode)
+            entry.ActiveVersionId,
+            documentCode,
+            version)
         {
             LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
         };
@@ -398,7 +740,9 @@ public sealed class DocumentCatalogService : IDisposable
             "-",
             "-",
             null,
-            null
+            null,
+            null,
+            1
         )
         {
             LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
@@ -441,8 +785,58 @@ public sealed class DocumentCatalogService : IDisposable
     {
         try
         {
-            return Directory.EnumerateFiles(rootDirectory, "*", SearchOption.AllDirectories)
-                .ToList();
+            var results = new List<string>();
+            var stack = new Stack<string>();
+            stack.Push(rootDirectory);
+
+            while (stack.Count > 0)
+            {
+                var current = stack.Pop();
+
+                IEnumerable<string> directories;
+                try
+                {
+                    directories = Directory.EnumerateDirectories(current);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var directory in directories)
+                {
+                    var name = Path.GetFileName(directory);
+                    if (string.Equals(name, "versions", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    stack.Push(directory);
+                }
+
+                IEnumerable<string> files;
+                try
+                {
+                    files = Directory.EnumerateFiles(current, "*", SearchOption.TopDirectoryOnly);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var file in files)
+                {
+                    var fileName = Path.GetFileName(file);
+                    if (string.Equals(fileName, "meta.json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    results.Add(file);
+                }
+            }
+
+            return results;
         }
         catch (Exception ex)
         {
@@ -511,6 +905,36 @@ public sealed class DocumentCatalogService : IDisposable
 
         var trimmed = value.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? "-" : trimmed;
+    }
+
+    public static string Slugify(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var invalid = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(value.Length);
+
+        foreach (var ch in value.Trim())
+        {
+            if (invalid.Contains(ch))
+            {
+                continue;
+            }
+
+            builder.Append(char.IsWhiteSpace(ch) ? '_' : ch);
+        }
+
+        var slug = builder.ToString().Trim('_');
+
+        while (slug.Contains("__", StringComparison.Ordinal))
+        {
+            slug = slug.Replace("__", "_", StringComparison.Ordinal);
+        }
+
+        return slug;
     }
 
     private DocumentCatalogContext ResolveActiveContext()
@@ -685,6 +1109,8 @@ public sealed class DocumentCatalogService : IDisposable
         public DateTimeOffset? UpdatedAt { get; init; }
         public string? DocumentType { get; init; }
         public int? SequenceNumber { get; init; }
+        public int? Version { get; init; }
+        public string? ActiveVersionId { get; init; }
     }
 
     public void Dispose()
