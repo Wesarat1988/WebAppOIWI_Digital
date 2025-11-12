@@ -91,6 +91,12 @@ if (builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true))
     builder.Services.AddHostedService<OiwiIndexer>();
 }
 
+var indexerEnabled = IsOiwiIndexerEnabled(builder);
+if (indexerEnabled)
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
+
 // DI: HttpClient ÊÓËÃÑº¤ÍÁâ¾à¹¹µì
 builder.Services.AddScoped<HttpClient>(sp =>
 {
@@ -246,4 +252,7 @@ static string ResolveCatalogConnectionString(WebApplicationBuilder builder)
     Directory.CreateDirectory(Path.GetDirectoryName(builderConn.DataSource)!);
     return builderConn.ToString();
 }
+
+static bool IsOiwiIndexerEnabled(WebApplicationBuilder builder)
+    => builder.Configuration.GetValue("OiwiIndexer:Enabled", true);
 
