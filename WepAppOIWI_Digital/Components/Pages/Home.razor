@@ -421,24 +421,6 @@ else
     [SupplyParameterFromQuery(Name = "sort")] public string? SortQuery { get; set; }
     [SupplyParameterFromQuery(Name = "desc")] public bool SortDescQuery { get; set; } = true;
 
-    private bool _documentsLoaded;
-    private bool _pendingScroll;
-    private bool _pendingFocus;
-    private bool _loadQueued;
-    private CancellationTokenSource? _cts;
-
-    private int currentPage = 1;
-    private int currentPageSize = 20;
-    private string currentSortColumn = "Time";
-    private bool currentSortDescending = true;
-    private string JumpInput { get; set; } = string.Empty;
-
-    [SupplyParameterFromQuery(Name = "page")] public int PageNumberQuery { get; set; } = 1;
-    [SupplyParameterFromQuery(Name = "pageSize")] public int PageSizeQuery { get; set; } = 20;
-    [SupplyParameterFromQuery(Name = "search")] public string? SearchQuery { get; set; }
-    [SupplyParameterFromQuery(Name = "sort")] public string? SortQuery { get; set; }
-    [SupplyParameterFromQuery(Name = "desc")] public bool SortDescQuery { get; set; } = true;
-
     protected override async Task OnInitializedAsync()
     {
         if (!Nav.ToAbsoluteUri(Nav.Uri).Query.Contains("pageSize=", StringComparison.OrdinalIgnoreCase))
@@ -808,31 +790,6 @@ else
             searchTerm = newValue;
             Go(1);
         }
-    }
-
-    private void OnDocumentTypeChanged(ChangeEventArgs args)
-    {
-        selectedDocumentType = args.Value?.ToString() ?? string.Empty;
-    }
-
-    private void OnLineChanged(ChangeEventArgs args)
-    {
-        selectedLine = args.Value?.ToString() ?? string.Empty;
-    }
-
-    private void OnStationChanged(ChangeEventArgs args)
-    {
-        selectedStation = args.Value?.ToString() ?? string.Empty;
-    }
-
-    private void OnModelChanged(ChangeEventArgs args)
-    {
-        selectedModel = args.Value?.ToString() ?? string.Empty;
-    }
-
-    private void OnUploaderChanged(ChangeEventArgs args)
-    {
-        selectedUploader = args.Value?.ToString() ?? string.Empty;
     }
 
     private void ApplyFiltersFromModal()
