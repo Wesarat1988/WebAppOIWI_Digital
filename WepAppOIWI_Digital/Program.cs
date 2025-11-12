@@ -55,7 +55,8 @@ using (var scope = app.Services.CreateScope())
     var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
     using var db = factory.CreateDbContext();
     db.Database.EnsureCreated();
-    var migratorLogger = scope.ServiceProvider.GetRequiredService<ILogger<CatalogDbMigrator>>();
+    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+    var migratorLogger = loggerFactory.CreateLogger("CatalogDbMigrator");
     await CatalogDbMigrator.EnsureSchemaAsync(factory, migratorLogger);
 }
 
