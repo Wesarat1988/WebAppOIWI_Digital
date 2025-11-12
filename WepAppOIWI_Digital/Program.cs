@@ -35,6 +35,51 @@ builder.Services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(
 builder.Services.AddSingleton<DocumentCatalogService>();
 builder.Services.AddSingleton<DocumentUploadService>();
 builder.Services.AddSingleton<IVersionStore, FilesystemVersionStore>();
+builder.Services.AddHostedService<OiwiIndexer>();
+
+var indexerEnabled = builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true);
+if (indexerEnabled)
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
+
+var indexerEnabled = builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true);
+if (indexerEnabled)
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
+
+var indexerEnabled = builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true);
+if (indexerEnabled)
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
+
+var indexerEnabled = builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true);
+if (indexerEnabled)
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
+
+if (builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true))
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
+
+if (builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true))
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
+
+if (IsOiwiIndexerEnabled(builder.Configuration))
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
+
+if (builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true))
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
 
 if (IsOiwiIndexerEnabled(builder))
 {
