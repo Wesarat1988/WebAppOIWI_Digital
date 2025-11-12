@@ -38,6 +38,8 @@ END;";
         await EnsureColumnAsync(connection, logger, "Documents", "RelativePath", "TEXT", cancellationToken).ConfigureAwait(false);
         await EnsureColumnAsync(connection, logger, "Documents", "SizeBytes", "INTEGER NOT NULL DEFAULT 0", cancellationToken).ConfigureAwait(false);
         await EnsureColumnAsync(connection, logger, "Documents", "LastWriteUtc", "TEXT", cancellationToken).ConfigureAwait(false);
+        await EnsureColumnAsync(connection, logger, "Documents", "StampMode", "INTEGER NOT NULL DEFAULT 0", cancellationToken).ConfigureAwait(false);
+        await EnsureColumnAsync(connection, logger, "Documents", "StampDate", "TEXT", cancellationToken).ConfigureAwait(false);
 
         logger.LogDebug("Ensuring indexes for catalog queries exist.");
         await ExecuteNonQueryAsync(connection, "CREATE INDEX IF NOT EXISTS IX_Documents_UpdatedAtUnixMs ON Documents(UpdatedAtUnixMs DESC);", cancellationToken).ConfigureAwait(false);

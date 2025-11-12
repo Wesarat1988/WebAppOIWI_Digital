@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using System.Collections.Generic
 @using System.ComponentModel.DataAnnotations
+@using System.Globalization
 @inject DocumentUploadService DocumentUploader
 @inject DocumentCatalogService Catalog
 @inject NavigationManager Navigation
@@ -107,6 +108,45 @@ else
         <ValidationMessage For="() => formModel.Comment" />
     </div>
 
+    <div class="card mb-3">
+        <div class="card-header">ตัวเลือกตราประทับ (Stamp) บนเอกสาร</div>
+        <div class="card-body d-grid gap-3">
+            <InputRadioGroup Value="formModel.Stamp"
+                             ValueChanged="OnStampModeChanged"
+                             ValueExpression="() => formModel.Stamp">
+                <div class="form-check">
+                    <InputRadio class="form-check-input" id="stampNone" Value="StampMode.None" />
+                    <label class="form-check-label" for="stampNone">ไม่ติดตราประทับ</label>
+                </div>
+                <div class="form-check">
+                    <InputRadio class="form-check-input" id="stampMC" Value="StampMode.MasterControl" />
+                    <label class="form-check-label" for="stampMC">Master Control วันที่ปั้ม IE/PE DCFAN</label>
+                </div>
+                <div class="form-check">
+                    <InputRadio class="form-check-input" id="stampVU" Value="StampMode.ValidUnitTemporary" />
+                    <label class="form-check-label" for="stampVU">VALID UNIT วันที่หมดอายุ TEMPORARY</label>
+                </div>
+            </InputRadioGroup>
+
+            <div class="row g-2 align-items-center">
+                <div class="col-auto">
+                    <label class="col-form-label" for="stampDateInput">เลือกวันที่</label>
+                </div>
+                <div class="col-auto">
+                    <input id="stampDateInput"
+                           class="form-control"
+                           type="date"
+                           @bind="StampDateInput"
+                           disabled="@(formModel.Stamp == StampMode.None)" />
+                </div>
+                <div class="col">
+                    <small class="text-muted">วันที่นี้จะพิมพ์บนทุกหน้าของเอกสาร ตามรูปแบบที่เลือก</small>
+                </div>
+            </div>
+            <ValidationMessage For="() => formModel.StampDate" />
+        </div>
+    </div>
+
     <div class="mb-3">
         <label class="form-label">เลือกไฟล์</label>
         <InputFile OnChange="HandleFileSelected" />
@@ -146,6 +186,38 @@ else
 @code {
     private const long MaxFileSize = 200 * 1024 * 1024;
     private readonly UploadFormModel formModel = new();
+    private string? StampDateInput
+    {
+        get => formModel.StampDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                formModel.StampDate = null;
+                return;
+            }
+
+            if (DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+            {
+                formModel.StampDate = parsed;
+            }
+        }
+    }
+    private void OnStampModeChanged(StampMode value)
+    {
+        formModel.Stamp = value;
+
+        if (value == StampMode.None)
+        {
+            formModel.StampDate = null;
+            return;
+        }
+
+        if (formModel.StampDate is null)
+        {
+            formModel.StampDate = DateOnly.FromDateTime(DateTime.Today);
+        }
+    }
     private IBrowserFile? selectedFile;
     private string? selectedFileName;
     private string? fileError;
@@ -188,6 +260,11 @@ else
         {
             await using var stream = selectedFile.OpenReadStream(MaxFileSize);
 
+            if (formModel.Stamp == StampMode.None)
+            {
+                formModel.StampDate = null;
+            }
+
             var request = new DocumentUploadRequest(
                 DisplayName: formModel.DisplayName!,
                 DocumentType: normalizedDocumentType,
@@ -199,7 +276,9 @@ else
                 Comment: formModel.Comment,
                 OriginalFileName: selectedFile.Name,
                 Content: stream,
-                UploadedAt: DateTimeOffset.UtcNow);
+                UploadedAt: DateTimeOffset.UtcNow,
+                StampMode: formModel.Stamp,
+                StampDate: formModel.StampDate);
 
             var result = await DocumentUploader.UploadAsync(request);
 
@@ -366,6 +445,8 @@ else
         [StringLength(100)] public string? MachineName { get; set; }
         [StringLength(100)] public string? UploadedBy { get; set; }
         [StringLength(500)] public string? Comment { get; set; }
+        public StampMode Stamp { get; set; } = StampMode.None;
+        public DateOnly? StampDate { get; set; }
 
         public void Reset()
         {
@@ -377,6 +458,8 @@ else
             MachineName = null;
             UploadedBy = null;
             Comment = null;
+            Stamp = StampMode.None;
+            StampDate = null;
         }
 
         public IEnumerable<ValidationResult> Validate(ValidationContext context)
@@ -387,6 +470,13 @@ else
                 yield return new ValidationResult(
                     "กรุณากรอก Machine name สำหรับเอกสาร WI",
                     new[] { nameof(MachineName) });
+            }
+
+            if (Stamp != StampMode.None && StampDate is null)
+            {
+                yield return new ValidationResult(
+                    "กรุณาเลือกวันที่สำหรับตราประทับ",
+                    new[] { nameof(StampDate) });
             }
         }
     }
