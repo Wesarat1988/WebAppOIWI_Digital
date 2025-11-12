@@ -191,7 +191,7 @@ public sealed class DocumentUploadService
                 ? normalizedPath
                 : current.FileName;
 
-            var physicalPath = _catalogService.ResolvePhysicalPath(relativePath);
+            var physicalPath = _catalogService.ResolveDocumentPhysicalPath(relativePath);
             long? size = null;
 
             try
@@ -237,7 +237,7 @@ public sealed class DocumentUploadService
         string physical;
         try
         {
-            physical = _catalogService.ResolvePhysicalPath(normalizedPath);
+            physical = _catalogService.ResolveDocumentPhysicalPath(normalizedPath);
         }
         catch (Exception ex)
         {
@@ -326,7 +326,7 @@ public sealed class DocumentUploadService
             {
                 if (!string.IsNullOrEmpty(documentCode))
                 {
-                    (targetDirectory, _) = _catalogService.GetDocumentDirectories(documentCode);
+                    (targetDirectory, _) = _catalogService.GetDocumentStorageDirectories(documentCode);
                 }
 
                 Directory.CreateDirectory(targetDirectory);
@@ -534,7 +534,7 @@ public sealed class DocumentUploadService
             {
                 try
                 {
-                    (currentDirectory, versionsDirectory) = _catalogService.GetDocumentDirectories(documentCode);
+                    (currentDirectory, versionsDirectory) = _catalogService.GetDocumentStorageDirectories(documentCode);
 
                     if (!Directory.Exists(currentDirectory))
                     {
@@ -755,7 +755,7 @@ public sealed class DocumentUploadService
             {
                 try
                 {
-                    (currentDirectory, versionsDirectory) = _catalogService.GetDocumentDirectories(documentCode);
+                    (currentDirectory, versionsDirectory) = _catalogService.GetDocumentStorageDirectories(documentCode);
                     Directory.CreateDirectory(currentDirectory!);
                     if (!string.IsNullOrEmpty(versionsDirectory))
                     {

@@ -382,7 +382,7 @@ public sealed class DocumentCatalogService : IDisposable
         return Task.FromResult(context);
     }
 
-    public string ResolvePhysicalPath(string normalizedPath)
+    public string ResolveDocumentPhysicalPath(string normalizedPath)
     {
         if (string.IsNullOrWhiteSpace(normalizedPath))
         {
@@ -395,7 +395,7 @@ public sealed class DocumentCatalogService : IDisposable
         return Path.GetFullPath(Path.Combine(root, relative));
     }
 
-    public string GetDocumentRootPath(string documentCode)
+    public string GetDocumentRootDirectory(string documentCode)
     {
         if (string.IsNullOrWhiteSpace(documentCode))
         {
@@ -408,41 +408,9 @@ public sealed class DocumentCatalogService : IDisposable
         return Path.Combine(root, safeCode);
     }
 
-    public (string CurrentDirectory, string VersionsDirectory) GetDocumentDirectories(string documentCode)
+    public (string CurrentDirectory, string VersionsDirectory) GetDocumentStorageDirectories(string documentCode)
     {
-        var root = GetDocumentRootPath(documentCode);
-        return (Path.Combine(root, "current"), Path.Combine(root, "versions"));
-    }
-
-    public string ResolvePhysicalPath(string normalizedPath)
-    {
-        if (string.IsNullOrWhiteSpace(normalizedPath))
-        {
-            throw new ArgumentException("Value cannot be null or whitespace.", nameof(normalizedPath));
-        }
-
-        var context = GetCatalogContext();
-        var root = context.ActiveRootPath ?? throw new InvalidOperationException("Catalog root not set.");
-        var relative = normalizedPath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-        return Path.GetFullPath(Path.Combine(root, relative));
-    }
-
-    public string GetDocumentRootPath(string documentCode)
-    {
-        if (string.IsNullOrWhiteSpace(documentCode))
-        {
-            throw new ArgumentException("Value cannot be null or whitespace.", nameof(documentCode));
-        }
-
-        var context = GetCatalogContext();
-        var root = context.ActiveRootPath ?? throw new InvalidOperationException("Catalog root not set.");
-        var safeCode = Slugify(documentCode);
-        return Path.Combine(root, safeCode);
-    }
-
-    public (string CurrentDirectory, string VersionsDirectory) GetDocumentDirectories(string documentCode)
-    {
-        var root = GetDocumentRootPath(documentCode);
+        var root = GetDocumentRootDirectory(documentCode);
         return (Path.Combine(root, "current"), Path.Combine(root, "versions"));
     }
 

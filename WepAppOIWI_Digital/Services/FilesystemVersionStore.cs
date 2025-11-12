@@ -373,7 +373,7 @@ public sealed class FilesystemVersionStore : IVersionStore
 
         try
         {
-            var (_, versionsDirectory) = _catalogService.GetDocumentDirectories(documentCode);
+            var (_, versionsDirectory) = _catalogService.GetDocumentStorageDirectories(documentCode);
             if (ensureExists)
             {
                 Directory.CreateDirectory(versionsDirectory);
