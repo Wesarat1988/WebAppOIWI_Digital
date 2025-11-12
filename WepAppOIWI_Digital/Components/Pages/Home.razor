@@ -566,9 +566,9 @@ else
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to load paged OI/WI data.");
+            Logger.LogWarning(ex, "Failed to load paged OI/WI data.");
             isError = true;
-            errorMessage = $"ไม่สามารถโหลดรายการเอกสารได้: {ex.Message}";
+            errorMessage = "ไม่สามารถโหลดรายการเอกสารได้ (ปัญหาการจัดเรียงเวลาในฐานข้อมูล) – กด “ลองอีกครั้ง” หรือแจ้งผู้ดูแลระบบ";
             pageData = new PagedResult<OiwiRow>(Array.Empty<OiwiRow>(), 0, currentPage, currentPageSize);
         }
         finally

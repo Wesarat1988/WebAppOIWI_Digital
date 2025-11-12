@@ -170,9 +170,10 @@ public sealed class DocumentCatalogService : IDisposable
         var filters = ParseOiwiSearchQuery(search);
 
         await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        var isSqliteProvider = IsSqliteProvider(dbContext);
         var query = dbContext.Documents.AsNoTracking();
         query = ApplyFilters(query, filters);
-        query = ApplySort(query, sortColumn, sortDesc);
+        query = ApplySort(query, sortColumn, sortDesc, isSqliteProvider);
 
         var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
         var skip = (sanitizedPage - 1) * sanitizedPageSize;
@@ -288,7 +289,8 @@ public sealed class DocumentCatalogService : IDisposable
     private static IQueryable<DocumentEntity> ApplySort(
         IQueryable<DocumentEntity> query,
         string? sortColumn,
-        bool sortDesc)
+        bool sortDesc,
+        bool useUnixTimestamp)
     {
         var normalized = string.IsNullOrWhiteSpace(sortColumn)
             ? "time"
@@ -320,6 +322,9 @@ public sealed class DocumentCatalogService : IDisposable
             "comment" => sortDesc
                 ? query.OrderByDescending(entity => entity.Comment ?? string.Empty)
                 : query.OrderBy(entity => entity.Comment ?? string.Empty),
+            _ when useUnixTimestamp => sortDesc
+                ? query.OrderByDescending(entity => entity.UpdatedAtUnixMs)
+                : query.OrderBy(entity => entity.UpdatedAtUnixMs),
             _ => sortDesc
                 ? query.OrderByDescending(entity => entity.UpdatedAt ?? DateTimeOffset.MinValue)
                 : query.OrderBy(entity => entity.UpdatedAt ?? DateTimeOffset.MinValue)
@@ -328,6 +333,9 @@ public sealed class DocumentCatalogService : IDisposable
 
     private static string BuildPageCacheKey(int page, int pageSize, string? search, string? sortColumn, bool sortDesc)
         => $"catalog:page:{page}:{pageSize}:{search ?? string.Empty}:{sortColumn ?? string.Empty}:{sortDesc}";
+
+    private static bool IsSqliteProvider(DbContext context)
+        => context.Database.ProviderName?.IndexOf("Sqlite", StringComparison.OrdinalIgnoreCase) >= 0;
 
     private static DocumentRecord ToDocumentRecord(DocumentEntity entity)
         => new(
@@ -675,7 +683,7 @@ public sealed class DocumentCatalogService : IDisposable
 
     private DocumentRecord CreateRecord(DocumentCatalogContext context, DocumentManifestEntry entry, FileInfo fileInfo, string normalizedRelativePath)
     {
-        var updatedAt = entry.UpdatedAt;
+        var updatedAt = entry.UpdatedAt?.ToUniversalTime();
 
         if (updatedAt is null && fileInfo.Exists)
         {

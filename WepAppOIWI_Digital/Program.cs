@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using System.Net.Http;
 using System.Threading;
@@ -54,6 +55,8 @@ using (var scope = app.Services.CreateScope())
     var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
     using var db = factory.CreateDbContext();
     db.Database.EnsureCreated();
+    var migratorLogger = scope.ServiceProvider.GetRequiredService<ILogger<CatalogDbMigrator>>();
+    await CatalogDbMigrator.EnsureSchemaAsync(factory, migratorLogger);
 }
 
 if (!app.Environment.IsDevelopment())

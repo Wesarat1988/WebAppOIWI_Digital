@@ -90,7 +90,9 @@ public sealed class OiwiIndexer : BackgroundService
                 entity.Station = record.Station;
                 entity.Model = record.Model;
                 entity.Machine = record.Machine;
-                entity.UpdatedAt = record.UpdatedAt;
+                var updatedAt = record.UpdatedAt?.ToUniversalTime();
+                entity.UpdatedAt = updatedAt;
+                entity.UpdatedAtUnixMs = updatedAt?.ToUnixTimeMilliseconds() ?? 0L;
                 entity.UploadedBy = record.UploadedBy;
                 entity.Comment = record.Comment;
                 entity.DocumentType = record.DocumentType;

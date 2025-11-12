@@ -1,5 +1,6 @@
 using System;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace WepAppOIWI_Digital.Data;
 
@@ -25,6 +26,18 @@ public sealed class AppDbContext : DbContext
         doc.Property(x => x.Station).IsRequired(false);
         doc.Property(x => x.Model).IsRequired(false);
         doc.Property(x => x.Machine).IsRequired(false);
+
+        var updatedAtConverter = new ValueConverter<DateTimeOffset?, DateTime?>(
+            v => v.HasValue ? v.Value.UtcDateTime : (DateTime?)null,
+            v => v.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(v.Value, DateTimeKind.Utc)) : (DateTimeOffset?)null);
+
+        doc.Property(x => x.UpdatedAt)
+            .IsRequired(false)
+            .HasConversion(updatedAtConverter);
+        doc.Property(x => x.UpdatedAtUnixMs)
+            .IsRequired()
+            .HasDefaultValue(0L);
+
         doc.Property(x => x.UploadedBy).IsRequired(false);
         doc.Property(x => x.Comment).IsRequired(false);
         doc.Property(x => x.LinkUrl).IsRequired(false);
@@ -36,6 +49,7 @@ public sealed class AppDbContext : DbContext
 
         doc.HasIndex(x => x.NormalizedPath).IsUnique();
         doc.HasIndex(x => x.UpdatedAt);
+        doc.HasIndex(x => x.UpdatedAtUnixMs);
         doc.HasIndex(x => x.DocumentCode);
         doc.HasIndex(x => x.DisplayName);
         doc.HasIndex(x => new { x.Line, x.Station, x.Model });
@@ -64,4 +78,5 @@ public sealed class DocumentEntity
     public int Version { get; set; }
     public string? LinkUrl { get; set; }
     public DateTimeOffset IndexedAtUtc { get; set; }
+    public long UpdatedAtUnixMs { get; set; }
 }
