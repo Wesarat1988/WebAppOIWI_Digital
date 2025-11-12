@@ -43,6 +43,12 @@ if (indexerEnabled)
     builder.Services.AddHostedService<OiwiIndexer>();
 }
 
+var indexerEnabled = builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true);
+if (indexerEnabled)
+{
+    builder.Services.AddHostedService<OiwiIndexer>();
+}
+
 // DI: HttpClient ÊÓËÃÑº¤ÍÁâ¾à¹¹µì
 builder.Services.AddScoped<HttpClient>(sp =>
 {

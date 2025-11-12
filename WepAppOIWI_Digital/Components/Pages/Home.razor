@@ -2,6 +2,7 @@
 @page "/oiwi"
 @rendermode InteractiveServer
 @using System.Globalization
+@using System.IO
 @using System.Linq
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.AspNetCore.WebUtilities
@@ -163,6 +164,11 @@
 @if (!string.IsNullOrEmpty(statusMessage))
 {
     <div class="@statusAlertClass" role="alert">@statusMessage</div>
+}
+
+@if (!string.IsNullOrEmpty(storageNoteMessage))
+{
+    <div class="alert alert-secondary small py-2 mb-3" role="status">@storageNoteMessage</div>
 }
 
 @if (isLoading)
@@ -387,6 +393,33 @@ else
     private string? activeDirectoryPath;
     private string? statusAlertClass;
     private string? statusMessage;
+    private string? storageNoteMessage;
+
+    private bool _documentsLoaded;
+    private bool _pendingScroll;
+    private bool _pendingFocus;
+    private bool _loadQueued;
+    private CancellationTokenSource? _cts;
+
+    private int currentPage = 1;
+    private int currentPageSize = 20;
+    private string currentSortColumn = "Time";
+    private bool currentSortDescending = true;
+    private string JumpInput { get; set; } = string.Empty;
+
+    private string? configuredRootPath;
+    private int totalDocuments;
+    private bool isStorageConfigured;
+
+    private bool HasAnyDocuments => totalDocuments > 0;
+    private bool ShouldShowMissingFolderBanner => !isStorageConfigured && !HasAnyDocuments;
+    private bool ShouldShowStorageNote => !isStorageConfigured && HasAnyDocuments;
+
+    [SupplyParameterFromQuery(Name = "page")] public int PageNumberQuery { get; set; } = 1;
+    [SupplyParameterFromQuery(Name = "pageSize")] public int PageSizeQuery { get; set; } = 20;
+    [SupplyParameterFromQuery(Name = "search")] public string? SearchQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "sort")] public string? SortQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "desc")] public bool SortDescQuery { get; set; } = true;
 
     private bool _documentsLoaded;
     private bool _pendingScroll;
@@ -501,6 +534,7 @@ else
             var result = await DocumentCatalog.GetDocumentsAsync(cancellationToken).ConfigureAwait(false);
             documents.Clear();
             documents.AddRange(result);
+            totalDocuments = documents.Count;
             catalogContext = DocumentCatalog.GetCatalogContext();
             UpdateCatalogStatus(catalogContext);
             _documentsLoaded = true;
@@ -720,6 +754,7 @@ else
         {
             queryValues["search"] = payload;
         }
+    }
 
         var target = QueryHelpers.AddQueryString(GetCurrentRouteBase(), queryValues);
         Nav.NavigateTo(target, forceLoad: false);
@@ -863,6 +898,9 @@ else
         statusAlertClass = null;
         statusMessage = null;
 
+        configuredRootPath = SelectConfiguredRootPath(context);
+        isStorageConfigured = !string.IsNullOrWhiteSpace(configuredRootPath) && Directory.Exists(configuredRootPath);
+
         var primaryPath = string.IsNullOrWhiteSpace(context.RequestedAbsolutePath)
             ? null
             : context.RequestedAbsolutePath;
@@ -870,6 +908,8 @@ else
         var fallbackPath = string.IsNullOrWhiteSpace(context.RelativePhysicalPath)
             ? null
             : context.RelativePhysicalPath;
+
+        storageNoteMessage = null;
 
         if (!string.IsNullOrWhiteSpace(context.ActiveRootPath))
         {
@@ -903,17 +943,69 @@ else
             statusAlertClass = "alert alert-warning";
             if (!string.IsNullOrWhiteSpace(primaryPath))
             {
-                statusMessage = $"ไม่พบโฟลเดอร์ \"{primaryPath}\" กรุณาตรวจสอบค่า DocumentCatalog.AbsolutePath ในไฟล์ appsettings";
+                if (ShouldShowMissingFolderBanner)
+                {
+                    statusMessage = $"ไม่พบโฟลเดอร์ \"{primaryPath}\" กรุณาตรวจสอบค่า DocumentCatalog.AbsolutePath ในไฟล์ appsettings";
+                }
+                else if (ShouldShowStorageNote)
+                {
+                    statusAlertClass = null;
+                    statusMessage = null;
+                    storageNoteMessage = $"หมายเหตุ: ไม่พบโฟลเดอร์ \"{primaryPath}\" กรุณาตรวจสอบค่า DocumentCatalog.AbsolutePath ในไฟล์ appsettings";
+                }
+                return;
             }
             else if (!string.IsNullOrWhiteSpace(fallbackPath))
             {
-                statusMessage = $"ไม่พบโฟลเดอร์ \"{fallbackPath}\" กรุณาตรวจสอบค่า DocumentCatalog.RelativePath หรือสร้างโฟลเดอร์ดังกล่าว";
+                if (ShouldShowMissingFolderBanner)
+                {
+                    statusMessage = $"ไม่พบโฟลเดอร์ \"{fallbackPath}\" กรุณาตรวจสอบค่า DocumentCatalog.RelativePath หรือสร้างโฟลเดอร์ดังกล่าว";
+                }
+                else if (ShouldShowStorageNote)
+                {
+                    statusAlertClass = null;
+                    statusMessage = null;
+                    storageNoteMessage = $"หมายเหตุ: ไม่พบโฟลเดอร์ \"{fallbackPath}\" กรุณาตรวจสอบค่า DocumentCatalog.RelativePath หรือสร้างโฟลเดอร์ดังกล่าว";
+                }
+                return;
             }
-            else
+            else if (ShouldShowMissingFolderBanner)
             {
                 statusMessage = "ยังไม่ได้กำหนดโฟลเดอร์สำหรับเก็บเอกสาร OI/WI";
+                return;
             }
+            else if (ShouldShowStorageNote)
+            {
+                statusAlertClass = null;
+                statusMessage = null;
+                storageNoteMessage = "หมายเหตุ: ยังไม่ได้ตั้งค่าที่เก็บไฟล์เอกสาร OI/WI แต่ยังมีข้อมูลเดิมในระบบ";
+                return;
+            }
+
+            statusAlertClass = null;
+            statusMessage = null;
+            return;
         }
+    }
+
+    private static string? SelectConfiguredRootPath(DocumentCatalogService.DocumentCatalogContext context)
+    {
+        if (!string.IsNullOrWhiteSpace(context.ActiveRootPath))
+        {
+            return context.ActiveRootPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(context.RequestedAbsolutePath))
+        {
+            return context.RequestedAbsolutePath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(context.RelativePhysicalPath))
+        {
+            return context.RelativePhysicalPath;
+        }
+
+        return null;
     }
 
     private Task RefreshNow()
