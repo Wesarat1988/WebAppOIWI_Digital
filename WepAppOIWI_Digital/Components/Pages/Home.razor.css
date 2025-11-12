@@ -1,16 +1,3 @@
-/* Lock the tab navigation card so it stays visible while scrolling. */
-.tab-slide-lock {
-    position: sticky;
-    top: calc(56px + 1rem);
-    z-index: 1010;
-}
-
-@media (max-width: 576px) {
-    .tab-slide-lock {
-        top: calc(56px + 0.75rem);
-    }
-}
-
 .skeleton-row .sk {
     height: 0.9rem;
     border-radius: 6px;

@@ -3,7 +3,8 @@
     --shell-sidebar-w: 260px;
     --shell-sidebar-w-collapsed: 88px;
     --shell-bg: linear-gradient(180deg,#0d47a1,#1976d2);
-    --app-header-height: 64px;
+    --app-header-height: 56px;
+    --search-toolbar-gap: 8px;
 }
 
 /* โครงพื้นฐานให้ sidebar + content ดูสอดคล้องกับ layout */
@@ -102,9 +103,10 @@
 }
 
 /* ===== Sticky search toolbar ===== */
+
 .search-toolbar {
     position: sticky;
-    top: calc(var(--app-header-height) + 8px);
+    top: calc(var(--app-header-height) + var(--search-toolbar-gap));
     z-index: 1030;
     background: #fff;
     will-change: transform;

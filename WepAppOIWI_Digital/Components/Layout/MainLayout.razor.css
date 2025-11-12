@@ -3,7 +3,8 @@
 #app-shell {
     display: flex;
     min-height: 100vh;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: visible;
     background: #f8fafc;
 }
 
@@ -16,8 +17,9 @@
     height: 100vh;
     display: flex;
     flex-direction: column;
-    align-items: center; /* á¹Ç¹Í¹¡Öè§¡ÅÒ§ */
-    justify-content: center; /* á¹ÇµÑé§¡Öè§¡ÅÒ§ */
+    overflow-x: hidden;
+    overflow-y: auto;
+    justify-content: center; /* Ã¡Â¹Ã‡ÂµÃ‘Ã©Â§Â¡Ã–Ã¨Â§Â¡Ã…Ã’Â§ */
     padding: 16px 0;
     overflow: hidden;
     -webkit-overflow-scrolling: touch;
@@ -30,8 +32,8 @@
 .shell__content {
     display: flex;
     flex-direction: column;
-    margin-left: 260px; /* ¤ÇÒÁ¡ÇéÒ§ sidebar »¡µÔ */
-    width: calc(100vw - 260px); /* <<< á¡é¨Ø´à¡Ô´á¶º¢ÒÇ */
+    margin-left: 260px; /* Â¤Ã‡Ã’ÃÂ¡Ã‡Ã©Ã’Â§ sidebar Â»Â¡ÂµÃ” */
+    width: calc(100vw - 260px); /* <<< Ã¡Â¡Ã©Â¨Ã˜Â´Ã Â¡Ã”Â´Ã¡Â¶ÂºÂ¢Ã’Ã‡ */
     min-width: 0;
     height: 100vh;
     overflow: auto;
@@ -43,9 +45,9 @@
     width: 100%;
     display: flex;
     align-items: center;
-    justify-content: center; /* ¨Ñ´âÅâ¡é¡Öè§¡ÅÒ§á¹Ç¹Í¹ */
+    justify-content: center; /* Â¨Ã‘Â´Ã¢Ã…Ã¢Â¡Ã©Â¡Ã–Ã¨Â§Â¡Ã…Ã’Â§Ã¡Â¹Ã‡Â¹ÃÂ¹ */
     padding: 16px 0;
-    margin: 0 0 18px 0; /* àÇé¹¨Ò¡àÁ¹ÙàÅç¡¹éÍÂ */
+    margin: 0 0 18px 0; /* Ã Ã‡Ã©Â¹Â¨Ã’Â¡Ã ÃÂ¹Ã™Ã Ã…Ã§Â¡Â¹Ã©ÃÃ‚ */
     box-sizing: border-box;
 }
 
@@ -56,9 +58,9 @@
 
 .shell__sidebar .brand-logo {
     display: block;
-    margin: 0 auto; /* ¨Ñ´ãËéÍÂÙè¡ÅÒ§ */
+    margin: 0 auto; /* Â¨Ã‘Â´Ã£Ã‹Ã©ÃÃ‚Ã™Ã¨Â¡Ã…Ã’Â§ */
     width: 85%;
-    max-width: 260px; /* ¢¹Ò´âÅâ¡é (¢ÂÒÂä´é) */
+    max-width: 260px; /* Â¢Â¹Ã’Â´Ã¢Ã…Ã¢Â¡Ã© (Â¢Ã‚Ã’Ã‚Ã¤Â´Ã©) */
     height: auto;
     transition: max-width .2s ease;
 }
@@ -71,7 +73,7 @@
     gap: .25rem;
     padding: 0 16px 24px;
     margin: 0;
-    flex: 1 1 auto; /* ãËéàÁ¹ÙÂ×´ä´é */
+    flex: 1 1 auto; /* Ã£Ã‹Ã©Ã ÃÂ¹Ã™Ã‚Ã—Â´Ã¤Â´Ã© */
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     min-height: 0;
@@ -126,7 +128,7 @@
 /* ===== Collapsed ===== */
 #app-shell.shell--collapsed .shell__content {
     margin-left: 88px;
-    width: calc(100vw - 88px); /* <<< ÊÅÑº¤ÇÒÁ¡ÇéÒ§µÒÁ sidebar ·ÕèÂèÍ */
+    width: calc(100vw - 88px); /* <<< ÃŠÃ…Ã‘ÂºÂ¤Ã‡Ã’ÃÂ¡Ã‡Ã©Ã’Â§ÂµÃ’Ã sidebar Â·Ã•Ã¨Ã‚Ã¨Ã */
 }
 
 #app-shell.shell--collapsed .shell__content {
@@ -139,7 +141,7 @@
 }
 
 #app-shell.shell--collapsed .brand-logo {
-    max-width: 80px; /* ¢¹Ò´âÅâ¡éµÍ¹ÂèÍ */
+    max-width: 80px; /* Â¢Â¹Ã’Â´Ã¢Ã…Ã¢Â¡Ã©ÂµÃÂ¹Ã‚Ã¨Ã */
 }
 
 /* ===== Mobile ===== */
@@ -150,7 +152,8 @@
         transform: translateX(-100%);
         transition: transform .2s ease;
         padding: 16px 0;
-        justify-content: flex-start; /* âËÁ´ mobile à»ç¹ drawer */
+        overflow-x: hidden;
+        overflow-y: auto;
     }
 
     #app-shell.shell--collapsed .shell__content {
@@ -164,7 +167,7 @@
 
     .shell__content {
         margin-left: 0;
-        width: 100vw; /* <<< àµçÁ¨Í */
+        width: 100vw; /* <<< Ã ÂµÃ§ÃÂ¨Ã */
         height: 100vh;
         overflow: auto;
     }
