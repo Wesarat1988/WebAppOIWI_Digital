@@ -59,7 +59,9 @@ public sealed class AppDbContext : DbContext
 
         var stampDateConverter = new ValueConverter<DateOnly?, string?>(
             v => v.HasValue ? v.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null,
-            v => string.IsNullOrWhiteSpace(v) ? null : DateOnly.ParseExact(v!, "yyyy-MM-dd", CultureInfo.InvariantCulture));
+            v => string.IsNullOrWhiteSpace(v)
+                ? null
+                : DateOnly.ParseExact(v!, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None));
 
         doc.Property(x => x.StampDate)
             .IsRequired(false)

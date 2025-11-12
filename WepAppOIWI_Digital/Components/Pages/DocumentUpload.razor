@@ -56,11 +56,7 @@ else
 
     <div class="mb-3">
         <label class="form-label">ประเภทเอกสาร</label>
-        @* ใช้ Value/ValueChanged เพื่ออัปเดตเลขเอกสารถัดไปทันที *@
-        <InputSelect class="form-select"
-                     Value="selectedDocumentType"
-                     ValueChanged="@(async (string v) => await OnDocumentTypeChanged(v))"
-                     ValueExpression="() => selectedDocumentType">
+        <InputSelect class="form-select" @bind-Value="SelectedDocumentType">
             @foreach (var documentType in DocumentNumbering.KnownTypes)
             {
                 <option value="@documentType">@documentType</option>
@@ -111,9 +107,7 @@ else
     <div class="card mb-3">
         <div class="card-header">ตัวเลือกตราประทับ (Stamp) บนเอกสาร</div>
         <div class="card-body d-grid gap-3">
-            <InputRadioGroup Value="formModel.Stamp"
-                             ValueChanged="OnStampModeChanged"
-                             ValueExpression="() => formModel.Stamp">
+            <InputRadioGroup @bind-Value="StampSelection">
                 <div class="form-check">
                     <InputRadio class="form-check-input" id="stampNone" Value="StampMode.None" />
                     <label class="form-check-label" for="stampNone">ไม่ติดตราประทับ</label>
@@ -186,6 +180,30 @@ else
 @code {
     private const long MaxFileSize = 200 * 1024 * 1024;
     private readonly UploadFormModel formModel = new();
+    private string SelectedDocumentType
+    {
+        get => selectedDocumentType;
+        set
+        {
+            var normalized = NormalizeDocumentTypeOrDefault(value);
+
+            if (string.Equals(selectedDocumentType, normalized, StringComparison.Ordinal))
+            {
+                ApplySelectedDocumentType(normalized);
+                return;
+            }
+
+            ApplySelectedDocumentType(normalized);
+            _ = InvokeAsync(() => UpdateDocumentNumberPreviewAsync());
+        }
+    }
+
+    private StampMode StampSelection
+    {
+        get => formModel.Stamp;
+        set => OnStampModeChanged(value);
+    }
+
     private string? StampDateInput
     {
         get => formModel.StampDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -352,15 +370,6 @@ else
     }
 
     private void NavigateHome() => Navigation.NavigateTo("/");
-
-    // ✅ ใช้ handler แทน @bind-Value เพื่อตอบสนองทันที
-    private async Task OnDocumentTypeChanged(string? value)
-    {
-        var normalized = NormalizeDocumentTypeOrDefault(value);
-        ApplySelectedDocumentType(normalized);
-        await UpdateDocumentNumberPreviewAsync();
-        await InvokeAsync(StateHasChanged);
-    }
 
     private async Task UpdateDocumentNumberPreviewAsync(bool notifyStart = true)
     {
