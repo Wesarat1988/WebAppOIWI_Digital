@@ -3,6 +3,7 @@
 @using System.Collections.Generic
 @using System.ComponentModel.DataAnnotations
 @using System.Globalization
+@using System.Threading.Tasks
 @inject DocumentUploadService DocumentUploader
 @inject DocumentCatalogService Catalog
 @inject NavigationManager Navigation
@@ -107,7 +108,10 @@ else
     <div class="card mb-3">
         <div class="card-header">ตัวเลือกตราประทับ (Stamp) บนเอกสาร</div>
         <div class="card-body d-grid gap-3">
-            <InputRadioGroup @bind-Value="StampSelection">
+            <InputRadioGroup TValue="StampMode"
+                              Value="formModel.Stamp"
+                              ValueChanged="HandleStampModeChanged"
+                              ValueExpression="() => formModel.Stamp">
                 <div class="form-check">
                     <InputRadio class="form-check-input" id="stampNone" Value="StampMode.None" />
                     <label class="form-check-label" for="stampNone">ไม่ติดตราประทับ</label>
@@ -130,7 +134,8 @@ else
                     <input id="stampDateInput"
                            class="form-control"
                            type="date"
-                           @bind="StampDateInput"
+                           value="@stampDateString"
+                           @onchange="HandleStampDateChanged"
                            disabled="@(formModel.Stamp == StampMode.None)" />
                 </div>
                 <div class="col">
@@ -198,42 +203,35 @@ else
         }
     }
 
-    private StampMode StampSelection
-    {
-        get => formModel.Stamp;
-        set => OnStampModeChanged(value);
-    }
+    private string? stampDateString => formModel.StampDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
-    private string? StampDateInput
-    {
-        get => formModel.StampDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        set
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                formModel.StampDate = null;
-                return;
-            }
-
-            if (DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
-            {
-                formModel.StampDate = parsed;
-            }
-        }
-    }
-    private void OnStampModeChanged(StampMode value)
+    private Task HandleStampModeChanged(StampMode value)
     {
         formModel.Stamp = value;
 
         if (value == StampMode.None)
         {
             formModel.StampDate = null;
+        }
+        else if (formModel.StampDate is null)
+        {
+            formModel.StampDate = DateOnly.FromDateTime(DateTime.Today);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void HandleStampDateChanged(ChangeEventArgs args)
+    {
+        if (args.Value is not string input || string.IsNullOrWhiteSpace(input))
+        {
+            formModel.StampDate = null;
             return;
         }
 
-        if (formModel.StampDate is null)
+        if (DateOnly.TryParseExact(input, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
         {
-            formModel.StampDate = DateOnly.FromDateTime(DateTime.Today);
+            formModel.StampDate = parsed;
         }
     }
     private IBrowserFile? selectedFile;

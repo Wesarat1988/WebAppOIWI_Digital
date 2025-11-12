@@ -26,7 +26,7 @@ public sealed class PdfStampService : IPdfStampService
     private const double SubtitleFontSize = 10d;
     private static readonly XBrush BoxBrush = new XSolidBrush(XColor.FromArgb(235, 245, 255));
     private static readonly XPen BoxPen = new(XColor.FromArgb(40, 98, 255), 1);
-    private static readonly XPdfFontOptions PdfFontOptions = new(PdfFontEncoding.Unicode, XPdfFontEmbedding.Always);
+    private static readonly XPdfFontOptions PdfFontOptions = new(PdfFontEncoding.Unicode, PdfFontEmbedding.Always);
     private static readonly Lazy<byte[]?> ThaiFontBytes = new(LoadFontBytes, LazyThreadSafetyMode.ExecutionAndPublication);
     private static readonly object ResolverLock = new();
     private static bool _fontResolverInitialized;
