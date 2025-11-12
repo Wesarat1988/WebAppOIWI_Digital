@@ -1,0 +1,310 @@
+@page "/documents/{Token}/history"
+@using System.Globalization
+@using WepAppOIWI_Digital.Services
+@inject DocumentUploadService DocumentUploader
+@inject DocumentCatalogService DocumentCatalog
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ILogger<WepAppOIWI_Digital.Components.Pages.DocumentHistory> Logger
+
+<PageTitle>History</PageTitle>
+
+@if (isLoading)
+{
+    <p class="text-muted">กำลังโหลดประวัติเอกสาร...</p>
+}
+else
+{
+    <h4 class="mb-3">ประวัติเอกสารทั้งหมด</h4>
+
+    @if (documentRecord is not null)
+    {
+        <div class="mb-3 text-muted small">
+            <strong>@documentRecord.DisplayName</strong>
+            @if (!string.IsNullOrWhiteSpace(documentRecord.DocumentCode))
+            {
+                <span> · @documentRecord.DocumentCode</span>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    <div class="input-group mb-3" style="max-width:520px">
+        <input class="form-control" placeholder="ค้นหา Version/ผู้แก้ไข/เหตุผล..." @bind="q" @bind:event="oninput" />
+        <button class="btn btn-outline-secondary" @onclick="() => Go(1)">ค้นหา</button>
+    </div>
+
+    @if (data.Items.Count == 0)
+    {
+        <p class="text-muted">ยังไม่มีประวัติการเปลี่ยนแปลง</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Version</th>
+                        <th>เปลี่ยนเมื่อ</th>
+                        <th>ผู้แก้ไข</th>
+                        <th>เหตุผลการเปลี่ยน</th>
+                        <th class="text-end">ขนาด</th>
+                        <th>สถานะ</th>
+                        <th class="text-end">การทำงาน</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (var i = 0; i < data.Items.Count; i++)
+                    {
+                        var h = data.Items[i];
+                        var delta = DeltaFromPrev(i);
+                        var deltaLabel = delta is TimeSpan gap ? FormatDelta(gap) : null;
+                        <tr>
+                            <td><code>@h.VersionLabel</code></td>
+                            <td>
+                                @h.TimestampUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                                <div class="text-muted small">
+                                    (@Rel(h.TimestampUtc))
+                                    @if (!string.IsNullOrEmpty(deltaLabel))
+                                    {
+                                        <span> • @deltaLabel</span>
+                                    }
+                                </div>
+                            </td>
+                            <td>@(string.IsNullOrWhiteSpace(h.AuthorName) ? "-" : h.AuthorName)</td>
+                            <td class="text-truncate" style="max-width: 420px" title="@(string.IsNullOrWhiteSpace(h.Comment) ? "-" : h.Comment)">@(!string.IsNullOrWhiteSpace(h.Comment) ? h.Comment : "-")</td>
+                            <td class="text-end">@(h.SizeKb is double size ? $"{size:F1} KB" : "-")</td>
+                            <td>
+                                @if (h.IsActive)
+                                {
+                                    <span class="badge bg-success">ใช้งานอยู่</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">ไม่ได้ใช้งาน</span>
+                                }
+                            </td>
+                            <td class="text-end">
+                                @if (h.IsActive)
+                                {
+                                    <button class="btn btn-sm btn-outline-success" disabled>Using</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-primary" disabled="@isBusy" @onclick="() => UseVersionAsync(h)">ตั้งให้ใช้งาน</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <div class="d-flex justify-content-between align-items-center mt-2">
+        <div class="small text-muted">รวม @data.TotalCount รายการ</div>
+        <div class="btn-group">
+            <button class="btn btn-sm btn-outline-secondary" disabled="@(data.Page <= 1 || isBusy)" @onclick="() => Go(data.Page - 1)">ก่อนหน้า</button>
+            <button class="btn btn-sm btn-outline-secondary" disabled="@(data.Page * data.PageSize >= data.TotalCount || isBusy)" @onclick="() => Go(data.Page + 1)">ถัดไป</button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Token { get; set; } = string.Empty;
+    [SupplyParameterFromQuery] public int page { get; set; } = 1;
+    [SupplyParameterFromQuery] public int pageSize { get; set; } = 20;
+    [SupplyParameterFromQuery(Name = "q")] public string? q { get; set; }
+
+    private string? normalizedPath;
+    private DocumentRecord? documentRecord;
+    private PagedResult<HistoryItem> data = new(Array.Empty<HistoryItem>(), 0, 1, 20);
+    private bool isBusy;
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        if (!DocumentCatalogService.TryDecodeDocumentToken(Token, out var path))
+        {
+            normalizedPath = null;
+            data = new PagedResult<HistoryItem>(Array.Empty<HistoryItem>(), 0, 1, Math.Clamp(pageSize, 10, 100));
+            errorMessage = "ไม่สามารถอ่านข้อมูลเอกสารได้";
+            isLoading = false;
+            return;
+        }
+
+        normalizedPath = path;
+
+        try
+        {
+            documentRecord = await DocumentCatalog.TryGetDocumentAsync(path);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Failed to load document metadata for history page {Token}.", Token);
+            documentRecord = null;
+        }
+
+        await LoadPageAsync();
+        isLoading = false;
+    }
+
+    private async Task LoadPageAsync()
+    {
+        if (string.IsNullOrEmpty(normalizedPath))
+        {
+            data = new PagedResult<HistoryItem>(Array.Empty<HistoryItem>(), 0, Math.Max(1, page), Math.Clamp(pageSize, 10, 100));
+            return;
+        }
+
+        var currentPage = Math.Max(1, page);
+        var size = Math.Clamp(pageSize, 10, 100);
+
+        try
+        {
+            data = await DocumentUploader.GetHistoryPageAsync(normalizedPath!, currentPage, size, q);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load history page for {Path}.", normalizedPath);
+            data = new PagedResult<HistoryItem>(Array.Empty<HistoryItem>(), 0, currentPage, size);
+            errorMessage ??= "ไม่สามารถโหลดประวัติเอกสารได้";
+        }
+    }
+
+    private async Task UseVersionAsync(HistoryItem item)
+    {
+        if (item.IsActive || string.IsNullOrEmpty(normalizedPath))
+        {
+            return;
+        }
+
+        var confirmed = await JS.InvokeAsync<bool>("confirm", $"ตั้งค่าให้ใช้เวอร์ชัน {item.VersionLabel}?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        isBusy = true;
+        errorMessage = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await DocumentUploader.SetActiveVersionAsync(normalizedPath!, item.VersionId, actor: null, comment: null);
+            if (!result.Succeeded)
+            {
+                errorMessage = result.ErrorMessage ?? "ไม่สามารถตั้งเวอร์ชันนี้ให้ใช้งานได้";
+            }
+            else
+            {
+                await LoadPageAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to activate version {VersionId} for {Path}.", item.VersionId, normalizedPath);
+            errorMessage = "ไม่สามารถตั้งเวอร์ชันนี้ให้ใช้งานได้";
+        }
+        finally
+        {
+            isBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void Go(int newPage)
+    {
+        var sanitizedPage = Math.Max(1, newPage);
+        var sanitizedSize = Math.Clamp(data.PageSize, 10, 100);
+        var parts = new List<string>
+        {
+            $"page={sanitizedPage.ToString(CultureInfo.InvariantCulture)}",
+            $"pageSize={sanitizedSize.ToString(CultureInfo.InvariantCulture)}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            parts.Add($"q={Uri.EscapeDataString(q!)}");
+        }
+
+        var query = string.Join("&", parts);
+        var uri = $"/documents/{Uri.EscapeDataString(Token)}/history";
+        if (!string.IsNullOrEmpty(query))
+        {
+            uri = $"{uri}?{query}";
+        }
+
+        Nav.NavigateTo(uri);
+    }
+
+    private TimeSpan? DeltaFromPrev(int index)
+        => index + 1 < data.Items.Count
+            ? data.Items[index].TimestampUtc - data.Items[index + 1].TimestampUtc
+            : null;
+
+    private static string Rel(DateTimeOffset timestamp)
+    {
+        var diff = DateTimeOffset.Now - timestamp;
+        if (diff < TimeSpan.Zero)
+        {
+            diff = TimeSpan.Zero;
+        }
+
+        if (diff.TotalSeconds < 60)
+        {
+            var seconds = Math.Max(0, (int)Math.Round(diff.TotalSeconds));
+            return $"{seconds}s ago";
+        }
+
+        if (diff.TotalMinutes < 60)
+        {
+            return $"{(int)Math.Round(diff.TotalMinutes)}m ago";
+        }
+
+        if (diff.TotalHours < 24)
+        {
+            return $"{(int)Math.Round(diff.TotalHours)}h ago";
+        }
+
+        return $"{(int)Math.Round(diff.TotalDays)}d ago";
+    }
+
+    private static string FormatDelta(TimeSpan delta)
+    {
+        var span = delta.Duration();
+
+        if (span.TotalSeconds < 60)
+        {
+            return $"Δ {(int)Math.Round(span.TotalSeconds)}s from prev.";
+        }
+
+        if (span.TotalMinutes < 60)
+        {
+            return $"Δ {(int)Math.Round(span.TotalMinutes)}m from prev.";
+        }
+
+        if (span.TotalHours < 24)
+        {
+            var hours = (int)Math.Floor(span.TotalHours);
+            var minutes = span.Minutes;
+            return minutes > 0
+                ? $"Δ {hours}h {minutes}m from prev."
+                : $"Δ {hours}h from prev.";
+        }
+
+        var days = (int)Math.Floor(span.TotalDays);
+        var remainderHours = span.Hours;
+        return remainderHours > 0
+            ? $"Δ {days}d {remainderHours}h from prev."
+            : $"Δ {days}d from prev.";
+    }
+}
