@@ -16,6 +16,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WepAppOIWI_Digital.Data;
+using WepAppOIWI_Digital.Stamps;
 
 namespace WepAppOIWI_Digital.Services;
 
@@ -44,6 +45,8 @@ public sealed record DocumentRecord(
     int? SequenceNumber,
     string? ActiveVersionId,
     string? DocumentCode,
+    StampMode StampMode,
+    DateOnly? StampDate,
     int Version
 )
 {
@@ -65,6 +68,8 @@ public sealed record OiwiRow(
     string? ActiveVersionId,
     string? DocumentCode,
     int Version,
+    StampMode StampMode,
+    DateOnly? StampDate,
     string? LinkUrl
 );
 
@@ -232,6 +237,8 @@ public sealed class DocumentCatalogService : IDisposable
                 entity.ActiveVersionId,
                 entity.DocumentCode,
                 entity.Version,
+                entity.StampMode,
+                entity.StampDate,
                 entity.LinkUrl))
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -384,6 +391,8 @@ public sealed class DocumentCatalogService : IDisposable
             entity.SequenceNumber,
             entity.ActiveVersionId,
             entity.DocumentCode,
+            entity.StampMode,
+            entity.StampDate,
             entity.Version)
         {
             LinkUrl = entity.LinkUrl
@@ -757,6 +766,8 @@ public sealed class DocumentCatalogService : IDisposable
             sequenceNumber,
             entry.ActiveVersionId,
             documentCode,
+            ParseStampMode(entry.StampMode),
+            entry.StampDate,
             version)
         {
             LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
@@ -784,6 +795,8 @@ public sealed class DocumentCatalogService : IDisposable
             "-",
             null,
             null,
+            null,
+            StampMode.None,
             null,
             1
         )
@@ -948,6 +961,18 @@ public sealed class DocumentCatalogService : IDisposable
 
         var trimmed = value.Trim();
         return string.IsNullOrWhiteSpace(trimmed) ? "-" : trimmed;
+    }
+
+    private static StampMode ParseStampMode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return StampMode.None;
+        }
+
+        return Enum.TryParse<StampMode>(value, ignoreCase: true, out var result)
+            ? result
+            : StampMode.None;
     }
 
     public static string Slugify(string? value)
@@ -1154,6 +1179,8 @@ public sealed class DocumentCatalogService : IDisposable
         public int? SequenceNumber { get; init; }
         public int? Version { get; init; }
         public string? ActiveVersionId { get; init; }
+        public string? StampMode { get; init; }
+        public DateOnly? StampDate { get; init; }
     }
 
     public void Dispose()

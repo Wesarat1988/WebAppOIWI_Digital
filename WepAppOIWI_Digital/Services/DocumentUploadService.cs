@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WepAppOIWI_Digital.Services;
+using WepAppOIWI_Digital.Stamps;
 
 namespace WepAppOIWI_Digital.Services;
 
@@ -18,6 +19,7 @@ public sealed class DocumentUploadService
     private readonly DocumentCatalogOptions _options;
     private readonly ILogger<DocumentUploadService> _logger;
     private readonly IVersionStore _versionStore; // จัดการ snapshot/version history
+    private readonly IPdfStampService _pdfStampService;
     private readonly SemaphoreSlim _uploadLock = new(1, 1);
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
@@ -31,12 +33,14 @@ public sealed class DocumentUploadService
         DocumentCatalogService catalogService,
         IOptions<DocumentCatalogOptions> options,
         ILogger<DocumentUploadService> logger,
-        IVersionStore versionStore)
+        IVersionStore versionStore,
+        IPdfStampService pdfStampService)
     {
         _catalogService = catalogService;
         _options = options.Value;
         _logger = logger;
-        _versionStore = versionStore; 
+        _versionStore = versionStore;
+        _pdfStampService = pdfStampService;
     }
 
     // ประวัติย้อนหลังของไฟล์ พร้อม flag เวอร์ชันที่ใช้งานปัจจุบัน
@@ -404,6 +408,8 @@ public sealed class DocumentUploadService
                 OriginalFileName: Path.GetFileName(newFullPath),
                 Content: Stream.Null,
                 UploadedAt: DateTimeOffset.UtcNow,
+                StampMode: ParseStampMode(entry.StampMode),
+                StampDate: entry.StampDate,
                 ActiveVersionId: versionId);
 
             var manifestUpdateResult = await UpdateManifestAsync(
@@ -572,6 +578,7 @@ public sealed class DocumentUploadService
             var destinationFileName = BuildCurrentFileName(request.DisplayName, sanitizedFileName);
             var destinationPath = ResolveDestinationPath(destinationRoot, destinationFileName);
 
+            byte[] fileBytes;
             try
             {
                 if (request.Content.CanSeek)
@@ -579,8 +586,101 @@ public sealed class DocumentUploadService
                     request.Content.Seek(0, SeekOrigin.Begin);
                 }
 
+                using var buffer = new MemoryStream();
+                await request.Content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+                fileBytes = buffer.ToArray();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to read uploaded content before saving.");
+                return DocumentUploadResult.Failed("ไม่สามารถอ่านไฟล์ได้ กรุณาลองใหม่อีกครั้ง");
+            }
+
+            if (request.StampMode != StampMode.None)
+            {
+                if (request.StampDate is null)
+                {
+                    _logger.LogWarning("Stamp mode '{StampMode}' selected without a stamp date. Rejecting upload.", request.StampMode);
+
+                    if (createdCurrentDirectory)
+                    {
+                        TryDeleteDirectoryIfEmpty(currentDirectory);
+                    }
+
+                    if (createdVersionsDirectory)
+                    {
+                        TryDeleteDirectoryIfEmpty(versionsDirectory);
+                    }
+
+                    if (!string.IsNullOrEmpty(documentRoot))
+                    {
+                        TryDeleteDirectoryIfEmpty(documentRoot);
+                    }
+
+                    return DocumentUploadResult.Failed("กรุณาเลือกวันที่สำหรับตราประทับ");
+                }
+
+                if (!sanitizedFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (createdCurrentDirectory)
+                    {
+                        TryDeleteDirectoryIfEmpty(currentDirectory);
+                    }
+
+                    if (createdVersionsDirectory)
+                    {
+                        TryDeleteDirectoryIfEmpty(versionsDirectory);
+                    }
+
+                    if (!string.IsNullOrEmpty(documentRoot))
+                    {
+                        TryDeleteDirectoryIfEmpty(documentRoot);
+                    }
+
+                    return DocumentUploadResult.Failed("สามารถประทับตราได้เฉพาะไฟล์ PDF เท่านั้น");
+                }
+
+                try
+                {
+                    _logger.LogInformation(
+                        "Applying PDF stamp mode {StampMode} (date: {StampDate}) for upload '{FileName}'.",
+                        request.StampMode,
+                        request.StampDate,
+                        request.OriginalFileName);
+
+                    fileBytes = await _pdfStampService
+                        .ApplyStampAsync(fileBytes, request.StampMode, request.StampDate, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to stamp PDF before saving to '{Destination}'.", destinationPath);
+                    if (createdCurrentDirectory)
+                    {
+                        TryDeleteDirectoryIfEmpty(currentDirectory);
+                    }
+
+                    if (createdVersionsDirectory)
+                    {
+                        TryDeleteDirectoryIfEmpty(versionsDirectory);
+                    }
+
+                    if (!string.IsNullOrEmpty(documentRoot))
+                    {
+                        TryDeleteDirectoryIfEmpty(documentRoot);
+                    }
+                    return DocumentUploadResult.Failed("ไม่สามารถประทับตราเอกสารได้ กรุณาลองใหม่อีกครั้ง");
+                }
+            }
+
+            try
+            {
                 await using var targetStream = File.Create(destinationPath);
-                await request.Content.CopyToAsync(targetStream, cancellationToken).ConfigureAwait(false);
+                await targetStream.WriteAsync(fileBytes, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -918,7 +1018,9 @@ public sealed class DocumentUploadService
                 Comment: request.Comment,
                 OriginalFileName: Path.GetFileName(newFullPath),
                 Content: Stream.Null,
-                UploadedAt: request.UpdatedAt);
+                UploadedAt: request.UpdatedAt,
+                StampMode: ParseStampMode(existingEntry.StampMode),
+                StampDate: existingEntry.StampDate);
 
             var manifestUpdateResult = await UpdateManifestAsync(
                     manifestPath,
@@ -1057,7 +1159,9 @@ public sealed class DocumentUploadService
             UploadedBy = request.UploadedBy?.Trim(),
             Comment = request.Comment?.Trim(),
             UpdatedAt = request.UploadedAt,
-            DocumentType = string.IsNullOrEmpty(normalizedDocumentType) ? null : normalizedDocumentType
+            DocumentType = string.IsNullOrEmpty(normalizedDocumentType) ? null : normalizedDocumentType,
+            StampMode = request.StampMode != StampMode.None ? request.StampMode.ToString() : null,
+            StampDate = request.StampMode != StampMode.None ? request.StampDate : null
         };
 
         var lookupNormalized = NormalizeManifestPath(lookupRelativeFileName);
@@ -1186,6 +1290,18 @@ public sealed class DocumentUploadService
             TryDeleteFile(tempManifestPath);
             return false;
         }
+    }
+
+    private static StampMode ParseStampMode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return StampMode.None;
+        }
+
+        return Enum.TryParse<StampMode>(value, ignoreCase: true, out var result)
+            ? result
+            : StampMode.None;
     }
 
     private static void TryDeleteFile(string? path)
@@ -1498,6 +1614,8 @@ public sealed record DocumentUploadRequest(
     string OriginalFileName,
     Stream Content,
     DateTimeOffset UploadedAt,
+    StampMode StampMode = StampMode.None,
+    DateOnly? StampDate = null,
     string? ActiveVersionId = null);
 
 public sealed record DocumentUploadResult(bool Succeeded, string? NormalizedPath, string? ErrorMessage, string? DocumentType, int? SequenceNumber, string? DocumentCode)
@@ -1566,6 +1684,8 @@ internal sealed class ManifestEntry
     public int? SequenceNumber { get; set; }
     public int? Version { get; set; }
     public string? ActiveVersionId { get; set; }
+    public string? StampMode { get; set; }
+    public DateOnly? StampDate { get; set; }
 }
 
 internal sealed class DocumentManifestReadException : Exception

@@ -1,6 +1,8 @@
 using System;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using WepAppOIWI_Digital.Stamps;
 
 namespace WepAppOIWI_Digital.Data;
 
@@ -51,6 +53,19 @@ public sealed class AppDbContext : DbContext
             .IsRequired(false)
             .HasConversion(updatedAtConverter);
         doc.Property(x => x.IndexedAtUtc).IsRequired();
+        doc.Property(x => x.StampMode)
+            .HasConversion<int>()
+            .HasDefaultValue(StampMode.None);
+
+        var stampDateConverter = new ValueConverter<DateOnly?, string?>(
+            v => v.HasValue ? v.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null,
+            v => string.IsNullOrWhiteSpace(v)
+                ? null
+                : DateOnly.ParseExact(v!, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None));
+
+        doc.Property(x => x.StampDate)
+            .IsRequired(false)
+            .HasConversion(stampDateConverter);
 
         doc.HasIndex(x => x.NormalizedPath).IsUnique();
         doc.HasIndex(x => x.UpdatedAt);
@@ -88,4 +103,6 @@ public sealed class DocumentEntity
     public long UpdatedAtUnixMs { get; set; }
     public long SizeBytes { get; set; }
     public DateTimeOffset? LastWriteUtc { get; set; }
+    public StampMode StampMode { get; set; }
+    public DateOnly? StampDate { get; set; }
 }
