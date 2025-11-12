@@ -468,7 +468,7 @@ else
                 NullIfEmpty(selectedModel),
                 NullIfEmpty(selectedUploader));
 
-            var searchPayload = DocumentCatalog.BuildOiwiSearchQuery(filters);
+            var searchPayload = DocumentCatalogService.BuildOiwiSearchQuery(filters);
             pageData = await DocumentCatalog.GetOiwiPageAsync(
                 currentPage,
                 currentPageSize,
@@ -557,7 +557,7 @@ else
             queryValues["sort"] = currentSortColumn;
         }
 
-        var payload = DocumentCatalog.BuildOiwiSearchQuery(filters);
+        var payload = DocumentCatalogService.BuildOiwiSearchQuery(filters);
         if (!string.IsNullOrWhiteSpace(payload))
         {
             queryValues["search"] = payload;
