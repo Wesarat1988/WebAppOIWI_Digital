@@ -28,6 +28,7 @@ var catalogConnectionString = ResolveCatalogConnectionString(builder);
 
 builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
 builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
+builder.Services.Configure<OiwiOptions>(builder.Configuration.GetSection("Oiwi"));
 builder.Services.AddMemoryCache();
 builder.Services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(catalogConnectionString));
 builder.Services.AddSingleton<DocumentCatalogService>();

@@ -21,6 +21,7 @@ public sealed class AppDbContext : DbContext
         doc.Property(x => x.NormalizedPath).IsRequired();
         doc.Property(x => x.DisplayName).IsRequired();
         doc.Property(x => x.FileName).IsRequired(false);
+        doc.Property(x => x.RelativePath).IsRequired(false);
         doc.Property(x => x.DocumentType).IsRequired(false);
         doc.Property(x => x.Line).IsRequired(false);
         doc.Property(x => x.Station).IsRequired(false);
@@ -45,12 +46,17 @@ public sealed class AppDbContext : DbContext
         doc.Property(x => x.DocumentCode).IsRequired(false);
         doc.Property(x => x.SequenceNumber).IsRequired(false);
         doc.Property(x => x.Version).HasDefaultValue(1);
+        doc.Property(x => x.SizeBytes).HasDefaultValue(0L);
+        doc.Property(x => x.LastWriteUtc)
+            .IsRequired(false)
+            .HasConversion(updatedAtConverter);
         doc.Property(x => x.IndexedAtUtc).IsRequired();
 
         doc.HasIndex(x => x.NormalizedPath).IsUnique();
         doc.HasIndex(x => x.UpdatedAt);
         doc.HasIndex(x => x.UpdatedAtUnixMs);
         doc.HasIndex(x => x.DocumentCode);
+        doc.HasIndex(x => x.RelativePath);
         doc.HasIndex(x => x.DisplayName);
         doc.HasIndex(x => new { x.Line, x.Station, x.Model });
         doc.HasIndex(x => x.Machine);
@@ -63,6 +69,7 @@ public sealed class DocumentEntity
     public Guid Id { get; set; }
     public string NormalizedPath { get; set; } = string.Empty;
     public string? FileName { get; set; }
+    public string? RelativePath { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
     public string? Line { get; set; }
     public string? Station { get; set; }
@@ -79,4 +86,6 @@ public sealed class DocumentEntity
     public string? LinkUrl { get; set; }
     public DateTimeOffset IndexedAtUtc { get; set; }
     public long UpdatedAtUnixMs { get; set; }
+    public long SizeBytes { get; set; }
+    public DateTimeOffset? LastWriteUtc { get; set; }
 }

@@ -34,8 +34,26 @@ SET UpdatedAtUnixMs = CASE
 END;";
         await ExecuteNonQueryAsync(connection, backfillSql, cancellationToken).ConfigureAwait(false);
 
-        logger.LogDebug("Ensuring index IX_Documents_UpdatedAtUnixMs exists.");
+        logger.LogDebug("Ensuring additional catalog columns exist.");
+        await EnsureColumnAsync(connection, logger, "Documents", "RelativePath", "TEXT", cancellationToken).ConfigureAwait(false);
+        await EnsureColumnAsync(connection, logger, "Documents", "SizeBytes", "INTEGER NOT NULL DEFAULT 0", cancellationToken).ConfigureAwait(false);
+        await EnsureColumnAsync(connection, logger, "Documents", "LastWriteUtc", "TEXT", cancellationToken).ConfigureAwait(false);
+
+        logger.LogDebug("Ensuring indexes for catalog queries exist.");
         await ExecuteNonQueryAsync(connection, "CREATE INDEX IF NOT EXISTS IX_Documents_UpdatedAtUnixMs ON Documents(UpdatedAtUnixMs DESC);", cancellationToken).ConfigureAwait(false);
+        await ExecuteNonQueryAsync(connection, "CREATE INDEX IF NOT EXISTS IX_Documents_RelativePath ON Documents(RelativePath);", cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task EnsureColumnAsync(DbConnection connection, ILogger logger, string table, string column, string definition, CancellationToken cancellationToken)
+    {
+        var exists = await ColumnExistsAsync(connection, table, column, cancellationToken).ConfigureAwait(false);
+        if (exists)
+        {
+            return;
+        }
+
+        logger.LogInformation("Adding {Column} column to {Table} table.", column, table);
+        await ExecuteNonQueryAsync(connection, $"ALTER TABLE {table} ADD COLUMN {column} {definition};", cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<bool> ColumnExistsAsync(DbConnection connection, string tableName, string columnName, CancellationToken cancellationToken)
