@@ -89,51 +89,51 @@
                     <div class="row g-3">
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="typeFilter">ประเภทเอกสาร</label>
-                            <select id="typeFilter" class="form-select" @bind="selectedDocumentType">
+                            <select id="typeFilter" class="form-select" @onchange="OnDocumentTypeChanged">
                                 <option value="">ทุกประเภท</option>
                                 @foreach (var docType in GetAvailableDocumentTypes())
                                 {
-                                    <option value="@docType">@docType</option>
+                                    <option value="@docType" selected="@string.Equals(docType, selectedDocumentType, StringComparison.OrdinalIgnoreCase)">@docType</option>
                                 }
                             </select>
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="lineFilter">Line</label>
-                            <select id="lineFilter" class="form-select" @bind="selectedLine">
+                            <select id="lineFilter" class="form-select" @onchange="OnLineChanged">
                                 <option value="">ทุก Line</option>
                                 @foreach (var line in GetAvailableLines())
                                 {
-                                    <option value="@line">@line</option>
+                                    <option value="@line" selected="@string.Equals(line, selectedLine, StringComparison.OrdinalIgnoreCase)">@line</option>
                                 }
                             </select>
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="stationFilter">Station</label>
-                            <select id="stationFilter" class="form-select" @bind="selectedStation">
+                            <select id="stationFilter" class="form-select" @onchange="OnStationChanged">
                                 <option value="">ทุก Station</option>
                                 @foreach (var station in GetAvailableStations())
                                 {
-                                    <option value="@station">@station</option>
+                                    <option value="@station" selected="@string.Equals(station, selectedStation, StringComparison.OrdinalIgnoreCase)">@station</option>
                                 }
                             </select>
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="modelFilter">Model</label>
-                            <select id="modelFilter" class="form-select" @bind="selectedModel">
+                            <select id="modelFilter" class="form-select" @onchange="OnModelChanged">
                                 <option value="">ทุก Model</option>
                                 @foreach (var model in GetAvailableModels())
                                 {
-                                    <option value="@model">@model</option>
+                                    <option value="@model" selected="@string.Equals(model, selectedModel, StringComparison.OrdinalIgnoreCase)">@model</option>
                                 }
                             </select>
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="uploaderFilter">ผู้บันทึก</label>
-                            <select id="uploaderFilter" class="form-select" @bind="selectedUploader">
+                            <select id="uploaderFilter" class="form-select" @onchange="OnUploaderChanged">
                                 <option value="">ทุกผู้บันทึก</option>
                                 @foreach (var uploader in GetAvailableUploaders())
                                 {
-                                    <option value="@uploader">@uploader</option>
+                                    <option value="@uploader" selected="@string.Equals(uploader, selectedUploader, StringComparison.OrdinalIgnoreCase)">@uploader</option>
                                 }
                             </select>
                         </div>
