@@ -1,7 +1,16 @@
 @page "/"
+@page "/oiwi"
 @rendermode InteractiveServer
+@using System.Globalization
+@using System.Linq
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.WebUtilities
+@using WepAppOIWI_Digital.Services
+@implements IDisposable
 @inject DocumentCatalogService DocumentCatalog
 @inject ILogger<WepAppOIWI_Digital.Components.Pages.Home> Logger
+@inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <PageTitle>Home</PageTitle>
 
@@ -39,8 +48,8 @@
                     <input id="documentSearch"
                            class="form-control"
                            placeholder="พิมพ์คำค้นหา เช่น ชื่อเอกสาร Line หรือ Model"
-                           @bind="searchTerm"
-                           @bind:event="oninput" />
+                           value="@searchTerm"
+                           @oninput="OnSearchInput" />
                 </div>
                 <div class="col-auto d-flex align-items-center gap-2">
                     <button type="button"
@@ -80,51 +89,51 @@
                     <div class="row g-3">
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="typeFilter">ประเภทเอกสาร</label>
-                            <select id="typeFilter" class="form-select" @bind="selectedDocumentType">
+                            <select id="typeFilter" class="form-select" @onchange="OnDocumentTypeChanged">
                                 <option value="">ทุกประเภท</option>
                                 @foreach (var docType in GetAvailableDocumentTypes())
                                 {
-                                    <option value="@docType">@docType</option>
+                                    <option value="@docType" @(string.Equals(docType, selectedDocumentType, StringComparison.OrdinalIgnoreCase) ? "selected" : null)>@docType</option>
                                 }
                             </select>
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="lineFilter">Line</label>
-                            <select id="lineFilter" class="form-select" @bind="selectedLine">
+                            <select id="lineFilter" class="form-select" @onchange="OnLineChanged">
                                 <option value="">ทุก Line</option>
                                 @foreach (var line in GetAvailableLines())
                                 {
-                                    <option value="@line">@line</option>
+                                    <option value="@line" @(string.Equals(line, selectedLine, StringComparison.OrdinalIgnoreCase) ? "selected" : null)>@line</option>
                                 }
                             </select>
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="stationFilter">Station</label>
-                            <select id="stationFilter" class="form-select" @bind="selectedStation">
+                            <select id="stationFilter" class="form-select" @onchange="OnStationChanged">
                                 <option value="">ทุก Station</option>
                                 @foreach (var station in GetAvailableStations())
                                 {
-                                    <option value="@station">@station</option>
+                                    <option value="@station" @(string.Equals(station, selectedStation, StringComparison.OrdinalIgnoreCase) ? "selected" : null)>@station</option>
                                 }
                             </select>
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="modelFilter">Model</label>
-                            <select id="modelFilter" class="form-select" @bind="selectedModel">
+                            <select id="modelFilter" class="form-select" @onchange="OnModelChanged">
                                 <option value="">ทุก Model</option>
                                 @foreach (var model in GetAvailableModels())
                                 {
-                                    <option value="@model">@model</option>
+                                    <option value="@model" @(string.Equals(model, selectedModel, StringComparison.OrdinalIgnoreCase) ? "selected" : null)>@model</option>
                                 }
                             </select>
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="uploaderFilter">ผู้บันทึก</label>
-                            <select id="uploaderFilter" class="form-select" @bind="selectedUploader">
+                            <select id="uploaderFilter" class="form-select" @onchange="OnUploaderChanged">
                                 <option value="">ทุกผู้บันทึก</option>
                                 @foreach (var uploader in GetAvailableUploaders())
                                 {
-                                    <option value="@uploader">@uploader</option>
+                                    <option value="@uploader" @(string.Equals(uploader, selectedUploader, StringComparison.OrdinalIgnoreCase) ? "selected" : null)>@uploader</option>
                                 }
                             </select>
                         </div>
@@ -135,7 +144,7 @@
                 <button type="button" class="btn btn-outline-secondary" @onclick="ClearAllFilters">
                     ล้างตัวกรองทั้งหมด
                 </button>
-                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal" @onclick="ApplyFiltersFromModal">
                     ยืนยันตัวกรอง
                 </button>
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal">
@@ -145,8 +154,6 @@
         </div>
     </div>
 </div>
-
-@{ var filteredDocuments = GetFilteredDocuments(); }
 
 @if (!string.IsNullOrWhiteSpace(activeDirectoryPath))
 {
@@ -158,16 +165,130 @@
     <div class="@statusAlertClass" role="alert">@statusMessage</div>
 }
 
-@if (!string.IsNullOrEmpty(errorMessage))
+@if (isLoading)
 {
-    <div class="alert alert-danger" role="alert">@errorMessage</div>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th style="width:72px;">No.</th>
+                    <th>เลขเอกสาร</th>
+                    <th>OI/WI Name</th>
+                    <th>Line</th>
+                    <th>Station</th>
+                    <th>Model</th>
+                    <th>Machine name</th>
+                    <th>Time</th>
+                    <th>Name</th>
+                    <th>Comment</th>
+                    <th>การจัดการ</th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < 10; i++)
+                {
+                    <tr class="skeleton-row">
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                        <td><div class="sk w-100"></div></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="text-muted small mt-1">กำลังโหลดข้อมูล… หากนานผิดปกติ แสดงว่าเครือข่ายหรือเซิร์ฟเวอร์ตอบสนองช้า</div>
+    @if (showSlowMessage)
+    {
+        <div class="text-muted small mt-1">ใช้เวลานานกว่าปกติ กำลังติดต่อเซิร์ฟเวอร์…</div>
+    }
 }
-else if (isLoading)
+else if (isError)
 {
-    <p class="text-muted">กำลังโหลดข้อมูลเอกสาร...</p>
+    <div class="alert alert-warning d-flex align-items-start" role="alert">
+        <div class="me-2">⚠️</div>
+        <div>@(string.IsNullOrWhiteSpace(errorMessage) ? "ไม่สามารถโหลดข้อมูลได้" : errorMessage)</div>
+        <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="RetryAsync">ลองอีกครั้ง</button>
+    </div>
 }
 else
 {
+    <div id="oiwiTableTop"></div>
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+        <div class="small text-muted">
+            Showing <strong>@StartIndex–@EndIndex</strong> of <strong>@pageData.TotalCount</strong>
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
+            <label class="form-label m-0 small">แสดงต่อหน้า</label>
+            <select class="form-select form-select-sm" style="width: 96px" value="@currentPageSize" @onchange="ChangePageSize">
+                @foreach (var s in pageSizes)
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+        </div>
+
+        <nav aria-label="Pagination">
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item @(pageData.Page <= 1 ? "disabled" : null)">
+                    <button class="page-link" aria-label="First" @onclick="() => Go(1)">« First</button>
+                </li>
+                <li class="page-item @(pageData.Page <= 1 ? "disabled" : null)">
+                    <button class="page-link" aria-label="Previous" @onclick="() => Go(pageData.Page - 1)">‹ Prev</button>
+                </li>
+
+                @foreach (var pnum in GetPageList())
+                {
+                    if (pnum is null)
+                    {
+                        <li class="page-item disabled"><span class="page-link">…</span></li>
+                    }
+                    else
+                    {
+                        var active = pnum == pageData.Page ? "active" : null;
+                        <li class="page-item @active">
+                            <button id="oiwi-pagebtn-@pnum"
+                                    class="page-link"
+                                    aria-label="Page @pnum"
+                                    disabled="@(pnum == pageData.Page)"
+                                    @onclick="() => Go(pnum.Value)">
+                                @pnum
+                            </button>
+                        </li>
+                    }
+                }
+
+                <li class="page-item @(pageData.Page >= LastPage ? "disabled" : null)">
+                    <button class="page-link" aria-label="Next" @onclick="() => Go(pageData.Page + 1)">Next ›</button>
+                </li>
+                <li class="page-item @(pageData.Page >= LastPage ? "disabled" : null)">
+                    <button class="page-link" aria-label="Last" @onclick="() => Go(LastPage)">Last »</button>
+                </li>
+            </ul>
+        </nav>
+
+        <div class="input-group input-group-sm" style="width: 200px">
+            <span class="input-group-text">ไปหน้า</span>
+            <input class="form-control"
+                   type="number"
+                   min="1"
+                   max="@LastPage"
+                   value="@JumpInput"
+                   @oninput="OnJumpInputChanged"
+                   @onkeydown="OnJumpInputKeyDown" />
+            <button class="btn btn-outline-secondary" type="button" @onclick="Jump">Go</button>
+        </div>
+    </div>
+
     <div class="table-responsive">
         <table class="table table-striped align-middle">
             <thead class="table-light">
@@ -186,7 +307,7 @@ else
                 </tr>
             </thead>
             <tbody>
-                @if (filteredDocuments.Count == 0)
+                @if (pageData.Items.Count == 0)
                 {
                     <tr>
                         <td colspan="11" class="text-center text-muted py-4">
@@ -198,35 +319,36 @@ else
                 }
                 else
                 {
-                    @for (var index = 0; index < filteredDocuments.Count; index++)
+                    @for (var index = 0; index < pageData.Items.Count; index++)
                     {
-                        var document = filteredDocuments[index];
-                        var viewerUrl = BuildViewerUrl(document);
-                        var editUrl = BuildEditUrl(document);
+                        var row = pageData.Items[index];
+                        var rowNumber = StartIndex + index;
+                        var viewerUrl = BuildViewerUrl(row);
+                        var editUrl = BuildEditUrl(row);
                         <tr>
-                            <td>@(index + 1)</td>
-                            <td>@(DisplayOrDash(document.DocumentCode))</td>
+                            <td>@rowNumber</td>
+                            <td>@(DisplayOrDash(row.DocumentCode))</td>
                             <td>
                                 @if (!string.IsNullOrEmpty(viewerUrl))
                                 {
-                                    <a href="@viewerUrl" target="_blank" rel="noopener">@document.DisplayName</a>
+                                    <a href="@viewerUrl" target="_blank" rel="noopener">@row.DisplayName</a>
                                 }
-                                else if (!string.IsNullOrEmpty(document.LinkUrl))
+                                else if (!string.IsNullOrEmpty(row.LinkUrl))
                                 {
-                                    <a href="@document.LinkUrl" target="_blank" rel="noopener">@document.DisplayName</a>
+                                    <a href="@row.LinkUrl" target="_blank" rel="noopener">@row.DisplayName</a>
                                 }
                                 else
                                 {
-                                    @document.DisplayName
+                                    @row.DisplayName
                                 }
                             </td>
-                            <td>@(DisplayOrDash(document.Line))</td>
-                            <td>@(DisplayOrDash(document.Station))</td>
-                            <td>@(DisplayOrDash(document.Model))</td>
-                            <td>@(DisplayOrDash(document.Machine))</td>
-                            <td>@FormatTimestamp(document.UpdatedAt)</td>
-                            <td>@(DisplayOrDash(document.UploadedBy))</td>
-                            <td>@(DisplayOrDash(document.Comment))</td>
+                            <td>@(DisplayOrDash(row.Line))</td>
+                            <td>@(DisplayOrDash(row.Station))</td>
+                            <td>@(DisplayOrDash(row.Model))</td>
+                            <td>@(DisplayOrDash(row.Machine))</td>
+                            <td>@FormatTimestamp(row.UpdatedAt)</td>
+                            <td>@(DisplayOrDash(row.UploadedBy))</td>
+                            <td>@(DisplayOrDash(row.Comment))</td>
                             <td class="text-center">
                                 @if (!string.IsNullOrEmpty(editUrl))
                                 {
@@ -247,149 +369,441 @@ else
 
 @code {
     private readonly List<DocumentRecord> documents = new();
+    private PagedResult<OiwiRow> pageData = new(Array.Empty<OiwiRow>(), 0, 1, 20);
+    private readonly int[] pageSizes = new[] { 10, 20, 50, 100 };
+
     private string searchTerm = string.Empty;
     private string selectedDocumentType = string.Empty;
     private string selectedLine = string.Empty;
     private string selectedStation = string.Empty;
     private string selectedModel = string.Empty;
     private string selectedUploader = string.Empty;
+
     private DocumentCatalogService.DocumentCatalogContext catalogContext = DocumentCatalogService.DocumentCatalogContext.Uninitialized;
     private bool isLoading = true;
+    private bool isError;
     private string? errorMessage;
+    private bool showSlowMessage;
     private string? activeDirectoryPath;
     private string? statusAlertClass;
     private string? statusMessage;
 
+    private bool _documentsLoaded;
+    private bool _pendingScroll;
+    private bool _pendingFocus;
+    private bool _loadQueued;
+    private CancellationTokenSource? _cts;
+
+    private int currentPage = 1;
+    private int currentPageSize = 20;
+    private string currentSortColumn = "Time";
+    private bool currentSortDescending = true;
+    private string JumpInput { get; set; } = string.Empty;
+
+    [SupplyParameterFromQuery(Name = "page")] public int PageNumberQuery { get; set; } = 1;
+    [SupplyParameterFromQuery(Name = "pageSize")] public int PageSizeQuery { get; set; } = 20;
+    [SupplyParameterFromQuery(Name = "search")] public string? SearchQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "sort")] public string? SortQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "desc")] public bool SortDescQuery { get; set; } = true;
+
     protected override async Task OnInitializedAsync()
     {
-        await LoadDocumentsAsync();
+        if (!Nav.ToAbsoluteUri(Nav.Uri).Query.Contains("pageSize=", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var saved = await JS.InvokeAsync<int?>("oiwi_getPageSize");
+                if (saved is int s && pageSizes.Contains(s))
+                {
+                    PageSizeQuery = s;
+                    currentPageSize = s;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Unable to read stored page size from localStorage.");
+            }
+        }
     }
 
-    private async Task LoadDocumentsAsync()
+    protected override void OnParametersSet()
     {
+        CancelPending();
+
+        currentPage = Math.Max(1, PageNumberQuery);
+        currentPageSize = pageSizes.Contains(PageSizeQuery) ? PageSizeQuery : 20;
+        currentSortColumn = string.IsNullOrWhiteSpace(SortQuery) ? "Time" : SortQuery!;
+        currentSortDescending = SortDescQuery;
+
+        var filters = DocumentCatalogService.ParseOiwiSearchQuery(SearchQuery);
+        searchTerm = filters.Keyword ?? string.Empty;
+        selectedDocumentType = filters.DocumentType ?? string.Empty;
+        selectedLine = filters.Line ?? string.Empty;
+        selectedStation = filters.Station ?? string.Empty;
+        selectedModel = filters.Model ?? string.Empty;
+        selectedUploader = filters.Uploader ?? string.Empty;
+
+        catalogContext = DocumentCatalog.GetCatalogContext();
+        UpdateCatalogStatus(catalogContext);
+
+        isLoading = true;
+        isError = false;
+        errorMessage = null;
+        showSlowMessage = false;
+        JumpInput = string.Empty;
+        _loadQueued = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_loadQueued)
+        {
+            _loadQueued = false;
+            await LoadFirstPageAsync();
+        }
+
+        if (_pendingScroll)
+        {
+            _pendingScroll = false;
+            try
+            {
+                await JS.InvokeVoidAsync("oiwi_scrollToId", "oiwiTableTop");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Failed to scroll table into view.");
+            }
+        }
+
+        if (_pendingFocus)
+        {
+            _pendingFocus = false;
+            try
+            {
+                await JS.InvokeVoidAsync("oiwi_focusById", CurrentPageBtnId);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Failed to focus current pagination button.");
+            }
+        }
+    }
+
+    private async Task LoadFilterOptionsAsync(CancellationToken cancellationToken)
+    {
+        if (_documentsLoaded)
+        {
+            return;
+        }
+
         try
         {
-            var result = await DocumentCatalog.GetDocumentsAsync();
+            var result = await DocumentCatalog.GetDocumentsAsync(cancellationToken).ConfigureAwait(false);
             documents.Clear();
             documents.AddRange(result);
             catalogContext = DocumentCatalog.GetCatalogContext();
             UpdateCatalogStatus(catalogContext);
+            _documentsLoaded = true;
+        }
+        catch (OperationCanceledException)
+        {
+            // ignored when navigation cancels the load
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Failed to load OI/WI documents from the server file system.");
-            errorMessage = "ไม่สามารถโหลดรายการเอกสารได้ กรุณาลองใหม่อีกครั้ง";
+            Logger.LogDebug(ex, "Failed to refresh filter dataset.");
+        }
+    }
+
+    private async Task LoadFirstPageAsync()
+    {
+        var localCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        _cts = localCts;
+        var token = localCts.Token;
+
+        isLoading = true;
+        isError = false;
+        errorMessage = null;
+        showSlowMessage = false;
+        StateHasChanged();
+
+        _ = ShowSlowNoticeAsync(localCts);
+
+        try
+        {
+            var filters = new OiwiSearchFilters(
+                NullIfEmpty(searchTerm),
+                NullIfEmpty(selectedDocumentType),
+                NullIfEmpty(selectedLine),
+                NullIfEmpty(selectedStation),
+                NullIfEmpty(selectedModel),
+                NullIfEmpty(selectedUploader));
+
+            var searchPayload = DocumentCatalogService.BuildOiwiSearchQuery(filters);
+            pageData = await DocumentCatalog.GetOiwiPageAsync(
+                currentPage,
+                currentPageSize,
+                searchPayload,
+                currentSortColumn,
+                currentSortDescending,
+                token);
+
+            isError = false;
+            errorMessage = null;
+            _pendingScroll = true;
+            _pendingFocus = true;
+            await LoadFilterOptionsAsync(token);
+        }
+        catch (OperationCanceledException) when (!ReferenceEquals(_cts, localCts))
+        {
+            // cancelled due to navigation or manual refresh; no user-facing error
+        }
+        catch (OperationCanceledException)
+        {
+            isError = true;
+            errorMessage = "การเชื่อมต่อช้าเกินไป โปรดลองอีกครั้ง";
+            pageData = new PagedResult<OiwiRow>(Array.Empty<OiwiRow>(), 0, currentPage, currentPageSize);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load paged OI/WI data.");
+            isError = true;
+            errorMessage = "ไม่สามารถโหลดรายการเอกสารได้ (ปัญหาการจัดเรียงเวลาในฐานข้อมูล) – กด “ลองอีกครั้ง” หรือแจ้งผู้ดูแลระบบ";
+            pageData = new PagedResult<OiwiRow>(Array.Empty<OiwiRow>(), 0, currentPage, currentPageSize);
         }
         finally
         {
+            showSlowMessage = false;
             isLoading = false;
+
+            if (ReferenceEquals(_cts, localCts))
+            {
+                _cts.Dispose();
+                _cts = null;
+            }
+            else
+            {
+                localCts.Dispose();
+            }
+
+            StateHasChanged();
         }
     }
 
-    private static string DisplayOrDash(string? value)
-        => string.IsNullOrWhiteSpace(value) || value == "-"
-            ? "-"
-            : value;
-
-    private static string FormatTimestamp(DateTimeOffset? timestamp)
-        => timestamp.HasValue
-            ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
-            : "-";
-
-    private string? BuildViewerUrl(DocumentRecord document)
+    private async Task ShowSlowNoticeAsync(CancellationTokenSource source)
     {
-        if (string.IsNullOrWhiteSpace(document.FileName))
+        try
         {
-            return null;
+            await Task.Delay(TimeSpan.FromSeconds(3), source.Token).ConfigureAwait(false);
+            if (!source.IsCancellationRequested)
+            {
+                showSlowMessage = true;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // expected when the load completes quickly or is cancelled
+        }
+    }
+
+    private void CancelPending()
+    {
+        if (_cts is null)
+        {
+            return;
         }
 
         try
         {
-            var token = DocumentCatalogService.EncodeDocumentToken(document.FileName);
-            return $"/documents/viewer/{Uri.EscapeDataString(token)}";
+            _cts.Cancel();
         }
-        catch (Exception ex)
+        catch (ObjectDisposedException)
         {
-            Logger.LogWarning(ex, "Failed to build viewer link for document '{DocumentName}'.", document.FileName);
-            return document.LinkUrl;
+        }
+        finally
+        {
+            _cts.Dispose();
+            _cts = null;
         }
     }
 
-    private string? BuildEditUrl(DocumentRecord document)
+    private async Task TriggerReloadAsync(bool refreshFilters = false)
     {
-        if (string.IsNullOrWhiteSpace(document.FileName))
+        if (refreshFilters)
         {
-            return null;
+            _documentsLoaded = false;
         }
 
-        try
-        {
-            var token = DocumentCatalogService.EncodeDocumentToken(document.FileName);
-            return $"/documents/edit/{Uri.EscapeDataString(token)}";
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Failed to build edit link for document '{DocumentName}'.", document.FileName);
-            return null;
-        }
+        CancelPending();
+
+        isLoading = true;
+        isError = false;
+        errorMessage = null;
+        showSlowMessage = false;
+        StateHasChanged();
+
+        await LoadFirstPageAsync();
     }
 
-    private IReadOnlyList<DocumentRecord> GetFilteredDocuments()
+    private Task RetryAsync() => TriggerReloadAsync();
+
+    private static string? NullIfEmpty(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private IEnumerable<int?> GetPageList()
     {
-        IEnumerable<DocumentRecord> query = documents;
+        const int pageWindow = 2;
+        var lastPage = LastPage;
 
-        if (!string.IsNullOrWhiteSpace(selectedDocumentType))
+        if (lastPage <= 7)
         {
-            query = query.Where(document => string.Equals(
-                NormalizeValue(document.DocumentType),
-                selectedDocumentType,
-                StringComparison.OrdinalIgnoreCase));
+            for (var i = 1; i <= lastPage; i++)
+            {
+                yield return i;
+            }
+            yield break;
         }
 
-        if (!string.IsNullOrWhiteSpace(selectedLine))
+        yield return 1;
+
+        var left = Math.Max(2, pageData.Page - pageWindow);
+        if (left > 2)
         {
-            query = query.Where(document => string.Equals(NormalizeValue(document.Line), selectedLine, StringComparison.OrdinalIgnoreCase));
+            yield return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(selectedStation))
+        var right = Math.Min(lastPage - 1, pageData.Page + pageWindow);
+        for (var i = left; i <= right; i++)
         {
-            query = query.Where(document => string.Equals(NormalizeValue(document.Station), selectedStation, StringComparison.OrdinalIgnoreCase));
+            yield return i;
         }
 
-        if (!string.IsNullOrWhiteSpace(selectedModel))
+        if (right < lastPage - 1)
         {
-            query = query.Where(document => string.Equals(NormalizeValue(document.Model), selectedModel, StringComparison.OrdinalIgnoreCase));
+            yield return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(selectedUploader))
-        {
-            query = query.Where(document => string.Equals(NormalizeValue(document.UploadedBy), selectedUploader, StringComparison.OrdinalIgnoreCase));
-        }
-
-        var keyword = searchTerm.Trim();
-
-        if (!string.IsNullOrWhiteSpace(keyword))
-        {
-            query = query.Where(document => MatchesKeyword(document, keyword));
-        }
-
-        return query.ToList();
+        yield return lastPage;
     }
 
-    private static bool MatchesKeyword(DocumentRecord document, string keyword)
-        => ContainsKeyword(document.DisplayName, keyword)
-            || ContainsKeyword(document.Line, keyword)
-            || ContainsKeyword(document.Station, keyword)
-            || ContainsKeyword(document.Model, keyword)
-            || ContainsKeyword(document.Machine, keyword)
-            || ContainsKeyword(document.UploadedBy, keyword)
-            || ContainsKeyword(document.Comment, keyword)
-            || ContainsKeyword(document.DocumentType, keyword)
-            || ContainsKeyword(document.DocumentCode, keyword);
+    private int StartIndex => pageData.TotalCount == 0 ? 0 : ((pageData.Page - 1) * pageData.PageSize) + 1;
+    private int EndIndex => Math.Min(pageData.Page * pageData.PageSize, pageData.TotalCount);
+    private int LastPage => pageData.TotalCount == 0 ? 1 : (int)Math.Ceiling(pageData.TotalCount / (double)pageData.PageSize);
+    private string CurrentPageBtnId => $"oiwi-pagebtn-{pageData.Page}";
 
-    private static bool ContainsKeyword(string? source, string keyword)
-        => !string.IsNullOrWhiteSpace(source)
-            && source.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
+    private void Go(int newPage)
+    {
+        var sanitized = Math.Clamp(newPage, 1, LastPage);
+        var filters = new OiwiSearchFilters(
+            NullIfEmpty(searchTerm),
+            NullIfEmpty(selectedDocumentType),
+            NullIfEmpty(selectedLine),
+            NullIfEmpty(selectedStation),
+            NullIfEmpty(selectedModel),
+            NullIfEmpty(selectedUploader));
+
+        var queryValues = new Dictionary<string, string?>
+        {
+            ["page"] = sanitized.ToString(CultureInfo.InvariantCulture),
+            ["pageSize"] = currentPageSize.ToString(CultureInfo.InvariantCulture),
+            ["desc"] = currentSortDescending ? "true" : "false"
+        };
+
+        if (!string.IsNullOrWhiteSpace(currentSortColumn))
+        {
+            queryValues["sort"] = currentSortColumn;
+        }
+
+        var payload = DocumentCatalogService.BuildOiwiSearchQuery(filters);
+        if (!string.IsNullOrWhiteSpace(payload))
+        {
+            queryValues["search"] = payload;
+        }
+
+        var target = QueryHelpers.AddQueryString(GetCurrentRouteBase(), queryValues);
+        Nav.NavigateTo(target, forceLoad: false);
+    }
+
+    private async Task ChangePageSize(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var selected) && pageSizes.Contains(selected))
+        {
+            currentPageSize = selected;
+            PageSizeQuery = selected;
+            try
+            {
+                await JS.InvokeVoidAsync("oiwi_setPageSize", selected);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Unable to persist page size to localStorage.");
+            }
+
+            Go(1);
+        }
+    }
+
+    private void Jump()
+    {
+        if (int.TryParse(JumpInput, NumberStyles.Integer, CultureInfo.InvariantCulture, out var requested))
+        {
+            Go(requested);
+        }
+    }
+
+    private void OnJumpInputChanged(ChangeEventArgs args)
+    {
+        JumpInput = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void OnJumpInputKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+        {
+            Jump();
+        }
+    }
+
+    private void OnSearchInput(ChangeEventArgs args)
+    {
+        var newValue = args.Value?.ToString() ?? string.Empty;
+        if (!string.Equals(newValue, searchTerm, StringComparison.Ordinal))
+        {
+            searchTerm = newValue;
+            Go(1);
+        }
+    }
+
+    private void OnDocumentTypeChanged(ChangeEventArgs args)
+    {
+        selectedDocumentType = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void OnLineChanged(ChangeEventArgs args)
+    {
+        selectedLine = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void OnStationChanged(ChangeEventArgs args)
+    {
+        selectedStation = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void OnModelChanged(ChangeEventArgs args)
+    {
+        selectedModel = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void OnUploaderChanged(ChangeEventArgs args)
+    {
+        selectedUploader = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private void ApplyFiltersFromModal()
+    {
+        Go(1);
+    }
 
     private void ClearAllFilters()
     {
@@ -399,6 +813,7 @@ else
         selectedStation = string.Empty;
         selectedModel = string.Empty;
         selectedUploader = string.Empty;
+        Go(1);
     }
 
     private bool IsClearDisabled()
@@ -501,13 +916,67 @@ else
         }
     }
 
-    private async Task RefreshNow()
+    private Task RefreshNow()
     {
-        DocumentCatalog.InvalidateCache();   // เคลียร์ cache ของ service
-        isLoading = true;
-        StateHasChanged();
-
-        await LoadDocumentsAsync();          // โหลดใหม่จากดิสก์
+        DocumentCatalog.InvalidateCache();
+        return TriggerReloadAsync(refreshFilters: true);
     }
 
+    public void Dispose()
+        => CancelPending();
+
+    private static string DisplayOrDash(string? value)
+        => string.IsNullOrWhiteSpace(value) || value == "-"
+            ? "-"
+            : value;
+
+    private static string FormatTimestamp(DateTimeOffset? timestamp)
+        => timestamp.HasValue
+            ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+            : "-";
+
+    private string? BuildViewerUrl(OiwiRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.FileName))
+        {
+            return null;
+        }
+
+        try
+        {
+            var token = DocumentCatalogService.EncodeDocumentToken(row.FileName);
+            return $"/documents/viewer/{Uri.EscapeDataString(token)}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to build viewer link for document '{DocumentName}'.", row.FileName);
+            return row.LinkUrl;
+        }
+    }
+
+    private string? BuildEditUrl(OiwiRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.FileName))
+        {
+            return null;
+        }
+
+        try
+        {
+            var token = DocumentCatalogService.EncodeDocumentToken(row.FileName);
+            return $"/documents/edit/{Uri.EscapeDataString(token)}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to build edit link for document '{DocumentName}'.", row.FileName);
+            return null;
+        }
+    }
+
+    private string GetCurrentRouteBase()
+    {
+        var relative = Nav.ToBaseRelativePath(Nav.Uri);
+        var path = relative.Split('?', 2)[0];
+        return string.IsNullOrWhiteSpace(path) ? "/" : "/" + path.Trim('/');
+    }
 }

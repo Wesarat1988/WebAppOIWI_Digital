@@ -1,13 +1,18 @@
-using WepAppOIWI_Digital.Components;
-using WepAppOIWI_Digital.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using System.IO;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using WepAppOIWI_Digital.Components;
+using WepAppOIWI_Digital.Data;
+using WepAppOIWI_Digital.Services;
 
 var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
 if (string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase))
@@ -19,11 +24,16 @@ if (string.Equals(environmentName, Environments.Development, StringComparison.Or
 
 var builder = WebApplication.CreateBuilder(args);
 
+var catalogConnectionString = ResolveCatalogConnectionString(builder);
+
 builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
 builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
+builder.Services.AddMemoryCache();
+builder.Services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(catalogConnectionString));
 builder.Services.AddSingleton<DocumentCatalogService>();
 builder.Services.AddSingleton<DocumentUploadService>();
 builder.Services.AddSingleton<IVersionStore, FilesystemVersionStore>();
+builder.Services.AddHostedService<OiwiIndexer>();
 
 // DI: HttpClient ÊÓËÃÑº¤ÍÁâ¾à¹¹µì
 builder.Services.AddScoped<HttpClient>(sp =>
@@ -39,6 +49,15 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+    using var db = factory.CreateDbContext();
+    db.Database.EnsureCreated();
+    var migratorLogger = scope.ServiceProvider.GetRequiredService<ILogger<CatalogDbMigrator>>();
+    await CatalogDbMigrator.EnsureSchemaAsync(factory, migratorLogger);
+}
 
 if (!app.Environment.IsDevelopment())
 {
@@ -75,6 +94,41 @@ app.MapGet("/documents/download/{token}", (string token, DocumentCatalogService 
 app.MapGet("/documents/file/{token}", (HttpContext context, string token, DocumentCatalogService catalog, CancellationToken cancellationToken)
     => ServeDocumentAsync(context, token, catalog, cancellationToken, inline: true));
 
+app.MapGet("/documents/{token}/versions", async (string token, int? take, DocumentUploadService uploader, CancellationToken cancellationToken) =>
+{
+    if (!DocumentCatalogService.TryDecodeDocumentToken(token, out var normalizedPath))
+    {
+        return Results.BadRequest();
+    }
+
+    var history = await uploader.GetHistoryAsync(normalizedPath, take.GetValueOrDefault(5), cancellationToken).ConfigureAwait(false);
+    return Results.Ok(history);
+});
+
+app.MapPost("/documents/{token}/versions/{versionId}/set-active", async (HttpContext httpContext, string token, string versionId, DocumentUploadService uploader, CancellationToken cancellationToken) =>
+{
+    if (!DocumentCatalogService.TryDecodeDocumentToken(token, out var normalizedPath))
+    {
+        return Results.BadRequest();
+    }
+
+    var actor = httpContext.User?.Identity?.Name;
+    var result = await uploader.SetActiveVersionAsync(normalizedPath, versionId, actor, comment: null, cancellationToken).ConfigureAwait(false);
+
+    if (!result.Succeeded)
+    {
+        return Results.BadRequest(new { message = result.ErrorMessage ?? "ไม่สามารถตั้งเวอร์ชันนี้ให้ใช้งานได้" });
+    }
+
+    return Results.Ok(new
+    {
+        versionId = result.ActiveVersionId,
+        updatedAtUtc = result.UpdatedAtUtc?.UtcTicks,
+        result.DocumentCode,
+        result.NormalizedPath
+    });
+});
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
@@ -105,4 +159,33 @@ static async Task<IResult> ServeDocumentAsync(HttpContext? context, string token
     }
 
     return Results.File(handle.PhysicalPath, handle.ContentType, handle.FileName, enableRangeProcessing: true);
+}
+
+static string ResolveCatalogConnectionString(WebApplicationBuilder builder)
+{
+    var raw = builder.Configuration.GetConnectionString("CatalogDb");
+    var contentRoot = builder.Environment.ContentRootPath;
+
+    if (string.IsNullOrWhiteSpace(raw))
+    {
+        var defaultPath = Path.Combine(contentRoot, "App_Data", "catalog.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(defaultPath)!);
+        return $"Data Source={defaultPath}";
+    }
+
+    if (!raw.Contains("Data Source=", StringComparison.OrdinalIgnoreCase))
+    {
+        var targetPath = Path.IsPathRooted(raw) ? raw : Path.Combine(contentRoot, raw);
+        Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
+        return $"Data Source={targetPath}";
+    }
+
+    var builderConn = new SqliteConnectionStringBuilder(raw);
+    if (!Path.IsPathRooted(builderConn.DataSource))
+    {
+        builderConn.DataSource = Path.Combine(contentRoot, builderConn.DataSource);
+    }
+
+    Directory.CreateDirectory(Path.GetDirectoryName(builderConn.DataSource)!);
+    return builderConn.ToString();
 }
