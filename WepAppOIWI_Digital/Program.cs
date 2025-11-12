@@ -33,6 +33,7 @@ builder.Services.Configure<OiwiIndexerOptions>(builder.Configuration.GetSection(
 builder.Services.AddMemoryCache();
 builder.Services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(catalogConnectionString));
 builder.Services.AddSingleton<DocumentCatalogService>();
+builder.Services.AddSingleton<IPdfStampService, PdfStampService>();
 builder.Services.AddSingleton<DocumentUploadService>();
 builder.Services.AddSingleton<IVersionStore, FilesystemVersionStore>();
 var indexerEnabled = builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true);
