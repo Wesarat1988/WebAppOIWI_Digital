@@ -10,3 +10,20 @@
         top: calc(56px + 0.75rem);
     }
 }
+
+.skeleton-row .sk {
+    height: 0.9rem;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #f0f2f5 25%, #e6e8ec 37%, #f0f2f5 63%);
+    background-size: 400% 100%;
+    animation: sk-wave 1.2s ease-in-out infinite;
+}
+
+@keyframes sk-wave {
+    0% {
+        background-position: 100% 0;
+    }
+    100% {
+        background-position: 0 0;
+    }
+}
