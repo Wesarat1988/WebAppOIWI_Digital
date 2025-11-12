@@ -642,6 +642,12 @@ public sealed class DocumentUploadService
 
                 try
                 {
+                    _logger.LogInformation(
+                        "Applying PDF stamp mode {StampMode} (date: {StampDate}) for upload '{FileName}'.",
+                        request.StampMode,
+                        request.StampDate,
+                        request.OriginalFileName);
+
                     fileBytes = await _pdfStampService
                         .ApplyStampAsync(fileBytes, request.StampMode, request.StampDate, cancellationToken)
                         .ConfigureAwait(false);

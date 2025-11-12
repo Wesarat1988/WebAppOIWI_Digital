@@ -109,19 +109,19 @@ else
         <div class="card-header">ตัวเลือกตราประทับ (Stamp) บนเอกสาร</div>
         <div class="card-body d-grid gap-3">
             <InputRadioGroup TValue="StampMode"
-                              Value="formModel.Stamp"
+                              Value="@formModel.Stamp"
                               ValueChanged="HandleStampModeChanged"
                               ValueExpression="() => formModel.Stamp">
                 <div class="form-check">
-                    <InputRadio class="form-check-input" id="stampNone" Value="StampMode.None" />
+                    <InputRadio class="form-check-input" id="stampNone" Value="@StampMode.None" />
                     <label class="form-check-label" for="stampNone">ไม่ติดตราประทับ</label>
                 </div>
                 <div class="form-check">
-                    <InputRadio class="form-check-input" id="stampMC" Value="StampMode.MasterControl" />
+                    <InputRadio class="form-check-input" id="stampMC" Value="@StampMode.MasterControl" />
                     <label class="form-check-label" for="stampMC">Master Control วันที่ปั้ม IE/PE DCFAN</label>
                 </div>
                 <div class="form-check">
-                    <InputRadio class="form-check-input" id="stampVU" Value="StampMode.ValidUnitTemporary" />
+                    <InputRadio class="form-check-input" id="stampVU" Value="@StampMode.ValidUnitTemporary" />
                     <label class="form-check-label" for="stampVU">VALID UNIT วันที่หมดอายุ TEMPORARY</label>
                 </div>
             </InputRadioGroup>
@@ -218,7 +218,7 @@ else
             formModel.StampDate = DateOnly.FromDateTime(DateTime.Today);
         }
 
-        return Task.CompletedTask;
+        return InvokeAsync(StateHasChanged);
     }
 
     private void HandleStampDateChanged(ChangeEventArgs args)
@@ -267,6 +267,16 @@ else
         if (selectedFile is null)
         {
             fileError = "กรุณาเลือกไฟล์ที่ต้องการอัปโหลด";
+            return;
+        }
+
+        var contentType = selectedFile.ContentType;
+        var fileName = selectedFile.Name;
+
+        if (!string.Equals(contentType, "application/pdf", StringComparison.OrdinalIgnoreCase)
+            && (string.IsNullOrWhiteSpace(fileName) || !fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)))
+        {
+            fileError = "ไฟล์ต้องเป็น PDF เท่านั้น";
             return;
         }
 
