@@ -89,7 +89,7 @@
                     <div class="row g-3">
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="typeFilter">ประเภทเอกสาร</label>
-                            <select id="typeFilter" class="form-select" @onchange="OnDocumentTypeChanged">
+                            <select id="typeFilter" class="form-select" value="@selectedDocumentType" @onchange="OnDocumentTypeChanged">
                                 <option value="">ทุกประเภท</option>
                                 @foreach (var docType in GetAvailableDocumentTypes())
                                 {
@@ -99,7 +99,7 @@
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="lineFilter">Line</label>
-                            <select id="lineFilter" class="form-select" @onchange="OnLineChanged">
+                            <select id="lineFilter" class="form-select" value="@selectedLine" @onchange="OnLineChanged">
                                 <option value="">ทุก Line</option>
                                 @foreach (var line in GetAvailableLines())
                                 {
@@ -109,7 +109,7 @@
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="stationFilter">Station</label>
-                            <select id="stationFilter" class="form-select" @onchange="OnStationChanged">
+                            <select id="stationFilter" class="form-select" value="@selectedStation" @onchange="OnStationChanged">
                                 <option value="">ทุก Station</option>
                                 @foreach (var station in GetAvailableStations())
                                 {
@@ -119,7 +119,7 @@
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="modelFilter">Model</label>
-                            <select id="modelFilter" class="form-select" @onchange="OnModelChanged">
+                            <select id="modelFilter" class="form-select" value="@selectedModel" @onchange="OnModelChanged">
                                 <option value="">ทุก Model</option>
                                 @foreach (var model in GetAvailableModels())
                                 {
@@ -129,7 +129,7 @@
                         </div>
                         <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label" for="uploaderFilter">ผู้บันทึก</label>
-                            <select id="uploaderFilter" class="form-select" @onchange="OnUploaderChanged">
+                            <select id="uploaderFilter" class="form-select" value="@selectedUploader" @onchange="OnUploaderChanged">
                                 <option value="">ทุกผู้บันทึก</option>
                                 @foreach (var uploader in GetAvailableUploaders())
                                 {

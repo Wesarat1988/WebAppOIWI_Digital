@@ -422,6 +422,21 @@ public partial class Home : IDisposable
         }
     }
 
+    private void OnDocumentTypeChanged(ChangeEventArgs args)
+        => UpdateFilterSelection(ref selectedDocumentType, args.Value?.ToString());
+
+    private void OnLineChanged(ChangeEventArgs args)
+        => UpdateFilterSelection(ref selectedLine, args.Value?.ToString());
+
+    private void OnStationChanged(ChangeEventArgs args)
+        => UpdateFilterSelection(ref selectedStation, args.Value?.ToString());
+
+    private void OnModelChanged(ChangeEventArgs args)
+        => UpdateFilterSelection(ref selectedModel, args.Value?.ToString());
+
+    private void OnUploaderChanged(ChangeEventArgs args)
+        => UpdateFilterSelection(ref selectedUploader, args.Value?.ToString());
+
     private void OnSearchInput(ChangeEventArgs args)
     {
         var newValue = args.Value?.ToString() ?? string.Empty;
@@ -478,6 +493,16 @@ public partial class Home : IDisposable
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(value => value, StringComparer.CurrentCultureIgnoreCase);
+
+    private void UpdateFilterSelection(ref string field, string? newValue)
+    {
+        var normalized = newValue ?? string.Empty;
+        if (!string.Equals(field, normalized, StringComparison.Ordinal))
+        {
+            field = normalized;
+            Go(1);
+        }
+    }
 
     private static string? NormalizeValue(string? value)
     {
