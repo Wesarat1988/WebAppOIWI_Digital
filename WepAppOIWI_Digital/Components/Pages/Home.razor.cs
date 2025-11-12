@@ -1,10 +1,14 @@
+using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.JSInterop;
 using WepAppOIWI_Digital.Services;
 
 namespace WepAppOIWI_Digital.Components.Pages;
@@ -64,7 +68,7 @@ public partial class Home : IDisposable
         {
             try
             {
-                var saved = await JS.InvokeAsync<int?>("oiwi_getPageSize");
+                var saved = await JS.InvokeAsync<int?>("oiwi_getPageSize", Array.Empty<object?>());
                 if (saved is int s && pageSizes.Contains(s))
                 {
                     PageSizeQuery = s;
