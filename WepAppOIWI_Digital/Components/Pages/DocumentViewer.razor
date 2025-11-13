@@ -60,6 +60,8 @@ else
                 <dd class="col-sm-9">@DisplayOrDash(document.UploadedBy)</dd>
                 <dt class="col-sm-3">Comment</dt>
                 <dd class="col-sm-9">@DisplayOrDash(document.Comment)</dd>
+                <dt class="col-sm-3">Stamp info</dt>
+                <dd class="col-sm-9">@FormatStampInfo(document.StampMode, document.StampDate)</dd>
                 <dt class="col-sm-3">ประเภทไฟล์</dt>
                 <dd class="col-sm-9">@fileHandle.ContentType</dd>
             </dl>
@@ -215,6 +217,9 @@ else
         => timestamp.HasValue
             ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
             : "-";
+
+    private static string FormatStampInfo(StampMode mode, DateOnly? date)
+        => StampDisplay.GetDisplayText(mode, date);
 
     private void NavigateHome() => Navigation.NavigateTo("/");
 }
