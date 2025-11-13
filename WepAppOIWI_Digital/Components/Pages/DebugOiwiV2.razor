@@ -1,0 +1,64 @@
+@page "/debug/oiwi-v2"
+@using Oiwi.Data.Entities
+@inject DocumentV2Service DocumentService
+
+<PageTitle>OI/WI V2 Debug</PageTitle>
+
+<h3 class="mb-3">OI/WI V2 Debug</h3>
+
+@if (_documents is null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (_documents.Count == 0)
+{
+    <p>No documents found.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-sm align-middle">
+            <thead>
+                <tr>
+                    <th>Document code</th>
+                    <th>Type</th>
+                    <th>Title</th>
+                    <th>Line</th>
+                    <th>Station</th>
+                    <th>Model</th>
+                    <th>Uploaded by</th>
+                    <th>Uploaded at (UTC)</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var doc in _documents)
+                {
+                    <tr>
+                        <td>@doc.DocumentCode</td>
+                        <td>@doc.DocumentType</td>
+                        <td>@doc.Title</td>
+                        <td>@doc.Line</td>
+                        <td>@doc.Station</td>
+                        <td>@doc.Model</td>
+                        <td>@doc.UploadedBy</td>
+                        <td>@doc.UploadedAt.ToString("u")</td>
+                        <td class="text-end">
+                            <a class="btn btn-outline-secondary btn-sm" href="@($"/debug/oiwi-v2/edit/{doc.Id}")">Edit</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<Document>? _documents;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await DocumentService.EnsureSeedDataAsync();
+        _documents = await DocumentService.GetDocumentsAsync();
+    }
+}

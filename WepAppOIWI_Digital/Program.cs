@@ -1,15 +1,16 @@
 using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
+using Oiwi.Data;
+using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using System.IO;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using WepAppOIWI_Digital.Components;
 using WepAppOIWI_Digital.Data;
 using WepAppOIWI_Digital.Services;
@@ -25,6 +26,7 @@ if (string.Equals(environmentName, Environments.Development, StringComparison.Or
 var builder = WebApplication.CreateBuilder(args);
 
 var catalogConnectionString = ResolveCatalogConnectionString(builder);
+var oiwiV2ConnectionString = ResolveSqliteConnectionString(builder, "OiwiV2", Path.Combine("App_Data", "oiwi_v2.db"));
 
 builder.Services.AddScoped<WepAppOIWI_Digital.Services.SetupStateStore>();
 builder.Services.Configure<DocumentCatalogOptions>(builder.Configuration.GetSection("DocumentCatalog"));
@@ -32,6 +34,8 @@ builder.Services.Configure<OiwiOptions>(builder.Configuration.GetSection("Oiwi")
 builder.Services.Configure<OiwiIndexerOptions>(builder.Configuration.GetSection("OiwiIndexer"));
 builder.Services.AddMemoryCache();
 builder.Services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(catalogConnectionString));
+builder.Services.AddDbContext<OiwiDbContext>(options => options.UseSqlite(oiwiV2ConnectionString));
+builder.Services.AddScoped<DocumentV2Service>();
 builder.Services.AddSingleton<DocumentCatalogService>();
 builder.Services.AddSingleton<IPdfStampService, PdfStampService>();
 builder.Services.AddSingleton<DocumentUploadService>();
@@ -171,13 +175,16 @@ static async Task<IResult> ServeDocumentAsync(HttpContext? context, string token
 }
 
 static string ResolveCatalogConnectionString(WebApplicationBuilder builder)
+    => ResolveSqliteConnectionString(builder, "CatalogDb", Path.Combine("App_Data", "catalog.db"));
+
+static string ResolveSqliteConnectionString(WebApplicationBuilder builder, string connectionName, string defaultRelativePath)
 {
-    var raw = builder.Configuration.GetConnectionString("CatalogDb");
+    var raw = builder.Configuration.GetConnectionString(connectionName);
     var contentRoot = builder.Environment.ContentRootPath;
 
     if (string.IsNullOrWhiteSpace(raw))
     {
-        var defaultPath = Path.Combine(contentRoot, "App_Data", "catalog.db");
+        var defaultPath = Path.Combine(contentRoot, defaultRelativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(defaultPath)!);
         return $"Data Source={defaultPath}";
     }
