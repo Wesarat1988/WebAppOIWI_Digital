@@ -1,8 +1,12 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@using System
+@using System.Collections.Generic
 @using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.JSInterop
 @using WepAppOIWI_Digital.Components.Shared
+@inject IJSRuntime JS
 
-<div id="app-shell" class="shell shell--collapsed">
+<div id="app-shell" class="shell shell--collapsed @CurrentZoomCssClass">
     <!-- Sidebar -->
     <aside class="shell__sidebar">
         <!-- โลโก้อย่างเดียว (ชนขอบ) -->
@@ -35,8 +39,33 @@
         <header class="topbar">
             <!-- ปุ่ม Toggle -->
             <ShellToggle />
-            <!-- ลิงก์ About เป็น path เริ่มต้นด้วย / -->
-            <a class="link-secondary ms-auto" href="/about">About</a>
+            <div class="topbar__actions ms-auto">
+                <div class="text-zoom-control btn-group btn-group-sm" role="group" aria-label="Text zoom controls">
+                    <button type="button"
+                            class="btn btn-outline-secondary @GetZoomButtonClass(TextZoomSmall)"
+                            @onclick="async () => await SetTextZoomAsync(TextZoomSmall)"
+                            title="Reduce text size"
+                            aria-pressed="@(_textZoomLevel == TextZoomSmall)">
+                        A-
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-secondary @GetZoomButtonClass(TextZoomNormal)"
+                            @onclick="async () => await SetTextZoomAsync(TextZoomNormal)"
+                            title="Default text size"
+                            aria-pressed="@(_textZoomLevel == TextZoomNormal)">
+                        A
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-secondary @GetZoomButtonClass(TextZoomLarge)"
+                            @onclick="async () => await SetTextZoomAsync(TextZoomLarge)"
+                            title="Increase text size"
+                            aria-pressed="@(_textZoomLevel == TextZoomLarge)">
+                        A+
+                    </button>
+                </div>
+                <!-- ลิงก์ About เป็น path เริ่มต้นด้วย / -->
+                <a class="link-secondary topbar__about" href="/about">About</a>
+            </div>
         </header>
 
         <main class="content-area">
@@ -44,3 +73,75 @@
         </main>
     </div>
 </div>
+
+@code {
+    private const string TextZoomSmall = "small";
+    private const string TextZoomNormal = "normal";
+    private const string TextZoomLarge = "large";
+
+    private static readonly HashSet<string> _allowedZoomLevels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        TextZoomSmall,
+        TextZoomNormal,
+        TextZoomLarge
+    };
+
+    private string _textZoomLevel = TextZoomNormal;
+
+    private string CurrentZoomCssClass => _textZoomLevel switch
+    {
+        TextZoomSmall => "text-zoom-small",
+        TextZoomLarge => "text-zoom-large",
+        _ => "text-zoom-normal"
+    };
+
+    private string GetZoomButtonClass(string level)
+        => _textZoomLevel == level ? "active" : string.Empty;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            var storedLevel = await JS.InvokeAsync<string>("appTextZoom.initialize");
+            if (!string.IsNullOrWhiteSpace(storedLevel) && _allowedZoomLevels.Contains(storedLevel) && storedLevel != _textZoomLevel)
+            {
+                _textZoomLevel = storedLevel;
+                StateHasChanged();
+            }
+        }
+        catch (JSException)
+        {
+            // ignore if localStorage is not available
+        }
+    }
+
+    private async Task SetTextZoomAsync(string level)
+    {
+        if (!_allowedZoomLevels.Contains(level))
+        {
+            level = TextZoomNormal;
+        }
+
+        if (_textZoomLevel == level)
+        {
+            return;
+        }
+
+        _textZoomLevel = level;
+        StateHasChanged();
+
+        try
+        {
+            await JS.InvokeVoidAsync("appTextZoom.set", level);
+        }
+        catch (JSException)
+        {
+            // ignore persistence errors
+        }
+    }
+}

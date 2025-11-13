@@ -92,6 +92,29 @@
     border-bottom: 1px solid #e5e7eb;
 }
 
+.topbar__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.topbar__about {
+    white-space: nowrap;
+}
+
+.text-zoom-control .btn {
+    font-weight: 600;
+    min-width: 2.25rem;
+    line-height: 1.2;
+}
+
+.text-zoom-control .btn.active,
+.text-zoom-control .btn:focus-visible {
+    background-color: #dc2626;
+    border-color: #dc2626;
+    color: #fff;
+}
+
 .content-area {
     flex: 1 1 auto;
     min-height: 0;
