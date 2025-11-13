@@ -60,8 +60,11 @@ else
                 <dd class="col-sm-9">@DisplayOrDash(document.UploadedBy)</dd>
                 <dt class="col-sm-3">Comment</dt>
                 <dd class="col-sm-9">@DisplayOrDash(document.Comment)</dd>
-                <dt class="col-sm-3">Stamp info</dt>
-                <dd class="col-sm-9">@FormatStampInfo(document.StampMode, document.StampDate)</dd>
+                @if (document.StampMode != StampMode.None)
+                {
+                    <dt class="col-sm-3">Stamp info</dt>
+                    <dd class="col-sm-9">@FormatStampInfo(document.StampMode, document.StampDate)</dd>
+                }
                 <dt class="col-sm-3">ประเภทไฟล์</dt>
                 <dd class="col-sm-9">@fileHandle.ContentType</dd>
             </dl>
