@@ -188,6 +188,25 @@ public partial class Home : IDisposable
 
         try
         {
+            OiwiIndexingResult indexingResult = OiwiIndexingResult.Empty;
+            try
+            {
+                indexingResult = await IndexingService.RefreshIndexAsync(token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to refresh OI/WI index before loading list page.");
+            }
+
+            if (indexingResult.TotalChanges > 0)
+            {
+                DocumentCatalog.InvalidateCache();
+            }
+
             var filters = new OiwiSearchFilters(
                 NullIfEmpty(searchTerm),
                 NullIfEmpty(selectedDocumentType),
@@ -630,10 +649,45 @@ public partial class Home : IDisposable
         return null;
     }
 
-    private Task RefreshNow()
+    private async Task RefreshNow()
     {
-        DocumentCatalog.InvalidateCache();
-        return TriggerReloadAsync(refreshFilters: true);
+        using var refreshCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+
+        try
+        {
+            statusAlertClass = "alert alert-info";
+            statusMessage = "กำลังรีเฟรชข้อมูลจากโฟลเดอร์...";
+            StateHasChanged();
+
+            var result = await IndexingService.RefreshIndexAsync(refreshCts.Token).ConfigureAwait(false);
+
+            if (result.TotalChanges > 0)
+            {
+                statusAlertClass = "alert alert-success";
+                statusMessage = $"รีเฟรชสำเร็จ: เพิ่ม {result.Added} รายการ, อัปเดต {result.Updated} รายการ, ลบ {result.Removed} รายการ.";
+            }
+            else
+            {
+                statusAlertClass = "alert alert-secondary";
+                statusMessage = "ข้อมูลเป็นปัจจุบันแล้ว (ไม่มีการเปลี่ยนแปลง)";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            statusAlertClass = "alert alert-warning";
+            statusMessage = "ยกเลิกการรีเฟรชข้อมูล (ใช้เวลานานเกินไป)";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to refresh OI/WI index manually.");
+            statusAlertClass = "alert alert-danger";
+            statusMessage = "ไม่สามารถรีเฟรชข้อมูลจากโฟลเดอร์ได้ โปรดลองอีกครั้ง";
+        }
+        finally
+        {
+            DocumentCatalog.InvalidateCache();
+            await TriggerReloadAsync(refreshFilters: true);
+        }
     }
 
     public void Dispose()

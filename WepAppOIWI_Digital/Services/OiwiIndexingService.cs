@@ -1,0 +1,370 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using WepAppOIWI_Digital.Data;
+
+namespace WepAppOIWI_Digital.Services;
+
+public interface IOiwiIndexingService
+{
+    Task<OiwiIndexingResult> RefreshIndexAsync(CancellationToken cancellationToken = default);
+}
+
+public sealed record OiwiIndexingResult(int Processed, int Added, int Updated, int Removed)
+{
+    public int TotalChanges => Added + Updated + Removed;
+
+    public static OiwiIndexingResult Empty { get; } = new(0, 0, 0, 0);
+}
+
+public sealed class OiwiIndexingService : IOiwiIndexingService
+{
+    private readonly DocumentCatalogService _catalog;
+    private readonly IDbContextFactory<AppDbContext> _dbContextFactory;
+    private readonly ILogger<OiwiIndexingService> _logger;
+    private readonly IOptionsMonitor<OiwiOptions> _options;
+    private readonly SemaphoreSlim _mutex = new(1, 1);
+
+    public OiwiIndexingService(
+        DocumentCatalogService catalog,
+        IDbContextFactory<AppDbContext> dbContextFactory,
+        ILogger<OiwiIndexingService> logger,
+        IOptionsMonitor<OiwiOptions> options)
+    {
+        _catalog = catalog;
+        _dbContextFactory = dbContextFactory;
+        _logger = logger;
+        _options = options;
+    }
+
+    public async Task<OiwiIndexingResult> RefreshIndexAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await _mutex.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var options = _options.CurrentValue;
+            if (string.IsNullOrWhiteSpace(options.SharePath))
+            {
+                _logger.LogWarning("OI/WI share path is not configured.");
+            }
+
+            var context = await _catalog.EnsureCatalogContextAsync(cancellationToken).ConfigureAwait(false);
+            var rootPath = context.ActiveRootPath;
+            if (string.IsNullOrWhiteSpace(rootPath))
+            {
+                _logger.LogWarning("Cannot refresh OI/WI index because no active root directory is configured.");
+                return OiwiIndexingResult.Empty;
+            }
+
+            if (!Directory.Exists(rootPath))
+            {
+                _logger.LogWarning("OI/WI root directory '{Root}' is not accessible.", rootPath);
+                return OiwiIndexingResult.Empty;
+            }
+
+            _logger.LogInformation("Refreshing OI/WI index from {Root}.", rootPath);
+
+            IReadOnlyList<DocumentRecord> documents;
+            try
+            {
+                documents = await _catalog.LoadDocumentsFromSourceAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load documents from source while indexing.");
+                return OiwiIndexingResult.Empty;
+            }
+
+            await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+            var existing = await dbContext.Documents
+                .AsTracking()
+                .ToDictionaryAsync(d => d.NormalizedPath, StringComparer.OrdinalIgnoreCase, cancellationToken)
+                .ConfigureAwait(false);
+
+            var processed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var scanResults = new ConcurrentBag<DocumentScanResult>();
+            var parallelOptions = new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = options.MaxParallelDirs > 0
+                    ? Math.Min(options.MaxParallelDirs, Environment.ProcessorCount)
+                    : Environment.ProcessorCount
+            };
+
+            await Parallel.ForEachAsync(documents, parallelOptions, (record, ct) =>
+            {
+                if (string.IsNullOrWhiteSpace(record.FileName))
+                {
+                    return ValueTask.CompletedTask;
+                }
+
+                var normalizedPath = NormalizePath(record.FileName);
+                if (!IsExtensionAllowed(normalizedPath, options.IncludeExtensions))
+                {
+                    return ValueTask.CompletedTask;
+                }
+
+                long sizeBytes = 0L;
+                DateTimeOffset? lastWrite = record.UpdatedAt;
+
+                try
+                {
+                    var physicalPath = _catalog.ResolveDocumentPhysicalPath(normalizedPath);
+                    if (!string.IsNullOrEmpty(physicalPath) && File.Exists(physicalPath))
+                    {
+                        var info = new FileInfo(physicalPath);
+                        sizeBytes = info.Length;
+                        lastWrite = new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to inspect file {Path} while indexing.", normalizedPath);
+                }
+
+                scanResults.Add(new DocumentScanResult(normalizedPath, record, sizeBytes, lastWrite));
+                return ValueTask.CompletedTask;
+            }).ConfigureAwait(false);
+
+            var now = DateTimeOffset.UtcNow;
+            var batchSize = Math.Clamp(options.BatchSize, 50, 2000);
+            var pendingSaves = 0;
+            var added = 0;
+            var updated = 0;
+
+            foreach (var result in scanResults.OrderBy(static r => r.NormalizedPath, StringComparer.OrdinalIgnoreCase))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                processed.Add(result.NormalizedPath);
+                var isNew = false;
+
+                if (!existing.TryGetValue(result.NormalizedPath, out var entity))
+                {
+                    entity = new DocumentEntity
+                    {
+                        Id = Guid.NewGuid(),
+                        NormalizedPath = result.NormalizedPath,
+                    };
+
+                    dbContext.Documents.Add(entity);
+                    existing[result.NormalizedPath] = entity;
+                    added++;
+                    pendingSaves++;
+                    isNew = true;
+
+                    var label = string.IsNullOrWhiteSpace(result.Record.DocumentCode)
+                        ? result.NormalizedPath
+                        : result.Record.DocumentCode;
+                    _logger.LogInformation("Index: discovered new document {Label} at {Path}.", label, result.NormalizedPath);
+                }
+
+                var changed = ApplyRecord(entity, result.Record, result.NormalizedPath, result.SizeBytes, result.LastWriteUtc, now);
+                if (changed)
+                {
+                    if (!isNew)
+                    {
+                        updated++;
+                    }
+
+                    pendingSaves++;
+                }
+
+                if (pendingSaves >= batchSize)
+                {
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    pendingSaves = 0;
+                }
+            }
+
+            if (pendingSaves > 0)
+            {
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var removals = existing
+                .Where(pair => !processed.Contains(pair.Key))
+                .Select(pair => pair.Value)
+                .ToList();
+
+            var removed = 0;
+            if (removals.Count > 0)
+            {
+                dbContext.Documents.RemoveRange(removals);
+                removed = removals.Count;
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            if (added > 0 || updated > 0 || removed > 0)
+            {
+                _catalog.InvalidateCache();
+            }
+
+            var resultSummary = new OiwiIndexingResult(processed.Count, added, updated, removed);
+            if (resultSummary.TotalChanges == 0)
+            {
+                _logger.LogInformation(
+                    "OI/WI index refresh complete – no changes detected (processed {Processed}).",
+                    resultSummary.Processed);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "OI/WI index refresh complete. Added {Added}, updated {Updated}, removed {Removed} (processed {Processed}).",
+                    resultSummary.Added,
+                    resultSummary.Updated,
+                    resultSummary.Removed,
+                    resultSummary.Processed);
+            }
+
+            return resultSummary;
+        }
+        finally
+        {
+            _mutex.Release();
+        }
+    }
+
+    private static string NormalizePath(string path)
+        => path.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Trim();
+
+    private static bool IsExtensionAllowed(string normalizedPath, IReadOnlyList<string> includeExtensions)
+    {
+        if (includeExtensions is null || includeExtensions.Count == 0)
+        {
+            return true;
+        }
+
+        var extension = Path.GetExtension(normalizedPath);
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            return true;
+        }
+
+        for (var i = 0; i < includeExtensions.Count; i++)
+        {
+            var candidate = includeExtensions[i];
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                continue;
+            }
+
+            if (string.Equals(candidate.Trim(), extension, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? TrimOrNull(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static bool ApplyRecord(
+        DocumentEntity entity,
+        DocumentRecord record,
+        string normalizedPath,
+        long sizeBytes,
+        DateTimeOffset? lastWriteUtc,
+        DateTimeOffset indexedAt)
+    {
+        var changed = false;
+
+        static bool UpdateString(
+            DocumentEntity e,
+            Func<DocumentEntity, string?> getter,
+            Action<DocumentEntity, string?> setter,
+            string? value)
+        {
+            var current = getter(e);
+            if (string.Equals(current, value, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            setter(e, value);
+            return true;
+        }
+
+        static bool UpdateStruct<T>(
+            DocumentEntity e,
+            Func<DocumentEntity, T> getter,
+            Action<DocumentEntity, T> setter,
+            T value) where T : struct
+        {
+            if (EqualityComparer<T>.Default.Equals(getter(e), value))
+            {
+                return false;
+            }
+
+            setter(e, value);
+            return true;
+        }
+
+        static bool UpdateNullableStruct<T>(
+            DocumentEntity e,
+            Func<DocumentEntity, T?> getter,
+            Action<DocumentEntity, T?> setter,
+            T? value) where T : struct
+        {
+            if (Nullable.Equals(getter(e), value))
+            {
+                return false;
+            }
+
+            setter(e, value);
+            return true;
+        }
+
+        changed |= UpdateString(entity, static e => e.FileName, static (e, v) => e.FileName = v, Path.GetFileName(normalizedPath));
+        changed |= UpdateString(entity, static e => e.RelativePath, static (e, v) => e.RelativePath = v, normalizedPath);
+        changed |= UpdateString(entity, static e => e.DisplayName, static (e, v) => e.DisplayName = v, record.DisplayName ?? string.Empty);
+        changed |= UpdateString(entity, static e => e.Line, static (e, v) => e.Line = v, TrimOrNull(record.Line));
+        changed |= UpdateString(entity, static e => e.Station, static (e, v) => e.Station = v, TrimOrNull(record.Station));
+        changed |= UpdateString(entity, static e => e.Model, static (e, v) => e.Model = v, TrimOrNull(record.Model));
+        changed |= UpdateString(entity, static e => e.Machine, static (e, v) => e.Machine = v, TrimOrNull(record.Machine));
+        changed |= UpdateNullableStruct(entity, static e => e.UpdatedAt, static (e, v) => e.UpdatedAt = v, record.UpdatedAt?.ToUniversalTime());
+        changed |= UpdateString(entity, static e => e.UploadedBy, static (e, v) => e.UploadedBy = v, TrimOrNull(record.UploadedBy));
+        changed |= UpdateString(entity, static e => e.Comment, static (e, v) => e.Comment = v, TrimOrNull(record.Comment));
+        changed |= UpdateString(entity, static e => e.DocumentType, static (e, v) => e.DocumentType = v, TrimOrNull(record.DocumentType));
+        changed |= UpdateNullableStruct(entity, static e => e.SequenceNumber, static (e, v) => e.SequenceNumber = v, record.SequenceNumber);
+        changed |= UpdateString(entity, static e => e.ActiveVersionId, static (e, v) => e.ActiveVersionId = v, TrimOrNull(record.ActiveVersionId));
+        changed |= UpdateString(entity, static e => e.DocumentCode, static (e, v) => e.DocumentCode = v, TrimOrNull(record.DocumentCode));
+        changed |= UpdateStruct(entity, static e => e.Version, static (e, v) => e.Version = v, record.Version);
+        changed |= UpdateString(entity, static e => e.LinkUrl, static (e, v) => e.LinkUrl = v, record.LinkUrl);
+        changed |= UpdateStruct(entity, static e => e.StampMode, static (e, v) => e.StampMode = v, record.StampMode);
+        changed |= UpdateNullableStruct(entity, static e => e.StampDate, static (e, v) => e.StampDate = v, record.StampDate);
+
+        var effectiveSize = sizeBytes > 0 ? sizeBytes : entity.SizeBytes;
+        var effectiveLastWrite = lastWriteUtc ?? entity.LastWriteUtc ?? record.UpdatedAt;
+
+        var updatedAt = entity.UpdatedAt ?? effectiveLastWrite ?? DateTimeOffset.MinValue;
+        var unixMs = updatedAt.ToUniversalTime().ToUnixTimeMilliseconds();
+        changed |= UpdateStruct(entity, static e => e.UpdatedAtUnixMs, static (e, v) => e.UpdatedAtUnixMs = v, unixMs);
+        changed |= UpdateStruct(entity, static e => e.SizeBytes, static (e, v) => e.SizeBytes = v, effectiveSize);
+        changed |= UpdateNullableStruct(entity, static e => e.LastWriteUtc, static (e, v) => e.LastWriteUtc = v, effectiveLastWrite?.ToUniversalTime());
+
+        if (changed && entity.IndexedAtUtc != indexedAt)
+        {
+            entity.IndexedAtUtc = indexedAt;
+        }
+
+        return changed;
+    }
+
+    private sealed record DocumentScanResult(string NormalizedPath, DocumentRecord Record, long SizeBytes, DateTimeOffset? LastWriteUtc);
+}
