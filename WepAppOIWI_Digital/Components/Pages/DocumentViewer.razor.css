@@ -2,24 +2,48 @@
     min-height: 80vh;
     height: calc(100vh - 220px);
     max-height: 95vh;
-    overflow-y: auto;
     background-color: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
-/* ���ͧ���˹�� PDF */
+.document-viewer {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    height: 100%;
+    max-height: 100%;
+}
+
+.document-viewer-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: inherit;
+}
+
+.document-viewer-body {
+    flex: 1 1 auto;
+    overflow: auto;
+    padding: 1rem;
+    background-color: inherit;
+}
+
+/* ¡ÅèÍ§ÃÇÁË¹éÒ PDF */
 .pdfjs-viewer {
     width: 100%;
-    max-width: 1200px; /* ��Ѻ�����䫹� */
+    max-width: 1200px; /* »ÃÑºµÒÁ´Õä«¹ì */
     margin: 0 auto;
 }
 
-/* ��͹�Ѻ layer ���˹ѧ��� (���Ѵ�͡��) */
+/* «éÍ¹·Ñº layer µÑÇË¹Ñ§Ê×Í (ãËé¤Ñ´ÅÍ¡ä´é) */
 .pdfjs-textLayer {
     mix-blend-mode: multiply;
     pointer-events: none;
 }
 
-/* ��ͧ�ѹ�Ҿ��ͺҧ��������� */
+/* »éÍ§¡Ñ¹ÀÒ¾àºÅÍºÒ§àºÃÒÇìà«ÍÃì */
 .pdfjs-page-canvas {
     image-rendering: -webkit-optimize-contrast;
     image-rendering: crisp-edges;
@@ -44,11 +68,11 @@
 
 /* ============ Next Document Badge (OI/WI) ============ */
 :root {
-    --oi-bg: #e7f1ff; /* OI: �����͹ */
-    --oi-fg: #0b60d1; /* OI: ������ */
+    --oi-bg: #e7f1ff; /* OI: ¿éÒÍèÍ¹ */
+    --oi-fg: #0b60d1; /* OI: ¿éÒà¢éÁ */
     --oi-bd: #b7d7ff;
-    --wi-bg: #fff6d8; /* WI: ����ͧ��͹ */
-    --wi-fg: #a36200; /* WI: ����ͧ��� (�Ӿѹ) */
+    --wi-bg: #fff6d8; /* WI: àËÅ×Í§ÍèÍ¹ */
+    --wi-fg: #a36200; /* WI: àËÅ×Í§à¢éÁ (ÍÓ¾Ñ¹) */
     --wi-bd: #ffe7a3;
 }
 

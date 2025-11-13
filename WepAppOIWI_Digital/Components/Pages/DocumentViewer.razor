@@ -69,18 +69,21 @@ else
     @if (canPreviewInline && !string.IsNullOrEmpty(previewSource))
     {
         <div class="document-preview-frame border rounded">
+            <div class="document-viewer">
+                <!-- PDF Toolbar -->
+                <div class="document-viewer-toolbar d-flex align-items-center gap-2 p-2 border-bottom bg-light">
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomOut">−</button>
+                    <span id="@($"{pdfContainerId}-scale")" class="small">100%</span>
+                    <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomIn">+</button>
+                    <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="FitWidth">Fit width</button>
+                </div>
 
-            <!-- PDF Toolbar -->
-            <div class="d-flex align-items-center gap-2 p-2 border-bottom bg-light">
-                <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomOut">−</button>
-                <span id="@($"{pdfContainerId}-scale")" class="small">100%</span>
-                <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomIn">+</button>
-                <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="FitWidth">Fit width</button>
-            </div>
-
-            <!-- PDF Canvas Container -->
-            <div id="@pdfContainerId" class="pdfjs-viewer">
-                <div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
+                <!-- PDF Canvas Container -->
+                <div class="document-viewer-body">
+                    <div id="@pdfContainerId" class="pdfjs-viewer">
+                        <div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
+                    </div>
+                </div>
             </div>
         </div>
 
