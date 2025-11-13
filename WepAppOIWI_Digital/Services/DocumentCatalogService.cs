@@ -781,6 +781,8 @@ public sealed class DocumentCatalogService : IDisposable
             : (DateTimeOffset?)null;
 
         var displayName = Path.GetFileName(normalizedRelativePath);
+        var (documentType, sequenceNumber, documentCode) = InferDocumentNumber(normalizedRelativePath, fileInfo);
+        var normalizedType = string.IsNullOrEmpty(documentType) ? "-" : documentType;
 
         return new DocumentRecord(
             normalizedRelativePath,
@@ -792,10 +794,10 @@ public sealed class DocumentCatalogService : IDisposable
             updatedAt,
             "-",
             "-",
-            "-",
+            normalizedType,
+            sequenceNumber,
             null,
-            null,
-            null,
+            documentCode,
             StampMode.None,
             null,
             1
@@ -803,6 +805,39 @@ public sealed class DocumentCatalogService : IDisposable
         {
             LinkUrl = BuildDocumentLink(context, normalizedRelativePath, fileInfo.FullName)
         };
+    }
+
+    private static (string? DocumentType, int? SequenceNumber, string? DocumentCode) InferDocumentNumber(string normalizedRelativePath, FileInfo fileInfo)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var candidates = new List<string>();
+
+        var fileNameCandidate = Path.GetFileNameWithoutExtension(fileInfo.Name);
+        if (!string.IsNullOrWhiteSpace(fileNameCandidate) && seen.Add(fileNameCandidate))
+        {
+            candidates.Add(fileNameCandidate);
+        }
+
+        var segments = normalizedRelativePath.Split(Path.AltDirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length > 0)
+        {
+            var folderCandidate = segments[0];
+            if (!string.IsNullOrWhiteSpace(folderCandidate) && seen.Add(folderCandidate))
+            {
+                candidates.Add(folderCandidate);
+            }
+        }
+
+        foreach (var candidate in candidates)
+        {
+            if (DocumentNumbering.TryParseCode(candidate, out var type, out var sequenceNumber))
+            {
+                var formatted = DocumentNumbering.FormatCode(type, sequenceNumber);
+                return (type, sequenceNumber, formatted);
+            }
+        }
+
+        return (null, null, null);
     }
 
     private string? BuildDocumentLink(DocumentCatalogContext context, string normalizedRelativePath, string fullPath)
@@ -862,7 +897,8 @@ public sealed class DocumentCatalogService : IDisposable
                 foreach (var directory in directories)
                 {
                     var name = Path.GetFileName(directory);
-                    if (string.Equals(name, "versions", StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(name, "versions", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(name, ".versions", StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
