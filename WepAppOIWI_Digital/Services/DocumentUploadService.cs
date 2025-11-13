@@ -22,7 +22,6 @@ public sealed class DocumentUploadService
     private readonly ILogger<DocumentUploadService> _logger;
     private readonly IDbContextFactory<AppDbContext> _dbContextFactory;
     private readonly IVersionStore _versionStore; // จัดการ snapshot/version history
-    private readonly IPdfStampService _pdfStampService;
     private readonly SemaphoreSlim _uploadLock = new(1, 1);
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
@@ -37,15 +36,13 @@ public sealed class DocumentUploadService
         IOptions<DocumentCatalogOptions> options,
         ILogger<DocumentUploadService> logger,
         IDbContextFactory<AppDbContext> dbContextFactory,
-        IVersionStore versionStore,
-        IPdfStampService pdfStampService)
+        IVersionStore versionStore)
     {
         _catalogService = catalogService;
         _options = options.Value;
         _logger = logger;
         _dbContextFactory = dbContextFactory;
         _versionStore = versionStore;
-        _pdfStampService = pdfStampService;
     }
 
     // ประวัติย้อนหลังของไฟล์ พร้อม flag เวอร์ชันที่ใช้งานปัจจุบัน
@@ -656,85 +653,26 @@ public sealed class DocumentUploadService
                 return DocumentUploadResult.Failed("ไม่สามารถอ่านไฟล์ได้ กรุณาลองใหม่อีกครั้ง");
             }
 
-            if (request.StampMode != StampMode.None)
+            if (request.StampMode != StampMode.None && request.StampDate is null)
             {
-                if (request.StampDate is null)
+                _logger.LogWarning("Stamp mode '{StampMode}' selected without a stamp date. Rejecting upload.", request.StampMode);
+
+                if (createdCurrentDirectory)
                 {
-                    _logger.LogWarning("Stamp mode '{StampMode}' selected without a stamp date. Rejecting upload.", request.StampMode);
-
-                    if (createdCurrentDirectory)
-                    {
-                        TryDeleteDirectoryIfEmpty(currentDirectory);
-                    }
-
-                    if (createdVersionsDirectory)
-                    {
-                        TryDeleteDirectoryIfEmpty(versionsDirectory);
-                    }
-
-                    if (!string.IsNullOrEmpty(documentRoot))
-                    {
-                        TryDeleteDirectoryIfEmpty(documentRoot);
-                    }
-
-                    return DocumentUploadResult.Failed("กรุณาเลือกวันที่สำหรับตราประทับ");
+                    TryDeleteDirectoryIfEmpty(currentDirectory);
                 }
 
-                if (!sanitizedFileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                if (createdVersionsDirectory)
                 {
-                    if (createdCurrentDirectory)
-                    {
-                        TryDeleteDirectoryIfEmpty(currentDirectory);
-                    }
-
-                    if (createdVersionsDirectory)
-                    {
-                        TryDeleteDirectoryIfEmpty(versionsDirectory);
-                    }
-
-                    if (!string.IsNullOrEmpty(documentRoot))
-                    {
-                        TryDeleteDirectoryIfEmpty(documentRoot);
-                    }
-
-                    return DocumentUploadResult.Failed("สามารถประทับตราได้เฉพาะไฟล์ PDF เท่านั้น");
+                    TryDeleteDirectoryIfEmpty(versionsDirectory);
                 }
 
-                try
+                if (!string.IsNullOrEmpty(documentRoot))
                 {
-                    _logger.LogInformation(
-                        "Applying PDF stamp mode {StampMode} (date: {StampDate}) for upload '{FileName}'.",
-                        request.StampMode,
-                        request.StampDate,
-                        request.OriginalFileName);
-
-                    fileBytes = await _pdfStampService
-                        .ApplyStampAsync(fileBytes, request.StampMode, request.StampDate, cancellationToken)
-                        .ConfigureAwait(false);
+                    TryDeleteDirectoryIfEmpty(documentRoot);
                 }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to stamp PDF before saving to '{Destination}'.", destinationPath);
-                    if (createdCurrentDirectory)
-                    {
-                        TryDeleteDirectoryIfEmpty(currentDirectory);
-                    }
 
-                    if (createdVersionsDirectory)
-                    {
-                        TryDeleteDirectoryIfEmpty(versionsDirectory);
-                    }
-
-                    if (!string.IsNullOrEmpty(documentRoot))
-                    {
-                        TryDeleteDirectoryIfEmpty(documentRoot);
-                    }
-                    return DocumentUploadResult.Failed("ไม่สามารถประทับตราเอกสารได้ กรุณาลองใหม่อีกครั้ง");
-                }
+                return DocumentUploadResult.Failed("กรุณาเลือกวันที่สำหรับตราประทับ");
             }
 
             try
