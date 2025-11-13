@@ -1,32 +1,31 @@
 :root {
     --app-font-base: 16px;
-    --app-font-scale: 1;
-}
-
-.text-zoom-small {
-    --app-font-scale: 0.9;
-}
-
-.text-zoom-normal {
-    --app-font-scale: 1;
-}
-
-.text-zoom-large {
-    --app-font-scale: 1.15;
-}
-
-html {
-    font-size: calc(var(--app-font-base) * var(--app-font-scale));
-}
-
-body {
-    font-size: 1rem;
 }
 
 #app-shell {
-    font-size: 1rem;
+    --app-font-scale: 1;
+    font-size: calc(var(--app-font-base) * var(--app-font-scale));
 }
 
+#app-shell.text-zoom-small {
+    --app-font-scale: 0.9;
+}
+
+#app-shell.text-zoom-normal {
+    --app-font-scale: 1;
+}
+
+#app-shell.text-zoom-large {
+    --app-font-scale: 1.15;
+}
+
+#app-shell,
+#app-shell .shell__sidebar,
+#app-shell .shell__content,
+#app-shell .content-area,
+#app-shell .topbar,
+#app-shell .menu__item,
+#app-shell .menu__text,
 #app-shell .table,
 #app-shell .table thead th,
 #app-shell .table tbody td,
@@ -34,10 +33,6 @@ body {
 #app-shell .form-select,
 #app-shell .btn,
 #app-shell .nav-link,
-#app-shell .menu__item,
-#app-shell .menu__text,
-#app-shell .topbar,
-#app-shell .content-area,
 #app-shell input,
 #app-shell select,
 #app-shell textarea,

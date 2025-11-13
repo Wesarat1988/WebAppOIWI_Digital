@@ -1,6 +1,5 @@
 @inherits LayoutComponentBase
 @using System
-@using System.Collections.Generic
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.JSInterop
 @using WepAppOIWI_Digital.Components.Shared
@@ -79,13 +78,6 @@
     private const string TextZoomNormal = "normal";
     private const string TextZoomLarge = "large";
 
-    private static readonly HashSet<string> _allowedZoomLevels = new(StringComparer.OrdinalIgnoreCase)
-    {
-        TextZoomSmall,
-        TextZoomNormal,
-        TextZoomLarge
-    };
-
     private string _textZoomLevel = TextZoomNormal;
 
     private string CurrentZoomCssClass => _textZoomLevel switch
@@ -107,10 +99,12 @@
 
         try
         {
-            var storedLevel = await JS.InvokeAsync<string>("appTextZoom.initialize");
-            if (!string.IsNullOrWhiteSpace(storedLevel) && _allowedZoomLevels.Contains(storedLevel) && storedLevel != _textZoomLevel)
+            var storedLevel = await JS.InvokeAsync<string>("appTextZoom.get");
+            var normalizedLevel = NormalizeZoomLevel(storedLevel);
+
+            if (!string.Equals(_textZoomLevel, normalizedLevel, StringComparison.Ordinal))
             {
-                _textZoomLevel = storedLevel;
+                _textZoomLevel = normalizedLevel;
                 StateHasChanged();
             }
         }
@@ -122,19 +116,34 @@
 
     private async Task SetTextZoomAsync(string level)
     {
-        if (!_allowedZoomLevels.Contains(level))
+        level = NormalizeZoomLevel(level);
+
+        if (!string.Equals(_textZoomLevel, level, StringComparison.Ordinal))
         {
-            level = TextZoomNormal;
+            _textZoomLevel = level;
+            StateHasChanged();
         }
 
-        if (_textZoomLevel == level)
+        await PersistZoomPreferenceAsync(level);
+    }
+
+    private static string NormalizeZoomLevel(string? level)
+    {
+        if (string.IsNullOrWhiteSpace(level))
         {
-            return;
+            return TextZoomNormal;
         }
 
-        _textZoomLevel = level;
-        StateHasChanged();
+        return level.ToLowerInvariant() switch
+        {
+            TextZoomSmall => TextZoomSmall,
+            TextZoomLarge => TextZoomLarge,
+            _ => TextZoomNormal
+        };
+    }
 
+    private async Task PersistZoomPreferenceAsync(string level)
+    {
         try
         {
             await JS.InvokeVoidAsync("appTextZoom.set", level);
