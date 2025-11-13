@@ -1,0 +1,84 @@
+@page "/debug/oiwi-v2"
+@using Microsoft.EntityFrameworkCore
+@using Oiwi.Data
+@using Oiwi.Data.Entities
+@inject OiwiDbContext DbContext
+
+<PageTitle>OI/WI V2 Debug</PageTitle>
+
+<h3 class="mb-3">OI/WI V2 Debug</h3>
+
+@if (_documents is null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (_documents.Count == 0)
+{
+    <p>No documents found.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-sm align-middle">
+            <thead>
+                <tr>
+                    <th>Document code</th>
+                    <th>Type</th>
+                    <th>Title</th>
+                    <th>Line</th>
+                    <th>Station</th>
+                    <th>Model</th>
+                    <th>Uploaded by</th>
+                    <th>Uploaded at (UTC)</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var doc in _documents)
+                {
+                    <tr>
+                        <td>@doc.DocumentCode</td>
+                        <td>@doc.DocumentType</td>
+                        <td>@doc.Title</td>
+                        <td>@doc.Line</td>
+                        <td>@doc.Station</td>
+                        <td>@doc.Model</td>
+                        <td>@doc.UploadedBy</td>
+                        <td>@doc.UploadedAt.ToString("u")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<Document>? _documents;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await DbContext.Documents.AnyAsync())
+        {
+            var seed = new Document
+            {
+                DocumentCode = "OI-9000",
+                DocumentType = "OI",
+                Title = "TEST OI FROM V2",
+                Line = "STF03",
+                Station = "AS-01",
+                Model = "FA121A08-P84",
+                MachineName = "Test Machine",
+                Comment = "Seed data",
+                UploadedBy = "System",
+                UploadedAt = DateTime.UtcNow,
+                LastUpdatedAt = DateTime.UtcNow
+            };
+
+            DbContext.Documents.Add(seed);
+            await DbContext.SaveChangesAsync();
+        }
+
+        _documents = await DbContext.Documents
+            .OrderBy(d => d.DocumentCode)
+            .ToListAsync();
+    }
+}

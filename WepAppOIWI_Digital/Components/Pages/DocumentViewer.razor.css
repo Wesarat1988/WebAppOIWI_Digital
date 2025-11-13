@@ -16,14 +16,15 @@
     max-height: 100%;
 }
 
-.document-viewer-toolbar {
+.document-toolbar {
+    flex: 0 0 auto;
     position: sticky;
     top: 0;
     z-index: 10;
     background-color: inherit;
 }
 
-.document-viewer-body {
+.document-container {
     flex: 1 1 auto;
     overflow: auto;
     padding: 1rem;
@@ -64,6 +65,13 @@
 .pdfjs-loading,
 .pdfjs-error {
     font-size: 0.95rem;
+}
+
+.stamp-badge {
+    white-space: nowrap;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
 }
 
 /* ============ Next Document Badge (OI/WI) ============ */
