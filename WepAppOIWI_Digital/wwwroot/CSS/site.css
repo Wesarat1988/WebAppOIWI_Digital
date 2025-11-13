@@ -1,4 +1,49 @@
-﻿/* ===== PDF Preview ===== */
+:root {
+    --app-font-base: 16px;
+}
+
+#app-shell {
+    --app-font-scale: 1;
+    font-size: calc(var(--app-font-base) * var(--app-font-scale));
+}
+
+#app-shell.text-zoom-small {
+    --app-font-scale: 0.9;
+}
+
+#app-shell.text-zoom-normal {
+    --app-font-scale: 1;
+}
+
+#app-shell.text-zoom-large {
+    --app-font-scale: 1.15;
+}
+
+#app-shell,
+#app-shell .shell__sidebar,
+#app-shell .shell__content,
+#app-shell .content-area,
+#app-shell .topbar,
+#app-shell .menu__item,
+#app-shell .menu__text,
+#app-shell .table,
+#app-shell .table thead th,
+#app-shell .table tbody td,
+#app-shell .form-control,
+#app-shell .form-select,
+#app-shell .btn,
+#app-shell .nav-link,
+#app-shell input,
+#app-shell select,
+#app-shell textarea,
+#app-shell label,
+#app-shell .card,
+#app-shell .modal,
+#app-shell .dropdown-menu {
+    font-size: inherit;
+}
+
+/* ===== PDF Preview ===== */
 .document-preview-frame {
     min-height: 80vh;
     height: calc(100vh - 220px);

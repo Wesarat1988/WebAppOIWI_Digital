@@ -186,6 +186,7 @@
                     <th>Machine name</th>
                     <th>Time</th>
                     <th>Name</th>
+                    <th>Stamp info</th>
                     <th>Comment</th>
                     <th>การจัดการ</th>
                 </tr>
@@ -194,6 +195,7 @@
                 @for (var i = 0; i < 10; i++)
                 {
                     <tr class="skeleton-row">
+                        <td><div class="sk w-100"></div></td>
                         <td><div class="sk w-100"></div></td>
                         <td><div class="sk w-100"></div></td>
                         <td><div class="sk w-100"></div></td>
@@ -308,6 +310,7 @@ else
                     <th scope="col">Machine name</th>
                     <th scope="col">Time</th>
                     <th scope="col">Name</th>
+                    <th scope="col">Stamp info</th>
                     <th scope="col">Comment</th>
                     <th scope="col" class="text-center" style="width: 140px;">การจัดการ</th>
                 </tr>
@@ -316,7 +319,7 @@ else
                 @if (pageData.Items.Count == 0)
                 {
                     <tr>
-                        <td colspan="11" class="text-center text-muted py-4">
+                        <td colspan="12" class="text-center text-muted py-4">
                             @(documents.Count == 0
                                 ? "ยังไม่มีไฟล์สำหรับแสดงผล"
                                 : "ไม่พบเอกสารที่ตรงกับคำค้นหา")
@@ -354,6 +357,7 @@ else
                             <td>@(DisplayOrDash(row.Machine))</td>
                             <td>@FormatTimestamp(row.UpdatedAt)</td>
                             <td>@(DisplayOrDash(row.UploadedBy))</td>
+                            <td>@FormatStampInfo(row.StampMode, row.StampDate)</td>
                             <td>@(DisplayOrDash(row.Comment))</td>
                             <td class="text-center">
                                 @if (!string.IsNullOrEmpty(editUrl))
