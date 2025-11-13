@@ -36,6 +36,7 @@ builder.Services.AddSingleton<DocumentCatalogService>();
 builder.Services.AddSingleton<IPdfStampService, PdfStampService>();
 builder.Services.AddSingleton<DocumentUploadService>();
 builder.Services.AddSingleton<IVersionStore, FilesystemVersionStore>();
+builder.Services.AddSingleton<IOiwiIndexingService, OiwiIndexingService>();
 var indexerEnabled = builder.Configuration.GetValue<bool>("OiwiIndexer:Enabled", true);
 if (indexerEnabled)
 {
