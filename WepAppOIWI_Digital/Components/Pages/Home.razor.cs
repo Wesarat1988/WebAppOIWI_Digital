@@ -188,6 +188,25 @@ public partial class Home : IDisposable
 
         try
         {
+            OiwiIndexingResult indexingResult = OiwiIndexingResult.Empty;
+            try
+            {
+                indexingResult = await IndexingService.RefreshIndexAsync(token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Failed to refresh OI/WI index before loading list page.");
+            }
+
+            if (indexingResult.TotalChanges > 0)
+            {
+                DocumentCatalog.InvalidateCache();
+            }
+
             var filters = new OiwiSearchFilters(
                 NullIfEmpty(searchTerm),
                 NullIfEmpty(selectedDocumentType),
