@@ -115,7 +115,35 @@ public partial class Home : IDisposable
         if (_loadQueued)
         {
             _loadQueued = false;
-            await LoadFirstPageAsync();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await LoadFirstPageAsync().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to load initial OI/WI data set.");
+                }
+
+                try
+                {
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException ex)
+                {
+                    Logger.LogDebug(ex, "Skipping state update after initial load because the component was disposed.");
+                }
+            });
         }
 
         if (_pendingScroll)
@@ -182,7 +210,7 @@ public partial class Home : IDisposable
         isError = false;
         errorMessage = null;
         showSlowMessage = false;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
 
         _ = ShowSlowNoticeAsync(localCts);
 
@@ -261,9 +289,9 @@ public partial class Home : IDisposable
             {
                 localCts.Dispose();
             }
-
-            StateHasChanged();
         }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ShowSlowNoticeAsync(CancellationTokenSource source)
@@ -317,7 +345,7 @@ public partial class Home : IDisposable
         isError = false;
         errorMessage = null;
         showSlowMessage = false;
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
 
         await LoadFirstPageAsync();
     }
@@ -657,7 +685,7 @@ public partial class Home : IDisposable
         {
             statusAlertClass = "alert alert-info";
             statusMessage = "กำลังรีเฟรชข้อมูลจากโฟลเดอร์...";
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
 
             var result = await IndexingService.RefreshIndexAsync(refreshCts.Token).ConfigureAwait(false);
 
