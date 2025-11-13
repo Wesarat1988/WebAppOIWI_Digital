@@ -7,10 +7,14 @@
         <AssemblyName>WepAppOIWI_Digital</AssemblyName>
     </PropertyGroup>
 
-    <ItemGroup>
-        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.4" />
-        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.4" />
-    </ItemGroup>
+  <ItemGroup>
+      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.4" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Oiwi.Data\Oiwi.Data.csproj" />
+  </ItemGroup>
 
     <ItemGroup>
         <Folder Include="wwwroot\documents\.versions\" />
