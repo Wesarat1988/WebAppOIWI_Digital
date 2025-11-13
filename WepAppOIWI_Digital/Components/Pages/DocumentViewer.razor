@@ -60,6 +60,17 @@ else
                 <dd class="col-sm-9">@DisplayOrDash(document.UploadedBy)</dd>
                 <dt class="col-sm-3">Comment</dt>
                 <dd class="col-sm-9">@DisplayOrDash(document.Comment)</dd>
+                <dt class="col-sm-3">Stamp info</dt>
+                <dd class="col-sm-9">
+                    @if (document.StampMode != StampMode.None)
+                    {
+                        <span class="badge rounded-pill bg-danger stamp-badge">@FormatStampInfo(document.StampMode, document.StampDate)</span>
+                    }
+                    else
+                    {
+                        <span>-</span>
+                    }
+                </dd>
                 <dt class="col-sm-3">ประเภทไฟล์</dt>
                 <dd class="col-sm-9">@fileHandle.ContentType</dd>
             </dl>
@@ -71,7 +82,7 @@ else
         <div class="document-preview-frame border rounded">
             <div class="document-viewer">
                 <!-- PDF Toolbar -->
-                <div class="document-viewer-toolbar d-flex align-items-center gap-2 p-2 border-bottom bg-light">
+                <div class="document-toolbar d-flex align-items-center gap-2 p-2 border-bottom bg-light">
                     <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomOut">−</button>
                     <span id="@($"{pdfContainerId}-scale")" class="small">100%</span>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomIn">+</button>
@@ -79,7 +90,7 @@ else
                 </div>
 
                 <!-- PDF Canvas Container -->
-                <div class="document-viewer-body">
+                <div class="document-container">
                     <div id="@pdfContainerId" class="pdfjs-viewer">
                         <div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
                     </div>
@@ -215,6 +226,9 @@ else
         => timestamp.HasValue
             ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
             : "-";
+
+    private static string FormatStampInfo(StampMode mode, DateOnly? date)
+        => StampDisplay.GetDisplayText(mode, date);
 
     private void NavigateHome() => Navigation.NavigateTo("/");
 }

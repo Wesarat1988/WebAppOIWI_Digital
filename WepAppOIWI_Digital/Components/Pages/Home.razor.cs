@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.JSInterop;
 using WepAppOIWI_Digital.Services;
+using WepAppOIWI_Digital.Stamps;
 
 namespace WepAppOIWI_Digital.Components.Pages;
 
@@ -730,6 +731,9 @@ public partial class Home : IDisposable
         => timestamp.HasValue
             ? timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
             : "-";
+
+    private static string FormatStampInfo(StampMode mode, DateOnly? date)
+        => StampDisplay.GetDisplayText(mode, date);
 
     private string? BuildViewerUrl(OiwiRow row)
     {
