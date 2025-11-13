@@ -6,8 +6,10 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using WepAppOIWI_Digital.Data;
 using WepAppOIWI_Digital.Services;
 using WepAppOIWI_Digital.Stamps;
 
@@ -18,6 +20,7 @@ public sealed class DocumentUploadService
     private readonly DocumentCatalogService _catalogService;
     private readonly DocumentCatalogOptions _options;
     private readonly ILogger<DocumentUploadService> _logger;
+    private readonly IDbContextFactory<AppDbContext> _dbContextFactory;
     private readonly IVersionStore _versionStore; // จัดการ snapshot/version history
     private readonly IPdfStampService _pdfStampService;
     private readonly SemaphoreSlim _uploadLock = new(1, 1);
@@ -33,12 +36,14 @@ public sealed class DocumentUploadService
         DocumentCatalogService catalogService,
         IOptions<DocumentCatalogOptions> options,
         ILogger<DocumentUploadService> logger,
+        IDbContextFactory<AppDbContext> dbContextFactory,
         IVersionStore versionStore,
         IPdfStampService pdfStampService)
     {
         _catalogService = catalogService;
         _options = options.Value;
         _logger = logger;
+        _dbContextFactory = dbContextFactory;
         _versionStore = versionStore;
         _pdfStampService = pdfStampService;
     }
@@ -287,6 +292,7 @@ public sealed class DocumentUploadService
 
             var manifestPath = Path.Combine(rootPath, GetManifestFileName());
             ManifestDocument manifest;
+            ManifestDocument manifestSnapshot;
             try
             {
                 manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
@@ -296,6 +302,7 @@ public sealed class DocumentUploadService
                 _logger.LogError(ex, "Cannot set active version because the manifest could not be read.");
                 return VersionActivationResult.Failure("ไม่สามารถอ่านข้อมูลเอกสารได้");
             }
+            manifestSnapshot = CloneManifest(manifest);
 
             var lookupIndex = manifest.Documents.FindIndex(entry =>
                 string.Equals(NormalizeManifestPath(entry.FileName), normalized, StringComparison.OrdinalIgnoreCase));
@@ -444,6 +451,57 @@ public sealed class DocumentUploadService
                 return VersionActivationResult.Failure("ไม่สามารถอัปเดตข้อมูลเอกสารได้");
             }
 
+            var manifestEntry = FindManifestEntry(manifest, newRelativePath);
+            if (manifestEntry is null)
+            {
+                _logger.LogWarning("Manifest entry for {Path} not found after activating version {Version}.", newRelativePath, versionId);
+
+                if (!string.IsNullOrEmpty(backupPath))
+                {
+                    TryRestoreFromBackup(backupPath, existingFullPath);
+                    TryDeleteFile(backupPath);
+                }
+
+                if (!string.Equals(existingFullPath, newFullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    TryDeleteFile(newFullPath);
+                }
+
+                await PersistManifestAsync(manifestPath, manifestSnapshot, cancellationToken).ConfigureAwait(false);
+                return VersionActivationResult.Failure("ไม่สามารถอัปเดตข้อมูลเอกสารได้");
+            }
+
+            try
+            {
+                await RegisterDocumentEntryAsync(
+                        context,
+                        newRelativePath,
+                        newFullPath,
+                        request,
+                        manifestEntry,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to register active version {Version} for {Path} in database.", versionId, newRelativePath);
+
+                await PersistManifestAsync(manifestPath, manifestSnapshot, cancellationToken).ConfigureAwait(false);
+
+                if (!string.IsNullOrEmpty(backupPath))
+                {
+                    TryRestoreFromBackup(backupPath, existingFullPath);
+                    TryDeleteFile(backupPath);
+                }
+
+                if (!string.Equals(existingFullPath, newFullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    TryDeleteFile(newFullPath);
+                }
+
+                return VersionActivationResult.Failure("ไม่สามารถอัปเดตข้อมูลเอกสารได้");
+            }
+
             if (!string.IsNullOrEmpty(backupPath))
             {
                 TryDeleteFile(backupPath);
@@ -510,6 +568,7 @@ public sealed class DocumentUploadService
 
             var manifestPath = Path.Combine(rootPath, GetManifestFileName());
             ManifestDocument manifest;
+            ManifestDocument manifestSnapshot;
             try
             {
                 manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
@@ -519,6 +578,7 @@ public sealed class DocumentUploadService
                 _logger.LogError(ex, "Cannot upload document because the manifest could not be read.");
                 return DocumentUploadResult.Failed("ไม่สามารถอ่านข้อมูลเอกสารเดิมได้ กรุณาติดต่อผู้ดูแลระบบ");
             }
+            manifestSnapshot = CloneManifest(manifest);
 
             int? preferredSequence = null;
             string? documentCode = null;
@@ -706,6 +766,8 @@ public sealed class DocumentUploadService
             var relativeFileName = Path.GetRelativePath(rootPath, destinationPath)
                 .Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
 
+            LogStorageDestination(rootPath, relativeFileName);
+
             var manifestUpdateResult = await UpdateManifestAsync(
                     manifestPath,
                     manifest,
@@ -735,6 +797,65 @@ public sealed class DocumentUploadService
                     TryDeleteDirectoryIfEmpty(documentRoot);
                 }
                 return DocumentUploadResult.Failed("บันทึกไฟล์สำเร็จ แต่ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
+            }
+
+            var manifestEntry = FindManifestEntry(manifest, relativeFileName);
+            if (manifestEntry is null)
+            {
+                _logger.LogWarning("Manifest entry for {Path} not found after update; rolling back upload.", relativeFileName);
+                TryDeleteFile(destinationPath);
+                if (createdCurrentDirectory)
+                {
+                    TryDeleteDirectoryIfEmpty(currentDirectory);
+                }
+
+                if (createdVersionsDirectory)
+                {
+                    TryDeleteDirectoryIfEmpty(versionsDirectory);
+                }
+
+                if (!string.IsNullOrEmpty(documentRoot))
+                {
+                    TryDeleteDirectoryIfEmpty(documentRoot);
+                }
+
+                await PersistManifestAsync(manifestPath, manifestSnapshot, cancellationToken).ConfigureAwait(false);
+                return DocumentUploadResult.Failed("บันทึกไฟล์สำเร็จ แต่ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
+            }
+
+            try
+            {
+                await RegisterDocumentEntryAsync(
+                        context,
+                        relativeFileName,
+                        destinationPath,
+                        request,
+                        manifestEntry,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to register uploaded document {Path} in database.", relativeFileName);
+                TryDeleteFile(destinationPath);
+
+                if (createdCurrentDirectory)
+                {
+                    TryDeleteDirectoryIfEmpty(currentDirectory);
+                }
+
+                if (createdVersionsDirectory)
+                {
+                    TryDeleteDirectoryIfEmpty(versionsDirectory);
+                }
+
+                if (!string.IsNullOrEmpty(documentRoot))
+                {
+                    TryDeleteDirectoryIfEmpty(documentRoot);
+                }
+
+                await PersistManifestAsync(manifestPath, manifestSnapshot, cancellationToken).ConfigureAwait(false);
+                return DocumentUploadResult.Failed("บันทึกไฟล์สำเร็จ แต่ไม่สามารถลงทะเบียนข้อมูลได้");
             }
 
             try
@@ -810,6 +931,7 @@ public sealed class DocumentUploadService
             var rootFullPath = Path.GetFullPath(rootPath);
             var manifestPath = Path.Combine(rootPath, GetManifestFileName());
             ManifestDocument manifest;
+            ManifestDocument manifestSnapshot;
             try
             {
                 manifest = await LoadManifestAsync(manifestPath, cancellationToken).ConfigureAwait(false);
@@ -819,6 +941,7 @@ public sealed class DocumentUploadService
                 _logger.LogError(ex, "Cannot update document because the manifest could not be read.");
                 return DocumentUpdateResult.Failed("ไม่สามารถอ่านข้อมูลเอกสารเดิมได้ กรุณาติดต่อผู้ดูแลระบบ");
             }
+            manifestSnapshot = CloneManifest(manifest);
 
             var existingIndex = manifest.Documents.FindIndex(entry =>
                 string.Equals(NormalizeManifestPath(entry.FileName), normalizedPath, StringComparison.OrdinalIgnoreCase));
@@ -1069,6 +1192,101 @@ public sealed class DocumentUploadService
                 return DocumentUpdateResult.Failed("ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
             }
 
+            var finalRelativePath = pathChanged ? newRelativePath : normalizedPath;
+            var finalFullPath = pathChanged ? newFullPath : candidatePath;
+            var manifestEntry = FindManifestEntry(manifest, finalRelativePath);
+
+            if (manifestEntry is null)
+            {
+                _logger.LogWarning("Manifest entry for {Path} not found after update; rolling back.", finalRelativePath);
+
+                if (!string.IsNullOrEmpty(backupPath))
+                {
+                    TryRestoreFromBackup(backupPath, candidatePath);
+                }
+                else if (fileReplaced && request.Content is not null)
+                {
+                    _logger.LogWarning("Manifest entry missing after updating file '{File}'.", candidatePath);
+                }
+
+                if (renameApplied && pathChanged)
+                {
+                    try
+                    {
+                        File.Move(newFullPath, candidatePath, overwrite: true);
+                    }
+                    catch (Exception moveBackEx)
+                    {
+                        _logger.LogError(moveBackEx, "Failed to restore file location for '{Path}' after manifest lookup error.", normalizedPath);
+                    }
+                }
+
+                if (pathChanged && fileReplaced)
+                {
+                    TryDeleteFile(newFullPath);
+                }
+
+                await PersistManifestAsync(manifestPath, manifestSnapshot, cancellationToken).ConfigureAwait(false);
+
+                if (!string.IsNullOrEmpty(backupPath))
+                {
+                    TryDeleteFile(backupPath);
+                }
+
+                return DocumentUpdateResult.Failed("ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
+            }
+
+            try
+            {
+                await RegisterDocumentEntryAsync(
+                        context,
+                        finalRelativePath,
+                        finalFullPath,
+                        metadataRequest,
+                        manifestEntry,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to register updated document {Path} in database.", finalRelativePath);
+
+                await PersistManifestAsync(manifestPath, manifestSnapshot, cancellationToken).ConfigureAwait(false);
+
+                if (!string.IsNullOrEmpty(backupPath))
+                {
+                    TryRestoreFromBackup(backupPath, candidatePath);
+                }
+                else if (fileReplaced && request.Content is not null)
+                {
+                    _logger.LogWarning("Database registration failed after replacing file '{File}'.", candidatePath);
+                }
+
+                if (renameApplied && pathChanged)
+                {
+                    try
+                    {
+                        File.Move(newFullPath, candidatePath, overwrite: true);
+                    }
+                    catch (Exception moveBackEx)
+                    {
+                        _logger.LogError(moveBackEx, "Failed to restore file location for '{Path}' after database error.", normalizedPath);
+                    }
+                }
+
+                if (pathChanged && fileReplaced)
+                {
+                    TryDeleteFile(newFullPath);
+                }
+
+                if (!string.IsNullOrEmpty(backupPath))
+                {
+                    TryDeleteFile(backupPath);
+                }
+
+                return DocumentUpdateResult.Failed("ไม่สามารถอัปเดตข้อมูลไฟล์ได้");
+            }
+
             if (!string.IsNullOrEmpty(backupPath))
             {
                 TryDeleteFile(backupPath);
@@ -1081,7 +1299,7 @@ public sealed class DocumentUploadService
 
             _catalogService.InvalidateCache();
 
-            _logger.LogInformation("Updated document {Code} -> {Path}", documentCode ?? "(no-code)", newFullPath);
+            _logger.LogInformation("Updated document {Code} -> {Path}", documentCode ?? "(no-code)", finalFullPath);
 
             return DocumentUpdateResult.Success(normalizedPath, manifestUpdateResult.DocumentType, manifestUpdateResult.SequenceNumber, manifestUpdateResult.DocumentCode);
         }
@@ -1441,6 +1659,219 @@ public sealed class DocumentUploadService
         {
             _logger.LogError(restoreEx, "Failed to restore original file '{Destination}' from backup '{Backup}'.", destinationPath, backupPath);
         }
+    }
+
+    private async Task RegisterDocumentEntryAsync(
+        DocumentCatalogService.DocumentCatalogContext context,
+        string normalizedRelativePath,
+        string physicalPath,
+        DocumentUploadRequest request,
+        ManifestEntry manifestEntry,
+        CancellationToken cancellationToken)
+    {
+        if (manifestEntry is null)
+        {
+            throw new ArgumentNullException(nameof(manifestEntry));
+        }
+
+        var normalizedPath = NormalizeManifestPath(manifestEntry.FileName ?? normalizedRelativePath);
+        if (string.IsNullOrEmpty(normalizedPath))
+        {
+            throw new InvalidOperationException("Cannot determine normalized path for document registration.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var normalizedType = DocumentNumbering.NormalizeType(manifestEntry.DocumentType);
+        var documentCode = DocumentNumbering.FormatCode(normalizedType, manifestEntry.SequenceNumber);
+
+        await using var dbContext = await _dbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        var entity = await dbContext.Documents
+            .FirstOrDefaultAsync(d => d.NormalizedPath == normalizedPath, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (entity is null)
+        {
+            entity = new DocumentEntity
+            {
+                Id = Guid.NewGuid(),
+                NormalizedPath = normalizedPath
+            };
+
+            dbContext.Documents.Add(entity);
+        }
+        else
+        {
+            entity.NormalizedPath = normalizedPath;
+        }
+
+        var fileInfo = new FileInfo(physicalPath);
+        var displayName = !string.IsNullOrWhiteSpace(manifestEntry.DisplayName)
+            ? manifestEntry.DisplayName!.Trim()
+            : request.DisplayName;
+
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            displayName = Path.GetFileNameWithoutExtension(physicalPath);
+        }
+
+        entity.DisplayName = string.IsNullOrWhiteSpace(displayName)
+            ? Path.GetFileNameWithoutExtension(physicalPath)
+            : displayName;
+        entity.RelativePath = normalizedPath;
+        entity.FileName = Path.GetFileName(physicalPath);
+        entity.Line = NormalizeOptional(request.Line);
+        entity.Station = NormalizeOptional(request.Station);
+        entity.Model = NormalizeOptional(request.Model);
+        entity.Machine = NormalizeOptional(request.MachineName);
+        entity.UploadedBy = NormalizeOptional(request.UploadedBy);
+        entity.Comment = NormalizeOptional(request.Comment);
+        entity.DocumentType = normalizedType;
+        entity.SequenceNumber = manifestEntry.SequenceNumber;
+        entity.DocumentCode = documentCode;
+
+        var manifestVersion = manifestEntry.Version.GetValueOrDefault();
+        if (manifestVersion <= 0 && entity.Version > 0)
+        {
+            manifestVersion = entity.Version;
+        }
+        else if (manifestVersion <= 0)
+        {
+            manifestVersion = 1;
+        }
+
+        entity.Version = manifestVersion;
+        entity.ActiveVersionId = manifestEntry.ActiveVersionId;
+        entity.UpdatedAt = request.UploadedAt.ToUniversalTime();
+        entity.UpdatedAtUnixMs = request.UploadedAt.ToUnixTimeMilliseconds();
+        entity.IndexedAtUtc = now;
+        entity.SizeBytes = fileInfo.Exists ? fileInfo.Length : 0L;
+        entity.LastWriteUtc = fileInfo.Exists
+            ? new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero)
+            : (DateTimeOffset?)null;
+        entity.LinkUrl = BuildDocumentLink(context, normalizedPath, fileInfo.Exists ? fileInfo.FullName : physicalPath);
+        entity.StampMode = request.StampMode;
+        entity.StampDate = request.StampDate;
+
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private ManifestEntry? FindManifestEntry(ManifestDocument manifest, string normalizedRelativePath)
+    {
+        if (manifest is null)
+        {
+            return null;
+        }
+
+        var lookup = NormalizeManifestPath(normalizedRelativePath);
+        if (string.IsNullOrEmpty(lookup))
+        {
+            return null;
+        }
+
+        return manifest.Documents.FirstOrDefault(entry =>
+            string.Equals(NormalizeManifestPath(entry.FileName), lookup, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static ManifestDocument CloneManifest(ManifestDocument manifest)
+    {
+        var clone = new ManifestDocument
+        {
+            Documents = manifest.Documents
+                .Select(entry => new ManifestEntry
+                {
+                    FileName = entry.FileName,
+                    DisplayName = entry.DisplayName,
+                    Line = entry.Line,
+                    Station = entry.Station,
+                    Model = entry.Model,
+                    MachineName = entry.MachineName,
+                    UploadedBy = entry.UploadedBy,
+                    Comment = entry.Comment,
+                    UpdatedAt = entry.UpdatedAt,
+                    DocumentType = entry.DocumentType,
+                    SequenceNumber = entry.SequenceNumber,
+                    Version = entry.Version,
+                    ActiveVersionId = entry.ActiveVersionId,
+                    StampMode = entry.StampMode,
+                    StampDate = entry.StampDate
+                })
+                .ToList()
+        };
+
+        return clone;
+    }
+
+    private void LogStorageDestination(string rootPath, string relativePath)
+    {
+        try
+        {
+            var normalizedRoot = Path.GetFullPath(rootPath);
+            if (!string.IsNullOrWhiteSpace(_options.AbsolutePath))
+            {
+                var configuredRoot = Path.GetFullPath(_options.AbsolutePath);
+                if (!string.Equals(normalizedRoot, configuredRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning(
+                        "Active storage root '{ActiveRoot}' differs from configured absolute path '{Configured}'.",
+                        normalizedRoot,
+                        configuredRoot);
+                }
+            }
+
+            _logger.LogInformation("Saving upload to {Root}/{Rel}", normalizedRoot, relativePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to normalize storage paths for logging.");
+            _logger.LogInformation("Saving upload to {Root}/{Rel}", rootPath, relativePath);
+        }
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
+    private static string? BuildDocumentLink(
+        DocumentCatalogService.DocumentCatalogContext context,
+        string normalizedRelativePath,
+        string physicalPath)
+    {
+        if (context.LinkKind == DocumentCatalogService.CatalogLinkKind.Absolute)
+        {
+            if (Uri.TryCreate(physicalPath, UriKind.Absolute, out var absoluteUri))
+            {
+                return absoluteUri.AbsoluteUri;
+            }
+
+            return null;
+        }
+
+        var relativePrefix = (context.RelativeRequestPrefix ?? string.Empty)
+            .Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        var segments = normalizedRelativePath.Split(
+            Path.AltDirectorySeparatorChar,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
+        {
+            return null;
+        }
+
+        var encoded = string.Join(Path.AltDirectorySeparatorChar, segments.Select(Uri.EscapeDataString));
+
+        return string.IsNullOrEmpty(relativePrefix)
+            ? $"/{encoded}"
+            : $"/{relativePrefix}/{encoded}";
     }
 
     private static string BuildCurrentFileName(string displayName, string originalFileName)
