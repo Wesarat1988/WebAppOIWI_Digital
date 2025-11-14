@@ -6,6 +6,7 @@
     let loader; // promise โหลด pdf.js
     const views = new Map(); // เก็บ state ต่อ containerId
     const fullscreenHosts = new Map();
+    const viewerCallbacks = new Map();
     let fullscreenEventsBound = false;
     let isReadyResolve;
     const readyPromise = new Promise(resolve => {
@@ -199,6 +200,7 @@
         await ready();
         const host = document.getElementById(containerId);
         if (!host) {
+            notifyRenderStatus(containerId, false, "ไม่พบตำแหน่งสำหรับแสดงไฟล์ PDF");
             return;
         }
 
@@ -251,9 +253,11 @@
 
                 state.pages.push({ canvas, ctx: context, page, dpr });
             }
+            notifyRenderStatus(containerId, true, null);
         } catch (error) {
             console.error("PDF render error", error);
             host.innerHTML = '<div class="pdfjs-error alert alert-danger m-3">ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้</div>';
+            notifyRenderStatus(containerId, false, "ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้ กรุณาลองอีกครั้งหรือดาวน์โหลดไฟล์แทน");
         }
     }
 
@@ -373,6 +377,7 @@
             keyHandler: null,
             isActive: false
         });
+        viewerCallbacks.set(viewerId, dotNetRef);
     }
 
     async function requestFullScreenHost(hostId) {
@@ -421,11 +426,41 @@
 
         detachKeyHandler(state);
         fullscreenHosts.delete(hostId);
+        viewerCallbacks.delete(state.viewerId);
     }
 
     function ready() {
         ensureLoaded().catch(console.error);
         return readyPromise;
+    }
+
+    function getDotNetRefForViewer(containerId) {
+        const callback = viewerCallbacks.get(containerId);
+        if (callback) {
+            return callback;
+        }
+
+        for (const state of fullscreenHosts.values()) {
+            if (state.viewerId === containerId && state.dotNetRef) {
+                return state.dotNetRef;
+            }
+        }
+
+        return null;
+    }
+
+    function notifyRenderStatus(containerId, success, message) {
+        const dotNetRef = getDotNetRefForViewer(containerId);
+        if (!dotNetRef) {
+            return;
+        }
+
+        try {
+            dotNetRef.invokeMethodAsync("OnPdfRenderStatusChanged", containerId, !!success, message || null)
+                .catch(() => { });
+        } catch (error) {
+            // ignore
+        }
     }
 
     window.pdfViewer = {

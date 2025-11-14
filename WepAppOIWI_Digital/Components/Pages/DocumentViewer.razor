@@ -108,10 +108,17 @@ else
                 }
 
                 <!-- PDF Canvas Container -->
-                <div class="document-container">
-                    <div id="@pdfContainerId" class="pdfjs-viewer">
-                        <div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
-                    </div>
+                <div class="document-container position-relative">
+                    @if (isPreviewLoading)
+                    {
+                        <div class="pdf-preview-status text-muted">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
+                    }
+                    else if (!string.IsNullOrEmpty(previewErrorMessage))
+                    {
+                        <div class="pdf-preview-status alert alert-warning" role="alert">@previewErrorMessage</div>
+                    }
+
+                    <div id="@pdfContainerId" class="pdfjs-viewer"></div>
                 </div>
 
                 @if (isFullScreen && HasPageControls)
@@ -190,6 +197,8 @@ else
     private bool canPreviewInline;
     private bool pendingPdfRender;
     private int pdfRenderAttempts;
+    private bool isPreviewLoading;
+    private string? previewErrorMessage;
     private readonly string pdfContainerId = $"pdfjs-viewer-{System.Guid.NewGuid():N}";
     private readonly string fullScreenHostId = $"pdf-viewer-host-{System.Guid.NewGuid():N}";
     private readonly string fullScreenCanvasId = $"pdf-viewer-focus-{System.Guid.NewGuid():N}";
@@ -225,6 +234,8 @@ else
         totalPages = 1;
         currentPage = 1;
         isPdfReady = false;
+        isPreviewLoading = true;
+        previewErrorMessage = null;
         requestFullScreenPending = false;
         exitFullScreenPending = wasFullScreen;
         isFullScreen = false;
@@ -259,6 +270,7 @@ else
             canPreviewInline = string.Equals(fileHandle.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase);
             pendingPdfRender = canPreviewInline && !string.IsNullOrEmpty(previewSource);
             pdfRenderAttempts = 0;
+            isPreviewLoading = pendingPdfRender;
         }
         catch (OperationCanceledException)
         {
@@ -272,6 +284,10 @@ else
         finally
         {
             isLoading = false;
+            if (!pendingPdfRender)
+            {
+                isPreviewLoading = false;
+            }
         }
     }
 
@@ -290,9 +306,11 @@ else
             try
             {
                 pdfRenderAttempts++;
+                previewErrorMessage = null;
+                isPreviewLoading = true;
+                isPdfReady = false;
                 await JSRuntime.InvokeVoidAsync("pdfViewer.ready");
                 await JSRuntime.InvokeVoidAsync("pdfViewer.render", previewSource!, pdfContainerId);
-                isPdfReady = true;
                 if (isFullScreen && HasPageControls)
                 {
                     await ScrollToCurrentPageAsync(false);
@@ -306,6 +324,12 @@ else
                     pendingPdfRender = true;
                     await InvokeAsync(StateHasChanged);
                 }
+                else
+                {
+                    isPreviewLoading = false;
+                    previewErrorMessage = "ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้ กรุณาลองอีกครั้งหรือดาวน์โหลดไฟล์แทน";
+                    await InvokeAsync(StateHasChanged);
+                }
             }
             catch (Exception ex)
             {
@@ -313,6 +337,12 @@ else
                 if (pdfRenderAttempts < MaxPdfRenderAttempts)
                 {
                     pendingPdfRender = true;
+                    await InvokeAsync(StateHasChanged);
+                }
+                else
+                {
+                    isPreviewLoading = false;
+                    previewErrorMessage = "ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้ กรุณาลองอีกครั้งหรือดาวน์โหลดไฟล์แทน";
                     await InvokeAsync(StateHasChanged);
                 }
             }
@@ -353,7 +383,7 @@ else
     private Task FitWidth() => JSRuntime.InvokeVoidAsync("pdfViewer.fitWidth", pdfContainerId).AsTask();
 
     private string FullScreenButtonLabel => isFullScreen ? "ออกจากโหมดเต็มหน้าจอ" : "แสดงเต็มหน้าจอ";
-    private bool HasPageControls => hasPageData && totalPages > 1;
+    private bool HasPageControls => isPdfReady && hasPageData && totalPages > 1;
     private bool CanGoNext => HasPageControls && currentPage < totalPages;
     private bool CanGoPrevious => HasPageControls && currentPage > 1;
 
@@ -546,6 +576,23 @@ else
         }
 
         await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnPdfRenderStatusChanged(string viewerId, bool success, string? message)
+    {
+        if (!string.Equals(viewerId, pdfContainerId, StringComparison.Ordinal))
+        {
+            return Task.CompletedTask;
+        }
+
+        isPreviewLoading = false;
+        isPdfReady = success;
+        previewErrorMessage = success ? null : (string.IsNullOrWhiteSpace(message)
+            ? "ไม่สามารถแสดงตัวอย่างไฟล์ PDF ได้ กรุณาลองกดรีเฟรชหรือดาวน์โหลดไฟล์แทน"
+            : message);
+
+        return InvokeAsync(StateHasChanged);
     }
 
     private string GetPreviewFrameClasses()

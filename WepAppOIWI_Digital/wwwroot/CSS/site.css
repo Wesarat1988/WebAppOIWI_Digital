@@ -258,6 +258,24 @@
     color: #fff;
 }
 
+.pdf-preview-status {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 1.5rem;
+    z-index: 10;
+    pointer-events: none;
+}
+
+.pdf-preview-status.alert {
+    pointer-events: auto;
+    width: min(640px, 90%);
+    margin: 0 auto;
+}
+
 .pdf-fullscreen-error {
     margin: 0;
     border-radius: 0;
