@@ -102,7 +102,9 @@
         host.style.position = "relative";
 
         try {
-            const pdf = await window.pdfjsLib.getDocument({ url, withCredentials: true }).promise;
+            const resolvedUrl = toAbsoluteUrl(url);
+            console.debug("pdfViewer.render -> loading", { containerId, url: resolvedUrl });
+            const pdf = await window.pdfjsLib.getDocument({ url: resolvedUrl, withCredentials: true }).promise;
             const state = {
                 pdf,
                 scale: 1,
@@ -149,7 +151,11 @@
             }
             notifyRenderStatus(containerId, true, null);
         } catch (error) {
-            console.error("PDF render error", error);
+            console.error("PDF render error", {
+                containerId,
+                source: url,
+                error
+            });
             host.innerHTML = '<div class="pdfjs-error alert alert-danger m-3">ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้</div>';
             notifyRenderStatus(containerId, false, "ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้ กรุณาลองอีกครั้งหรือดาวน์โหลดไฟล์แทน");
         }

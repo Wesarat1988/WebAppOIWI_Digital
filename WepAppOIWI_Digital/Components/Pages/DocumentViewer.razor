@@ -297,6 +297,9 @@ else
             pendingPdfRender = false;
             try
             {
+                Logger.LogDebug("Starting PDF preview render for '{DocumentPath}' from {PreviewSource}",
+                    document?.FileName,
+                    previewSource);
                 pdfRenderAttempts++;
                 previewErrorMessage = null;
                 isPreviewLoading = true;
@@ -632,6 +635,17 @@ else
         previewErrorMessage = success ? null : (string.IsNullOrWhiteSpace(message)
             ? "ไม่สามารถแสดงตัวอย่างไฟล์ PDF ได้ กรุณาลองกดรีเฟรชหรือดาวน์โหลดไฟล์แทน"
             : message);
+
+        if (!success)
+        {
+            Logger.LogError("PDF preview render failed for '{DocumentPath}'. Message: {ErrorMessage}",
+                document?.FileName,
+                previewErrorMessage);
+        }
+        else
+        {
+            Logger.LogDebug("PDF preview render completed for '{DocumentPath}'", document?.FileName);
+        }
 
         return InvokeAsync(StateHasChanged);
     }
