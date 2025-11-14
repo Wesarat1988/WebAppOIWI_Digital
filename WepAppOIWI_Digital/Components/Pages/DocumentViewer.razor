@@ -551,20 +551,6 @@ else
             {
                 await JSRuntime.InvokeVoidAsync("pdfViewerInterop.focusFullScreenHost", fullScreenHostId);
             }
-            catch (JSException jsEx)
-            {
-                Logger.LogDebug(jsEx, "Unable to determine current visible page for '{DocumentPath}'");
-                currentPage = Math.Clamp(currentPage, 1, totalPages);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogDebug(ex, "Unexpected error determining current visible page for '{DocumentPath}'");
-                currentPage = Math.Clamp(currentPage, 1, totalPages);
-            }
-        }
-        else
-        {
-            currentPage = 1;
         }
         catch (JSException jsEx)
         {
@@ -576,8 +562,8 @@ else
         }
     }
 
-    [JSInvokable]
-    public Task HandleFullScreenCommandAsync(string command) => command switch
+    [JSInvokable(nameof(HandleFullScreenCommandFromJsAsync))]
+    public Task HandleFullScreenCommandFromJsAsync(string command) => command switch
     {
         "next" => NextPage(),
         "previous" => PreviousPage(),
@@ -585,8 +571,8 @@ else
         _ => Task.CompletedTask
     };
 
-    [JSInvokable]
-    public async Task OnFullScreenChangedAsync(string hostId, bool active)
+    [JSInvokable(nameof(OnFullScreenChangedFromJsAsync))]
+    public async Task OnFullScreenChangedFromJsAsync(string hostId, bool active)
     {
         if (!string.Equals(hostId, fullScreenHostId, StringComparison.Ordinal))
         {
@@ -614,8 +600,8 @@ else
         await InvokeAsync(StateHasChanged);
     }
 
-    [JSInvokable]
-    public Task OnPdfRenderStatusChangedAsync(string viewerId, bool success, string? message)
+    [JSInvokable(nameof(OnPdfRenderStatusChangedFromJsAsync))]
+    public Task OnPdfRenderStatusChangedFromJsAsync(string viewerId, bool success, string? message)
     {
         if (!string.Equals(viewerId, pdfContainerId, StringComparison.Ordinal))
         {
