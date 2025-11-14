@@ -79,7 +79,7 @@ else
         </div>
     </div>
 
-    @if (canPreviewInline && !string.IsNullOrEmpty(previewSource))
+    @if (canPreviewInline)
     {
         <div id="@fullScreenHostId"
              @ref="fullScreenOverlayRef"
@@ -125,16 +125,33 @@ else
                 <div class="document-container position-relative @(IsFullScreen ? "pdf-fullscreen-frame-container" : string.Empty)"
                      @ref="pdfScrollContainerRef"
                      @onscroll="HandlePdfScroll">
-                    @if (isPreviewLoading)
+                    @if (IsFullScreen)
                     {
-                        <div class="pdf-preview-status text-muted">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
-                    }
-                    else if (!string.IsNullOrEmpty(previewErrorMessage))
-                    {
-                        <div class="pdf-preview-status alert alert-warning" role="alert">@previewErrorMessage</div>
-                    }
+                        @if (isPreviewLoading)
+                        {
+                            <div class="pdf-preview-status text-muted">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
+                        }
+                        else if (!string.IsNullOrEmpty(previewErrorMessage))
+                        {
+                            <div class="pdf-preview-status alert alert-warning" role="alert">@previewErrorMessage</div>
+                        }
 
-                    <div id="@pdfContainerId" class="pdfjs-viewer"></div>
+                        <div id="@pdfContainerId" class="pdfjs-viewer"></div>
+                    }
+                    else if (inlinePreviewError || string.IsNullOrEmpty(inlinePdfUrl))
+                    {
+                        <div class="pdf-preview-status alert alert-warning" role="alert">
+                            ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้ กรุณาลองอีกครั้งหรือดาวน์โหลดไฟล์แทน
+                        </div>
+                    }
+                    else
+                    {
+                        <iframe src="@inlinePdfUrl"
+                                class="document-inline-frame"
+                                title="ตัวอย่างเอกสาร PDF"
+                                loading="lazy">
+                        </iframe>
+                    }
                 </div>
 
                 @if (IsFullScreen && HasPageControls)
@@ -152,9 +169,12 @@ else
             </div>
         </div>
 
-        <p class="text-muted small mt-2">
-            หากไฟล์ไม่แสดงผลในตัวอย่าง กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
-        </p>
+        @if (!IsFullScreen)
+        {
+            <p class="text-muted small mt-2">
+                หากไฟล์ไม่แสดงผลในตัวอย่าง กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
+            </p>
+        }
     }
     else
     {
@@ -175,6 +195,8 @@ else
     private DocumentCatalogService.DocumentFileHandle? fileHandle;
     private string? previewSource;
     private string? downloadSource;
+    private string? inlinePdfUrl;
+    private bool inlinePreviewError;
     private bool canPreviewInline;
     private bool pendingPdfRender;
     private int pdfRenderAttempts;
@@ -207,6 +229,8 @@ else
         fileHandle = null;
         previewSource = null;
         downloadSource = null;
+        inlinePdfUrl = null;
+        inlinePreviewError = false;
         canPreviewInline = false;
         pendingPdfRender = false;
         pdfRenderAttempts = 0;
@@ -214,7 +238,7 @@ else
         totalPages = 1;
         currentPage = 1;
         isPdfReady = false;
-        isPreviewLoading = true;
+        isPreviewLoading = false;
         previewErrorMessage = null;
         focusOverlayPending = false;
         IsFullScreen = false;
@@ -246,9 +270,26 @@ else
             previewSource = $"/documents/preview/{Uri.EscapeDataString(Token)}?v={cacheBust}";
             downloadSource = $"/documents/download/{Uri.EscapeDataString(Token)}?v={cacheBust}";
             canPreviewInline = string.Equals(fileHandle.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase);
-            pendingPdfRender = canPreviewInline && !string.IsNullOrEmpty(previewSource);
+
+            if (canPreviewInline)
+            {
+                try
+                {
+                    inlinePdfUrl = string.IsNullOrEmpty(previewSource)
+                        ? null
+                        : Navigation.ToAbsoluteUri(previewSource).ToString();
+                    inlinePreviewError = string.IsNullOrEmpty(inlinePdfUrl);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to build inline PDF preview URL for '{DocumentPath}'", document?.FileName);
+                    inlinePdfUrl = null;
+                    inlinePreviewError = true;
+                }
+            }
+
+            pendingPdfRender = false;
             pdfRenderAttempts = 0;
-            isPreviewLoading = pendingPdfRender;
         }
         catch (OperationCanceledException)
         {
@@ -377,7 +418,6 @@ else
         {
             await EnterFullScreenAsync();
         }
-    }
 
     private async Task EnterFullScreenAsync()
     {
@@ -391,37 +431,14 @@ else
             return;
         }
 
-        try
-        {
-            totalPages = await JSRuntime.InvokeAsync<int>("pdfViewerInterop.getPageCount", pdfContainerId);
-            hasPageData = totalPages > 0;
-            if (!hasPageData)
-            {
-                totalPages = 1;
-            }
-        }
-        catch (Exception ex)
-        {
-            if (ex is JSException jsEx)
-            {
-                Logger.LogWarning(jsEx, "Unable to determine PDF page count for '{DocumentPath}' in full screen", document?.FileName);
-            }
-            else
-            {
-                Logger.LogWarning(ex, "Unexpected error determining PDF page count for '{DocumentPath}'", document?.FileName);
-            }
-            hasPageData = false;
-            totalPages = 1;
-        }
-
-        if (hasPageData)
-        {
-            await UpdateVisiblePageFromScrollContainerAsync();
-        }
-        else
-        {
-            currentPage = 1;
-        }
+        hasPageData = false;
+        totalPages = 1;
+        currentPage = 1;
+        isPdfReady = false;
+        previewErrorMessage = null;
+        isPreviewLoading = true;
+        pendingPdfRender = true;
+        pdfRenderAttempts = 0;
 
         IsFullScreen = true;
         focusOverlayPending = true;
@@ -441,6 +458,8 @@ else
 
         IsFullScreen = false;
         focusOverlayPending = false;
+        isPreviewLoading = false;
+        previewErrorMessage = null;
         return InvokeAsync(StateHasChanged);
     }
 
@@ -576,6 +595,64 @@ else
         currentPage = Math.Clamp(currentPage, 1, totalPages);
     }
 
+    private async Task RefreshPageDataAsync()
+    {
+        if (!IsFullScreen)
+        {
+            hasPageData = false;
+            totalPages = 1;
+            currentPage = 1;
+            return;
+        }
+
+        try
+        {
+            var pageCount = await JSRuntime.InvokeAsync<int>("pdfViewerInterop.getPageCount", pdfContainerId);
+            hasPageData = pageCount > 0;
+            totalPages = hasPageData ? pageCount : 1;
+
+            if (!hasPageData)
+            {
+                currentPage = 1;
+                return;
+            }
+
+            var currentIndex = await JSRuntime.InvokeAsync<int>("pdfViewerInterop.getCurrentPageIndex", pdfContainerId);
+            currentPage = Math.Clamp(currentIndex <= 0 ? 1 : currentIndex, 1, totalPages);
+
+            await ScrollToCurrentPageAsync(false);
+            await UpdateVisiblePageFromScrollContainerAsync();
+        }
+        catch (JSException ex)
+        {
+            Logger.LogDebug(ex, "Unable to refresh PDF page data for '{DocumentPath}'", document?.FileName);
+            hasPageData = false;
+            totalPages = 1;
+            currentPage = 1;
+        }
+        catch (ObjectDisposedException ex)
+        {
+            Logger.LogDebug(ex, "PDF viewer disposed while refreshing page data for '{DocumentPath}'", document?.FileName);
+            hasPageData = false;
+            totalPages = 1;
+            currentPage = 1;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogDebug(ex, "PDF viewer unavailable while refreshing page data for '{DocumentPath}'", document?.FileName);
+            hasPageData = false;
+            totalPages = 1;
+            currentPage = 1;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Unexpected error while refreshing page data for '{DocumentPath}'", document?.FileName);
+            hasPageData = false;
+            totalPages = 1;
+            currentPage = 1;
+        }
+    }
+
     private async Task HandleFullScreenKeyDown(KeyboardEventArgs args)
     {
         if (!IsFullScreen)
@@ -636,18 +713,25 @@ else
             ? "ไม่สามารถแสดงตัวอย่างไฟล์ PDF ได้ กรุณาลองกดรีเฟรชหรือดาวน์โหลดไฟล์แทน"
             : message);
 
-        if (!success)
+        return InvokeAsync(async () =>
         {
-            Logger.LogError("PDF preview render failed for '{DocumentPath}'. Message: {ErrorMessage}",
-                document?.FileName,
-                previewErrorMessage);
-        }
-        else
-        {
-            Logger.LogDebug("PDF preview render completed for '{DocumentPath}'", document?.FileName);
-        }
+            if (!success)
+            {
+                hasPageData = false;
+                totalPages = 1;
+                currentPage = 1;
+                Logger.LogError("PDF preview render failed for '{DocumentPath}'. Message: {ErrorMessage}",
+                    document?.FileName,
+                    previewErrorMessage);
+            }
+            else
+            {
+                Logger.LogDebug("PDF preview render completed for '{DocumentPath}'", document?.FileName);
+                await RefreshPageDataAsync();
+            }
 
-        return InvokeAsync(StateHasChanged);
+            StateHasChanged();
+        });
     }
 
     private string GetPreviewFrameClasses()
