@@ -514,124 +514,121 @@
         const safeTitle = escapeHtml(title || "PDF Viewer");
         const safeSource = sanitizeUrl(source);
 
-        // Compose a lightweight fullscreen document with our floating toolbar controls.
         const html = `<!DOCTYPE html>
 <html lang="th">
 <head>
     <meta charset="utf-8" />
     <title>${safeTitle}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-        html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
-        #pdfFullScreenShell { position: fixed; inset: 0; padding: 48px 24px 120px; background: #000; display: flex; justify-content: center; align-items: flex-start; overflow: auto; box-sizing: border-box; }
-        #pdfScaler { transform-origin: top center; transition: transform 0.25s ease; }
-        #pdfCanvas { display: block; width: min(85vw, 1100px); height: calc(100vh - 200px); max-height: 95vh; border: none; background: #1b1b1b; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6); border-radius: 8px; }
-        #pdfFullToolbar { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-radius: 999px; background: rgba(22, 22, 22, 0.9); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); backdrop-filter: blur(6px); }
-        #pdfFullToolbar button { border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 999px; padding: 10px 18px; font-size: 16px; line-height: 1; color: #fff; background: #2d2d2d; cursor: pointer; transition: background 0.2s ease, transform 0.2s ease; }
-        #pdfFullToolbar button:hover { background: #3b3b3b; transform: translateY(-1px); }
-        #pdfFullToolbar button:active { transform: translateY(0); }
-        #pdfScaleLabel { font-size: 14px; color: #d5d5d5; min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
-        @media (max-width: 768px) {
-            #pdfCanvas { width: 92vw; height: calc(100vh - 220px); }
-            #pdfFullToolbar { bottom: 16px; flex-wrap: wrap; gap: 8px; }
-            #pdfFullToolbar button { padding: 10px 14px; font-size: 15px; }
+        :root { color-scheme: only dark; }
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; padding: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #111; color: #f5f5f5; }
+        body { display: flex; }
+        #pdfContainer { flex: 1 1 auto; display: flex; justify-content: center; align-items: flex-start; padding: 24px 16px 96px; overflow: auto; }
+        #pdfCanvas { border: none; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6); transform-origin: top center; transition: transform 0.16s ease-out; max-width: 100%; height: auto; }
+        #pdfToolbar { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: inline-flex; gap: 8px; align-items: center; padding: 10px 16px; border-radius: 999px; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(10px); box-shadow: 0 12px 32px rgba(0,0,0,0.45); }
+        #pdfToolbar button { border: none; border-radius: 999px; background: #fff; color: #111; font-size: 15px; padding: 8px 14px; cursor: pointer; min-width: 40px; }
+        #pdfToolbar button:hover { background: #e5e5e5; }
+        #pdfToolbar .label { color: #fff; font-size: 13px; margin-right: 4px; }
+        #pdfScaleValue { min-width: 48px; text-align: right; color: #fff; font-variant-numeric: tabular-nums; font-size: 13px; }
+        @media (max-width: 640px) {
+            #pdfToolbar { bottom: 16px; flex-wrap: wrap; justify-content: center; }
+            #pdfToolbar button { flex: 1 1 30%; }
         }
     </style>
 </head>
 <body>
-    <div id="pdfFullScreenShell">
-        <div id="pdfScaler">
-            <embed id="pdfCanvas" src="${safeSource}" type="application/pdf" />
-        </div>
+    <div id="pdfContainer">
+        <embed id="pdfCanvas" src="${safeSource}" type="application/pdf" />
     </div>
-    <!-- Floating toolbar that stays visible for fullscreen zoom controls -->
-    <div id="pdfFullToolbar" role="toolbar" aria-label="PDF fullscreen controls">
+    <div id="pdfToolbar" role="toolbar" aria-label="PDF fullscreen controls">
+        <span class="label">Zoom</span>
         <button id="btnZoomOut" type="button" aria-label="Zoom out">−</button>
         <button id="btnZoomIn" type="button" aria-label="Zoom in">+</button>
-        <button id="btnResetZoom" type="button" aria-label="Reset zoom">Reset</button>
-        <span id="pdfScaleLabel">100%</span>
+        <button id="btnFitWidth" type="button" aria-label="Fit width">Fit width</button>
+        <span id="pdfScaleValue">100%</span>
     </div>
     <script>
         (() => {
-            const pdfScaler = document.getElementById('pdfScaler');
-            const pdfCanvas = document.getElementById('pdfCanvas');
-            const scaleLabel = document.getElementById('pdfScaleLabel');
-            const zoomInButton = document.getElementById('btnZoomIn');
-            const zoomOutButton = document.getElementById('btnZoomOut');
-            const resetButton = document.getElementById('btnResetZoom');
+            const pdf = document.getElementById('pdfCanvas');
+            const container = document.getElementById('pdfContainer');
+            const zoomInBtn = document.getElementById('btnZoomIn');
+            const zoomOutBtn = document.getElementById('btnZoomOut');
+            const fitWidthBtn = document.getElementById('btnFitWidth');
+            const scaleValue = document.getElementById('pdfScaleValue');
 
             let currentScale = 1.0;
             const MIN_SCALE = 0.3;
             const MAX_SCALE = 3.0;
             const STEP = 0.1;
 
-            function clamp(value) {
-                return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
+            function clamp(scale) {
+                return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
             }
 
             function applyScale() {
-                if (!pdfScaler) {
+                if (!pdf) {
                     return;
                 }
 
                 currentScale = clamp(currentScale);
 
-                // Apply zoom by scaling the wrapper so the embedded PDF grows/shrinks smoothly.
-                pdfScaler.style.transform = 'scale(' + currentScale.toFixed(2) + ')';
+                // Scale only the PDF embed inside the new window so the main site is unaffected.
+                pdf.style.transform = 'scale(' + currentScale.toFixed(2) + ')';
 
-                if (scaleLabel) {
-                    scaleLabel.textContent = Math.round(currentScale * 100) + '%';
+                if (scaleValue) {
+                    scaleValue.textContent = Math.round(currentScale * 100) + '%';
                 }
             }
 
             function zoomIn() {
-                currentScale = clamp(currentScale + STEP);
+                currentScale += STEP;
                 applyScale();
             }
 
             function zoomOut() {
-                currentScale = clamp(currentScale - STEP);
+                currentScale -= STEP;
                 applyScale();
             }
 
-            function resetZoom() {
-                currentScale = 1.0;
-                applyScale();
-            }
-
-            if (zoomInButton) {
-                // Toolbar button: zoom-in increases the scale in 10% increments.
-                zoomInButton.addEventListener('click', zoomIn);
-            }
-
-            if (zoomOutButton) {
-                // Toolbar button: zoom-out decreases the scale in 10% increments.
-                zoomOutButton.addEventListener('click', zoomOut);
-            }
-
-            if (resetButton) {
-                // Reset brings the scale back to the default fit-width view.
-                resetButton.addEventListener('click', resetZoom);
-            }
-
-            window.addEventListener('keydown', event => {
-                switch (event.key) {
-                    case '+':
-                    case '=':
-                        zoomIn();
-                        break;
-                    case '-':
-                    case '_':
-                        zoomOut();
-                        break;
-                    case '0':
-                        resetZoom();
-                        break;
+            function fitWidth() {
+                if (!pdf || !container) {
+                    return;
                 }
-            });
+
+                // Reset scale to measure the intrinsic width of the PDF frame.
+                pdf.style.transform = 'scale(1)';
+                currentScale = 1.0;
+
+                const containerWidth = container.clientWidth;
+                const pdfWidth = pdf.getBoundingClientRect().width;
+
+                if (containerWidth > 0 && pdfWidth > 0) {
+                    // Calculate the scale that fills the available width while respecting limits.
+                    currentScale = clamp(containerWidth / pdfWidth);
+                }
+
+                applyScale();
+            }
+
+            if (zoomInBtn) {
+                zoomInBtn.addEventListener('click', zoomIn);
+            }
+
+            if (zoomOutBtn) {
+                zoomOutBtn.addEventListener('click', zoomOut);
+            }
+
+            if (fitWidthBtn) {
+                // Fit width scales the PDF to match the viewer container width.
+                fitWidthBtn.addEventListener('click', fitWidth);
+            }
 
             applyScale();
-            if (pdfCanvas && typeof pdfCanvas.focus === 'function') {
-                pdfCanvas.focus();
+
+            if (pdf && typeof pdf.focus === 'function') {
+                pdf.focus();
             }
         })();
     </script>
