@@ -417,7 +417,9 @@ else
 
         try
         {
-            await JSRuntime.InvokeVoidAsync("pdfViewerInterop.openStandalone", previewSource, title);
+            var absoluteSource = Navigation.ToAbsoluteUri(previewSource).ToString();
+            Logger.LogDebug("Opening standalone PDF window for {DocumentPath} with source {Source}", document?.FileName, absoluteSource);
+            await JSRuntime.InvokeVoidAsync("pdfViewerInterop.openStandalone", absoluteSource, title);
         }
         catch (Exception ex)
         {
@@ -434,9 +436,12 @@ else
         if (requestFullScreenPending)
         {
             requestFullScreenPending = false;
+            var requestSucceeded = false;
+
             try
             {
                 await JSRuntime.InvokeVoidAsync("pdfViewerInterop.requestFullScreen", fullScreenHostId);
+                requestSucceeded = true;
             }
             catch (JSException jsEx)
             {
@@ -452,18 +457,22 @@ else
                 isFullScreen = false;
                 await InvokeAsync(StateHasChanged);
             }
-            else
+
+            if (requestSucceeded)
             {
-                await JSRuntime.InvokeVoidAsync("pdfViewerInterop.focusFullScreenHost", fullScreenHostId);
+                try
+                {
+                    await JSRuntime.InvokeVoidAsync("pdfViewerInterop.focusFullScreenHost", fullScreenHostId);
+                }
+                catch (JSException jsEx)
+                {
+                    Logger.LogDebug(jsEx, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
+                }
+                catch (InvalidOperationException invalidOp)
+                {
+                    Logger.LogDebug(invalidOp, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
+                }
             }
-        }
-        catch (JSException jsEx)
-        {
-            Logger.LogDebug(jsEx, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
-        }
-        catch (InvalidOperationException invalidOp)
-        {
-            Logger.LogDebug(invalidOp, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
         }
 
         if (exitFullScreenPending)
@@ -471,16 +480,6 @@ else
             exitFullScreenPending = false;
             await JSRuntime.InvokeVoidAsync("pdfViewerInterop.exitFullScreen", fullScreenHostId);
         }
-    }
-
-    private async Task ZoomIn()
-    {
-        await JSRuntime.InvokeVoidAsync("pdfViewerInterop.zoomIn", pdfContainerId);
-    }
-
-    private async Task ZoomOut()
-    {
-        await JSRuntime.InvokeVoidAsync("pdfViewerInterop.zoomOut", pdfContainerId);
     }
 
     private async Task EnterFullScreenAsync()
