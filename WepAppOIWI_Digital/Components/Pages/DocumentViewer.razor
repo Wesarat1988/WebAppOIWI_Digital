@@ -417,7 +417,9 @@ else
 
         try
         {
-            await JSRuntime.InvokeVoidAsync("pdfViewerInterop.openStandalone", previewSource, title);
+            var absoluteSource = Navigation.ToAbsoluteUri(previewSource).ToString();
+            Logger.LogDebug("Opening standalone PDF window for {DocumentPath} with source {Source}", document?.FileName, absoluteSource);
+            await JSRuntime.InvokeVoidAsync("pdfViewerInterop.openStandalone", absoluteSource, title);
         }
         catch (Exception ex)
         {

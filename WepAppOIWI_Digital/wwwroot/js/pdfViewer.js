@@ -499,20 +499,37 @@
         }
     }
 
+    function toAbsoluteUrl(value) {
+        if (!value) {
+            return "";
+        }
+
+        try {
+            return new URL(value, window.location.origin).href;
+        } catch (error) {
+            return value;
+        }
+    }
+
     function openStandalone(source, title) {
+        console.log("pdfViewer.openStandalone called with:", source);
+
         if (!source) {
-            console.warn("Unable to open standalone PDF viewer: missing source");
+            console.error("Unable to open standalone PDF viewer: missing source");
+            alert("Cannot open PDF in full screen because the URL is missing.");
             return;
         }
 
-        const viewerWindow = window.open("", "_blank", "noopener");
+        const viewerWindow = window.open("", "_blank", "noopener,noreferrer");
         if (!viewerWindow) {
-            console.warn("Unable to open standalone PDF viewer window. Pop-up may be blocked.");
+            console.error("Unable to open standalone PDF viewer window. Pop-up may be blocked.");
+            alert("Pop-up was blocked. Please allow pop-ups for this site to view the PDF in full screen.");
             return;
         }
 
         const safeTitle = escapeHtml(title || "PDF Viewer");
-        const safeSource = sanitizeUrl(source);
+        const pdfUrl = toAbsoluteUrl(source);
+        const safeSource = sanitizeUrl(pdfUrl);
 
         const html = `<!DOCTYPE html>
 <html lang="th">
@@ -574,7 +591,7 @@
 
                 currentScale = clamp(currentScale);
 
-                // Scale only the PDF embed inside the new window so the main site is unaffected.
+                // Scale only the embedded PDF inside the new window so the main Blazor app stays untouched.
                 pdf.style.transform = 'scale(' + currentScale.toFixed(2) + ')';
 
                 if (scaleValue) {
@@ -597,19 +614,23 @@
                     return;
                 }
 
-                // Reset scale to measure the intrinsic width of the PDF frame.
+                // Reset to the baseline scale before measuring so we read the natural width of the PDF frame.
                 pdf.style.transform = 'scale(1)';
                 currentScale = 1.0;
 
                 const containerWidth = container.clientWidth;
-                const pdfWidth = pdf.getBoundingClientRect().width;
+                const pdfWidth = pdf.getBoundingClientRect().width || containerWidth;
 
                 if (containerWidth > 0 && pdfWidth > 0) {
-                    // Calculate the scale that fills the available width while respecting limits.
+                    // Calculate the zoom that fits the available width while respecting the safety bounds above.
                     currentScale = clamp(containerWidth / pdfWidth);
                 }
 
                 applyScale();
+
+                // After fitting the width we ensure the user starts at the top-left of the document for clarity.
+                container.scrollTop = 0;
+                container.scrollLeft = 0;
             }
 
             if (zoomInBtn) {
@@ -621,7 +642,7 @@
             }
 
             if (fitWidthBtn) {
-                // Fit width scales the PDF to match the viewer container width.
+                // Fit width scales the PDF to match the viewer container width only inside this window.
                 fitWidthBtn.addEventListener('click', fitWidth);
             }
 
@@ -636,7 +657,7 @@
 </html>`;
 
         try {
-            viewerWindow.document.open();
+            viewerWindow.document.open('text/html', 'replace');
             viewerWindow.document.write(html);
             viewerWindow.document.close();
         } catch (error) {
