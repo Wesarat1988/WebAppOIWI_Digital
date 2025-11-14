@@ -80,7 +80,7 @@ else
 
     @if (canPreviewInline && !string.IsNullOrEmpty(previewSource))
     {
-        <div class="document-preview-frame border rounded">
+        <div id="@fullScreenHostId" class="@GetPreviewFrameClasses()">
             <div class="document-viewer">
                 <!-- PDF Toolbar -->
                 <div class="document-toolbar d-flex align-items-center gap-2 p-2 border-bottom bg-light">
@@ -88,7 +88,7 @@ else
                     <span id="@($"{pdfContainerId}-scale")" class="small">100%</span>
                     <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomIn" aria-label="ซูมเข้า">+</button>
                     <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="FitWidth" aria-label="ปรับให้เต็มความกว้าง">Fit width</button>
-                    <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="ToggleFullScreen" disabled="@pendingPdfRender"
+                    <button class="btn btn-sm btn-outline-secondary ms-auto" @onclick="ToggleFullScreen"
                             aria-label="@FullScreenButtonLabel" title="@FullScreenButtonLabel">
                         <i class="bi @(isFullScreen ? "bi-fullscreen-exit" : "bi-arrows-fullscreen")"></i>
                     </button>
@@ -100,6 +100,19 @@ else
                         <div class="pdfjs-loading text-muted text-center p-4">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
                     </div>
                 </div>
+
+                @if (isFullScreen && HasPageControls)
+                {
+                    <div class="pdf-fullscreen-nav">
+                        <button class="btn btn-lg btn-outline-light" @onclick="PreviousPage" disabled="@(!CanGoPrevious)" aria-label="หน้าก่อนหน้า">
+                            <i class="bi bi-arrow-left"></i>
+                        </button>
+                        <span class="pdf-fullscreen-page-indicator">หน้าที่ @currentPage / @totalPages</span>
+                        <button class="btn btn-lg btn-outline-light" @onclick="NextPage" disabled="@(!CanGoNext)" aria-label="หน้าถัดไป">
+                            <i class="bi bi-arrow-right"></i>
+                        </button>
+                    </div>
+                }
             </div>
         </div>
 
@@ -150,6 +163,8 @@ else
     }
 }
 
+@implements IAsyncDisposable
+
 @code {
     [Parameter] public string Token { get; set; } = string.Empty;
 
@@ -163,20 +178,22 @@ else
     private bool pendingPdfRender;
     private int pdfRenderAttempts;
     private readonly string pdfContainerId = $"pdfjs-viewer-{System.Guid.NewGuid():N}";
-    private readonly string fullScreenCanvasId = $"pdf-fullscreen-canvas-{System.Guid.NewGuid():N}";
+    private readonly string fullScreenHostId = $"pdf-viewer-host-{System.Guid.NewGuid():N}";
     private const int MaxPdfRenderAttempts = 3;
     private bool isFullScreen;
-    private bool shouldFocusOverlay;
-    private bool needsFullScreenRender;
     private bool hasPageData;
-    private bool fullScreenRenderFailed;
     private int totalPages = 1;
     private int currentPage = 1;
     private bool isPdfReady;
-    private ElementReference fullScreenOverlayRef;
+    private bool fullScreenInteropInitialized;
+    private bool requestFullScreenPending;
+    private bool exitFullScreenPending;
+    private DotNetObjectReference<DocumentViewer>? dotNetRef;
 
     protected override async Task OnParametersSetAsync()
     {
+        var wasFullScreen = isFullScreen;
+
         isLoading = true;
         errorMessage = null;
         document = null;
@@ -186,14 +203,13 @@ else
         canPreviewInline = false;
         pendingPdfRender = false;
         pdfRenderAttempts = 0;
-        isFullScreen = false;
-        shouldFocusOverlay = false;
-        needsFullScreenRender = false;
         hasPageData = false;
-        fullScreenRenderFailed = false;
         totalPages = 1;
         currentPage = 1;
         isPdfReady = false;
+        requestFullScreenPending = false;
+        exitFullScreenPending = wasFullScreen;
+        isFullScreen = false;
 
         if (!DocumentCatalogService.TryDecodeDocumentToken(Token, out var normalizedPath))
         {
@@ -242,6 +258,13 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender && !fullScreenInteropInitialized)
+        {
+            dotNetRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("pdfViewer.initializeFullScreen", dotNetRef, fullScreenHostId, pdfContainerId);
+            fullScreenInteropInitialized = true;
+        }
+
         if (!isLoading && pendingPdfRender && !string.IsNullOrEmpty(previewSource))
         {
             pendingPdfRender = false;
@@ -251,9 +274,9 @@ else
                 await JSRuntime.InvokeVoidAsync("pdfViewer.ready");
                 await JSRuntime.InvokeVoidAsync("pdfViewer.render", previewSource!, pdfContainerId);
                 isPdfReady = true;
-                if (isFullScreen)
+                if (isFullScreen && HasPageControls)
                 {
-                    needsFullScreenRender = true;
+                    await ScrollToCurrentPageAsync(false);
                 }
             }
             catch (JSException jsEx)
@@ -276,41 +299,33 @@ else
             }
         }
 
-        if (isFullScreen && needsFullScreenRender)
+        if (requestFullScreenPending)
         {
-            needsFullScreenRender = false;
-            await RenderCurrentPageAsync();
+            requestFullScreenPending = false;
+            await JSRuntime.InvokeVoidAsync("pdfViewer.requestFullScreen", fullScreenHostId);
         }
 
-        if (isFullScreen && shouldFocusOverlay)
+        if (exitFullScreenPending)
         {
-            shouldFocusOverlay = false;
-            await JSRuntime.InvokeVoidAsync("pdfViewer.focusElement", fullScreenOverlayRef);
+            exitFullScreenPending = false;
+            await JSRuntime.InvokeVoidAsync("pdfViewer.exitFullScreen", fullScreenHostId);
         }
     }
 
-    // ===== Toolbar actions (แก้ปัญหา quote ชนกันใน markup) =====
     private Task ZoomIn() => JSRuntime.InvokeVoidAsync("pdfViewer.zoomIn", pdfContainerId).AsTask();
     private Task ZoomOut() => JSRuntime.InvokeVoidAsync("pdfViewer.zoomOut", pdfContainerId).AsTask();
     private Task FitWidth() => JSRuntime.InvokeVoidAsync("pdfViewer.fitWidth", pdfContainerId).AsTask();
 
     private string FullScreenButtonLabel => isFullScreen ? "ออกจากโหมดเต็มหน้าจอ" : "แสดงเต็มหน้าจอ";
-    private bool HasPageControls => hasPageData && !fullScreenRenderFailed;
+    private bool HasPageControls => hasPageData && totalPages > 1;
     private bool CanGoNext => HasPageControls && currentPage < totalPages;
     private bool CanGoPrevious => HasPageControls && currentPage > 1;
 
     private Task ToggleFullScreen()
-        => isFullScreen ? ExitFullScreen() : EnterFullScreenAsync();
+        => isFullScreen ? ExitFullScreenAsync() : EnterFullScreenAsync();
 
     private async Task EnterFullScreenAsync()
     {
-        if (!canPreviewInline)
-        {
-            return;
-        }
-
-        fullScreenRenderFailed = false;
-
         try
         {
             totalPages = await JSRuntime.InvokeAsync<int>("pdfViewer.getPageCount", pdfContainerId);
@@ -333,22 +348,39 @@ else
             totalPages = 1;
         }
 
-        currentPage = hasPageData
-            ? Math.Clamp(currentPage, 1, totalPages)
-            : 1;
+        if (hasPageData)
+        {
+            try
+            {
+                var visiblePage = await JSRuntime.InvokeAsync<int>("pdfViewer.getCurrentPageIndex", pdfContainerId);
+                if (visiblePage > 0)
+                {
+                    currentPage = Math.Clamp(visiblePage, 1, totalPages);
+                }
+            }
+            catch (JSException jsEx)
+            {
+                Logger.LogDebug(jsEx, "Unable to determine current visible page for '{DocumentPath}'");
+                currentPage = Math.Clamp(currentPage, 1, totalPages);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Unexpected error determining current visible page for '{DocumentPath}'");
+                currentPage = Math.Clamp(currentPage, 1, totalPages);
+            }
+        }
+        else
+        {
+            currentPage = 1;
+        }
 
-        isFullScreen = true;
-        shouldFocusOverlay = true;
-        needsFullScreenRender = true;
-
+        requestFullScreenPending = true;
         await InvokeAsync(StateHasChanged);
     }
 
-    private Task ExitFullScreen()
+    private Task ExitFullScreenAsync()
     {
-        isFullScreen = false;
-        shouldFocusOverlay = false;
-        needsFullScreenRender = false;
+        exitFullScreenPending = true;
         return InvokeAsync(StateHasChanged);
     }
 
@@ -369,63 +401,56 @@ else
         }
 
         currentPage = newPage;
+        await ScrollToCurrentPageAsync();
         await InvokeAsync(StateHasChanged);
-        await RenderCurrentPageAsync();
     }
 
-    private async Task HandleFullScreenKeyDown(KeyboardEventArgs args)
+    private Task ScrollToCurrentPageAsync(bool smooth = true)
     {
-        if (!isFullScreen)
+        if (!isPdfReady || !HasPageControls)
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        switch (args.Key)
-        {
-            case "Escape":
-                await ExitFullScreen();
-                break;
-            case "ArrowLeft":
-                await PreviousPage();
-                break;
-            case "ArrowRight":
-                await NextPage();
-                break;
-        }
+        return JSRuntime.InvokeVoidAsync("pdfViewer.goToPage", pdfContainerId, currentPage, smooth).AsTask();
     }
 
-    private async Task RenderCurrentPageAsync()
+    [JSInvokable]
+    public Task HandleFullScreenCommand(string command) => command switch
     {
-        if (!isFullScreen || fullScreenRenderFailed)
+        "next" => NextPage(),
+        "previous" => PreviousPage(),
+        "exit" => ExitFullScreenAsync(),
+        _ => Task.CompletedTask
+    };
+
+    [JSInvokable]
+    public async Task OnFullScreenChanged(string hostId, bool active)
+    {
+        if (!string.Equals(hostId, fullScreenHostId, StringComparison.Ordinal))
         {
             return;
         }
 
-        if (!isPdfReady)
+        if (isFullScreen == active)
         {
-            needsFullScreenRender = true;
             return;
         }
 
-        try
+        isFullScreen = active;
+
+        if (isFullScreen && HasPageControls)
         {
-            await JSRuntime.InvokeVoidAsync("pdfViewer.renderPageToCanvas", pdfContainerId, currentPage, fullScreenCanvasId);
+            await ScrollToCurrentPageAsync(false);
         }
-        catch (JSException jsEx)
-        {
-            Logger.LogWarning(jsEx, "Failed to render PDF page {Page} in full screen for '{DocumentPath}'", currentPage, document?.FileName);
-            fullScreenRenderFailed = true;
-            hasPageData = false;
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Unexpected error while rendering PDF page {Page} in full screen for '{DocumentPath}'", currentPage, document?.FileName);
-            fullScreenRenderFailed = true;
-            hasPageData = false;
-            await InvokeAsync(StateHasChanged);
-        }
+
+        await InvokeAsync(StateHasChanged);
     }
+
+    private string GetPreviewFrameClasses()
+        => isFullScreen
+            ? "document-preview-frame border rounded pdf-fullscreen-active"
+            : "document-preview-frame border rounded";
 
     private static string DisplayOrDash(string? value)
         => string.IsNullOrWhiteSpace(value) || value == "-" ? "-" : value!;
@@ -439,4 +464,26 @@ else
         => StampDisplay.GetDisplayText(mode, date);
 
     private void NavigateHome() => Navigation.NavigateTo("/");
+
+    public async ValueTask DisposeAsync()
+    {
+        if (fullScreenInteropInitialized)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("pdfViewer.disposeFullScreen", fullScreenHostId);
+            }
+            catch (JSException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        dotNetRef?.Dispose();
+    }
 }
