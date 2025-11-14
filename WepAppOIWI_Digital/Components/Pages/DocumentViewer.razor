@@ -87,7 +87,7 @@ else
              @onkeydown="HandleFullScreenKeyDown"
              @onkeydown:preventDefault="ShouldPreventFullScreenKeyHandling"
              class="@GetPreviewFrameClasses()">
-            <div class="document-viewer">
+            <div class="document-viewer @(IsFullScreen ? "pdf-fullscreen-content" : string.Empty)">
                 @if (!IsFullScreen)
                 {
                     <div class="document-toolbar d-flex align-items-center gap-2 p-2 border-bottom bg-light">
@@ -120,7 +120,7 @@ else
                     </div>
                 }
 
-                <div class="document-container position-relative">
+                <div class="document-container position-relative @(IsFullScreen ? "pdf-fullscreen-frame-container" : string.Empty)">
                     @if (isPreviewLoading)
                     {
                         <div class="pdf-preview-status text-muted">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
@@ -551,7 +551,7 @@ else
 
     private string GetPreviewFrameClasses()
         => IsFullScreen
-            ? "document-preview-frame border rounded pdf-fullscreen-active"
+            ? "document-preview-frame pdf-fullscreen-overlay"
             : "document-preview-frame border rounded";
 
     private static string DisplayOrDash(string? value)

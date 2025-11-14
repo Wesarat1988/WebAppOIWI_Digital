@@ -277,7 +277,7 @@
     function requestFullScreenHost(hostId) {
         const host = hostId ? document.getElementById(hostId) : null;
         if (host) {
-            host.classList.add("pdf-fullscreen-active");
+            host.classList.add("pdf-fullscreen-overlay");
         }
 
         return Promise.resolve();
@@ -286,7 +286,7 @@
     function exitFullScreenHost(hostId) {
         const host = hostId ? document.getElementById(hostId) : null;
         if (host) {
-            host.classList.remove("pdf-fullscreen-active");
+            host.classList.remove("pdf-fullscreen-overlay");
         }
 
         return Promise.resolve();
