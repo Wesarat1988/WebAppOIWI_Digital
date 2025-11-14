@@ -418,7 +418,6 @@ else
         {
             await EnterFullScreenAsync();
         }
-    }
 
     private async Task EnterFullScreenAsync()
     {
@@ -444,6 +443,10 @@ else
         IsFullScreen = true;
         focusOverlayPending = true;
         await InvokeAsync(StateHasChanged);
+        if (HasPageControls)
+        {
+            await ScrollToCurrentPageAsync(false);
+        }
     }
 
     private Task ExitFullScreenAsync()
