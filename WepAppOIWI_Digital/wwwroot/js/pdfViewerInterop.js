@@ -119,6 +119,9 @@
         },
         getCurrentPageIndex: function (containerId) {
             return tryCall("getCurrentPageIndex", [containerId]).catch(() => 0);
+        },
+        openStandalone: function (source, title) {
+            return tryCall("openStandalone", [source, title]);
         }
     };
 })();

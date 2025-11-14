@@ -380,6 +380,160 @@ else
                 isFullScreen = false;
                 await InvokeAsync(StateHasChanged);
             }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Unexpected error determining current visible page for '{DocumentPath}'");
+                currentPage = Math.Clamp(currentPage, 1, totalPages);
+            }
+        }
+        else
+        {
+            currentPage = 1;
+        }
+
+        requestFullScreenPending = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task ExitFullScreenAsync()
+    {
+        fullScreenRenderFailed = false;
+        exitFullScreenPending = true;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task ExitFullScreen() => ExitFullScreenAsync();
+
+    private async Task NextPage() => await ChangePageAsync(1);
+    private async Task PreviousPage() => await ChangePageAsync(-1);
+
+    private async Task ChangePageAsync(int delta)
+    {
+        if (!HasPageControls)
+        {
+            return;
+        }
+
+        var newPage = Math.Clamp(currentPage + delta, 1, totalPages);
+        if (newPage == currentPage)
+        {
+            return;
+        }
+
+        currentPage = newPage;
+        await ScrollToCurrentPageAsync();
+        await FocusFullScreenHostAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task ScrollToCurrentPageAsync(bool smooth = true)
+    {
+        if (!isPdfReady || !HasPageControls)
+        {
+            return Task.CompletedTask;
+        }
+
+        return InvokeViewerVoidAsync("goToPage", pdfContainerId, currentPage, smooth);
+    }
+
+    private async Task HandleFullScreenKeyDown(KeyboardEventArgs args)
+    {
+        if (!isFullScreen)
+        {
+            return;
+        }
+
+        switch (args.Key)
+        {
+            case "ArrowRight":
+            case "PageDown":
+            case " ":
+            case "Spacebar":
+                await NextPage();
+                break;
+            case "ArrowLeft":
+            case "PageUp":
+            case "Backspace":
+                await PreviousPage();
+                break;
+            case "Escape":
+                await ExitFullScreenAsync();
+                break;
+        }
+    }
+
+    private async Task FocusFullScreenHostAsync()
+    {
+        if (!isFullScreen)
+        {
+            return;
+        }
+
+        try
+        {
+            if (fullScreenOverlayRef.Context is not null)
+            {
+                await fullScreenOverlayRef.FocusAsync();
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("pdfViewerInterop.focusFullScreenHost", fullScreenHostId);
+            }
+        }
+        catch (JSException jsEx)
+        {
+            Logger.LogDebug(jsEx, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
+        }
+        catch (InvalidOperationException invalidOp)
+        {
+            Logger.LogDebug(invalidOp, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
+        }
+    }
+
+    [JSInvokable(nameof(HandleFullScreenCommandFromJsAsync))]
+    public Task HandleFullScreenCommandFromJsAsync(string command) => command switch
+    {
+        "next" => NextPage(),
+        "previous" => PreviousPage(),
+        "exit" => ExitFullScreenAsync(),
+        _ => Task.CompletedTask
+    };
+
+    [JSInvokable(nameof(OnFullScreenChangedFromJsAsync))]
+    public async Task OnFullScreenChangedFromJsAsync(string hostId, bool active)
+    {
+        if (!string.Equals(hostId, fullScreenHostId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (isFullScreen == active)
+        {
+            return;
+        }
+
+        fullScreenRenderFailed = false;
+        isFullScreen = active;
+
+        if (isFullScreen && HasPageControls)
+        {
+            await ScrollToCurrentPageAsync(false);
+        }
+
+        if (isFullScreen)
+        {
+            await FocusFullScreenHostAsync();
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable(nameof(OnPdfRenderStatusChangedFromJsAsync))]
+    public Task OnPdfRenderStatusChangedFromJsAsync(string viewerId, bool success, string? message)
+    {
+        if (!string.Equals(viewerId, pdfContainerId, StringComparison.Ordinal))
+        {
+            return Task.CompletedTask;
         }
 
         if (exitFullScreenPending)
@@ -404,13 +558,35 @@ else
         await JSRuntime.InvokeVoidAsync("pdfViewerInterop.fitWidth", pdfContainerId);
     }
 
-    private string FullScreenButtonLabel => isFullScreen ? "ออกจากโหมดเต็มหน้าจอ" : "แสดงเต็มหน้าจอ";
+    private string FullScreenButtonLabel => "แสดงเต็มหน้าจอ";
     private bool HasPageControls => isPdfReady && hasPageData && totalPages > 1;
     private bool CanGoNext => HasPageControls && currentPage < totalPages;
     private bool CanGoPrevious => HasPageControls && currentPage > 1;
 
-    private Task ToggleFullScreen()
-        => isFullScreen ? ExitFullScreenAsync() : EnterFullScreenAsync();
+    private async Task ToggleFullScreen()
+    {
+        if (string.IsNullOrEmpty(previewSource))
+        {
+            return;
+        }
+
+        var title = !string.IsNullOrWhiteSpace(document?.DisplayName)
+            ? document!.DisplayName
+            : document?.FileName ?? "PDF Viewer";
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("pdfViewerInterop.openStandalone", previewSource, title);
+        }
+        catch (JSException jsEx)
+        {
+            Logger.LogWarning(jsEx, "Failed to open standalone PDF window for '{DocumentPath}'", document?.FileName);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Unexpected error while opening standalone PDF window for '{DocumentPath}'", document?.FileName);
+        }
+    }
 
     private async Task EnterFullScreenAsync()
     {

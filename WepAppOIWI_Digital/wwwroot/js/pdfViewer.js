@@ -13,6 +13,42 @@
         isReadyResolve = resolve;
     });
 
+    function escapeHtml(value) {
+        if (value === null || value === undefined) {
+            return "";
+        }
+
+        return String(value).replace(/[&<>"']/g, character => {
+            switch (character) {
+                case "&":
+                    return "&amp;";
+                case "<":
+                    return "&lt;";
+                case ">":
+                    return "&gt;";
+                case '"':
+                    return "&quot;";
+                case "'":
+                    return "&#39;";
+                default:
+                    return character;
+            }
+        });
+    }
+
+    function sanitizeUrl(value) {
+        if (!value) {
+            return "";
+        }
+
+        return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
     function ensureLoaded() {
         if (window.pdfjsLib) {
             window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_CDN;
@@ -463,6 +499,169 @@
         }
     }
 
+    function openStandalone(source, title) {
+        if (!source) {
+            console.warn("Unable to open standalone PDF viewer: missing source");
+            return;
+        }
+
+        const viewerWindow = window.open("", "_blank", "noopener");
+        if (!viewerWindow) {
+            console.warn("Unable to open standalone PDF viewer window. Pop-up may be blocked.");
+            return;
+        }
+
+        const safeTitle = escapeHtml(title || "PDF Viewer");
+        const safeSource = sanitizeUrl(source);
+
+        // Compose a lightweight fullscreen document with our floating toolbar controls.
+        const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="utf-8" />
+    <title>${safeTitle}</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+        #pdfFullScreenShell { position: fixed; inset: 0; padding: 48px 24px 120px; background: #000; display: flex; justify-content: center; align-items: flex-start; overflow: auto; box-sizing: border-box; }
+        #pdfScaler { transform-origin: top center; transition: transform 0.25s ease; }
+        #pdfCanvas { display: block; width: min(85vw, 1100px); height: calc(100vh - 200px); max-height: 95vh; border: none; background: #1b1b1b; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6); border-radius: 8px; }
+        #pdfFullToolbar { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-radius: 999px; background: rgba(22, 22, 22, 0.9); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); backdrop-filter: blur(6px); }
+        #pdfFullToolbar button { border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 999px; padding: 10px 18px; font-size: 16px; line-height: 1; color: #fff; background: #2d2d2d; cursor: pointer; transition: background 0.2s ease, transform 0.2s ease; }
+        #pdfFullToolbar button:hover { background: #3b3b3b; transform: translateY(-1px); }
+        #pdfFullToolbar button:active { transform: translateY(0); }
+        #pdfScaleLabel { font-size: 14px; color: #d5d5d5; min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+        @media (max-width: 768px) {
+            #pdfCanvas { width: 92vw; height: calc(100vh - 220px); }
+            #pdfFullToolbar { bottom: 16px; flex-wrap: wrap; gap: 8px; }
+            #pdfFullToolbar button { padding: 10px 14px; font-size: 15px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="pdfFullScreenShell">
+        <div id="pdfScaler">
+            <embed id="pdfCanvas" src="${safeSource}" type="application/pdf" />
+        </div>
+    </div>
+    <div id="pdfFullToolbar" role="toolbar" aria-label="PDF fullscreen controls">
+        <button id="btnZoomOut" type="button" aria-label="Zoom out">−</button>
+        <button id="btnZoomIn" type="button" aria-label="Zoom in">+</button>
+        <button id="btnResetZoom" type="button" aria-label="Reset zoom">Reset</button>
+        <button id="btnCloseViewer" type="button" aria-label="Close viewer">✕</button>
+        <span id="pdfScaleLabel">100%</span>
+    </div>
+    <script>
+        (() => {
+            const pdfScaler = document.getElementById('pdfScaler');
+            const pdfCanvas = document.getElementById('pdfCanvas');
+            const scaleLabel = document.getElementById('pdfScaleLabel');
+            const zoomInButton = document.getElementById('btnZoomIn');
+            const zoomOutButton = document.getElementById('btnZoomOut');
+            const resetButton = document.getElementById('btnResetZoom');
+            const closeButton = document.getElementById('btnCloseViewer');
+
+            let currentScale = 1.0;
+            const MIN_SCALE = 0.3;
+            const MAX_SCALE = 3.0;
+            const STEP = 0.1;
+
+            function clamp(value) {
+                return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
+            }
+
+            function applyScale() {
+                if (!pdfScaler) {
+                    return;
+                }
+
+                currentScale = clamp(currentScale);
+
+                // Apply zoom by scaling the wrapper so the embedded PDF grows/shrinks smoothly.
+                pdfScaler.style.transform = 'scale(' + currentScale.toFixed(2) + ')';
+
+                if (scaleLabel) {
+                    scaleLabel.textContent = Math.round(currentScale * 100) + '%';
+                }
+            }
+
+            function zoomIn() {
+                currentScale = clamp(currentScale + STEP);
+                applyScale();
+            }
+
+            function zoomOut() {
+                currentScale = clamp(currentScale - STEP);
+                applyScale();
+            }
+
+            function resetZoom() {
+                currentScale = 1.0;
+                applyScale();
+            }
+
+            if (zoomInButton) {
+                // Toolbar button: zoom-in increases the scale in 10% increments.
+                zoomInButton.addEventListener('click', zoomIn);
+            }
+
+            if (zoomOutButton) {
+                // Toolbar button: zoom-out decreases the scale in 10% increments.
+                zoomOutButton.addEventListener('click', zoomOut);
+            }
+
+            if (resetButton) {
+                // Reset brings the scale back to the default fit-width view.
+                resetButton.addEventListener('click', resetZoom);
+            }
+
+            if (closeButton) {
+                // Close button simply closes the popup window.
+                closeButton.addEventListener('click', () => window.close());
+            }
+
+            window.addEventListener('keydown', event => {
+                switch (event.key) {
+                    case '+':
+                    case '=':
+                        zoomIn();
+                        break;
+                    case '-':
+                    case '_':
+                        zoomOut();
+                        break;
+                    case '0':
+                        resetZoom();
+                        break;
+                    case 'Escape':
+                        window.close();
+                        break;
+                }
+            });
+
+            applyScale();
+            if (pdfCanvas && typeof pdfCanvas.focus === 'function') {
+                pdfCanvas.focus();
+            }
+        })();
+    </script>
+</body>
+</html>`;
+
+        try {
+            viewerWindow.document.open();
+            viewerWindow.document.write(html);
+            viewerWindow.document.close();
+        } catch (error) {
+            console.error("Unable to write standalone PDF viewer content", error);
+        }
+
+        try {
+            viewerWindow.focus();
+        } catch (error) {
+            // Ignore focus errors.
+        }
+    }
+
     window.pdfViewer = {
         render,
         zoomIn,
@@ -477,7 +676,8 @@
         requestFullScreen: requestFullScreenHost,
         exitFullScreen: exitFullScreenHost,
         disposeFullScreen: disposeFullScreenHost,
-        focusFullScreenHost
+        focusFullScreenHost,
+        openStandalone
     };
 
     try {
