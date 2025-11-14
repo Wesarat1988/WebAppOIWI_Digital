@@ -308,6 +308,7 @@
         if (!scrollContainer) {
             return;
         }
+    }
 
         const pages = getPageElements(scrollContainer, selector);
         if (!pages.length) {
