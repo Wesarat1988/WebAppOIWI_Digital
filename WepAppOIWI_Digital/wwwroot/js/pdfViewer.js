@@ -146,6 +146,15 @@
         }
     }
 
+    function getPageCount(containerId) {
+        const state = views.get(containerId);
+        if (!state || !state.pdf) {
+            return 0;
+        }
+
+        return state.pdf.numPages || 0;
+    }
+
     function zoomIn(containerId) {
         const state = views.get(containerId);
         if (!state) {
@@ -173,6 +182,42 @@
         reRender(containerId);
     }
 
+    async function renderPageToCanvas(containerId, pageNumber, canvasId) {
+        await ready();
+
+        const state = views.get(containerId);
+        if (!state || !state.pdf) {
+            return;
+        }
+
+        const target = typeof canvasId === "string" ? document.getElementById(canvasId) : canvasId;
+        if (!target) {
+            return;
+        }
+
+        const pageIndex = Math.max(1, Math.min(pageNumber, state.pdf.numPages));
+        const stored = state.pages[pageIndex - 1];
+        const page = stored ? stored.page : await state.pdf.getPage(pageIndex);
+        const dpr = window.devicePixelRatio || 1;
+        const viewport = page.getViewport({ scale: state.scale || 1 });
+        const context = target.getContext("2d", { alpha: false });
+
+        target.width = Math.floor(viewport.width * dpr);
+        target.height = Math.floor(viewport.height * dpr);
+        target.style.width = `${viewport.width}px`;
+        target.style.height = `${viewport.height}px`;
+
+        const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null;
+
+        await page.render({ canvasContext: context, viewport, transform }).promise;
+    }
+
+    function focusElement(element) {
+        if (element && typeof element.focus === "function") {
+            element.focus();
+        }
+    }
+
     function ready() {
         ensureLoaded().catch(console.error);
         return readyPromise;
@@ -184,6 +229,9 @@
         zoomOut,
         fitWidth,
         ready,
-        renderPdf: render
+        renderPdf: render,
+        getPageCount,
+        renderPageToCanvas,
+        focusElement
     };
 })();
