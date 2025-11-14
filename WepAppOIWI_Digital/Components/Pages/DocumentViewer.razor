@@ -86,6 +86,8 @@ else
              tabindex="-1"
              @onkeydown="HandleFullScreenKeyDown"
              @onkeydown:preventDefault="ShouldPreventFullScreenKeyHandling"
+             role="@(IsFullScreen ? "dialog" : null)"
+             aria-modal="@(IsFullScreen ? "true" : null)"
              class="@GetPreviewFrameClasses()">
             <div class="document-viewer @(IsFullScreen ? "pdf-fullscreen-content" : string.Empty)">
                 @if (!IsFullScreen)
