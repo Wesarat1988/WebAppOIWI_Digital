@@ -543,11 +543,11 @@
             <embed id="pdfCanvas" src="${safeSource}" type="application/pdf" />
         </div>
     </div>
+    <!-- Floating toolbar that stays visible for fullscreen zoom controls -->
     <div id="pdfFullToolbar" role="toolbar" aria-label="PDF fullscreen controls">
         <button id="btnZoomOut" type="button" aria-label="Zoom out">−</button>
         <button id="btnZoomIn" type="button" aria-label="Zoom in">+</button>
         <button id="btnResetZoom" type="button" aria-label="Reset zoom">Reset</button>
-        <button id="btnCloseViewer" type="button" aria-label="Close viewer">✕</button>
         <span id="pdfScaleLabel">100%</span>
     </div>
     <script>
@@ -558,7 +558,6 @@
             const zoomInButton = document.getElementById('btnZoomIn');
             const zoomOutButton = document.getElementById('btnZoomOut');
             const resetButton = document.getElementById('btnResetZoom');
-            const closeButton = document.getElementById('btnCloseViewer');
 
             let currentScale = 1.0;
             const MIN_SCALE = 0.3;
@@ -614,11 +613,6 @@
                 resetButton.addEventListener('click', resetZoom);
             }
 
-            if (closeButton) {
-                // Close button simply closes the popup window.
-                closeButton.addEventListener('click', () => window.close());
-            }
-
             window.addEventListener('keydown', event => {
                 switch (event.key) {
                     case '+':
@@ -631,9 +625,6 @@
                         break;
                     case '0':
                         resetZoom();
-                        break;
-                    case 'Escape':
-                        window.close();
                         break;
                 }
             });
