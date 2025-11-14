@@ -479,4 +479,10 @@
         disposeFullScreen: disposeFullScreenHost,
         focusFullScreenHost
     };
+
+    try {
+        document.dispatchEvent(new CustomEvent("pdfViewer:initialized"));
+    } catch (error) {
+        // ignore if CustomEvent is not supported
+    }
 })();
