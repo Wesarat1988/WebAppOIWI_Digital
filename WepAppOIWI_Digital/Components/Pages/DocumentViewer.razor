@@ -293,7 +293,7 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!fullScreenInteropInitialized && canPreviewInline && !string.IsNullOrEmpty(previewSource))
+        if (firstRender && !fullScreenInteropInitialized && canPreviewInline && !string.IsNullOrEmpty(previewSource))
         {
             dotNetRef ??= DotNetObjectReference.Create(this);
             try
@@ -301,13 +301,16 @@ else
                 await JSRuntime.InvokeVoidAsync("pdfViewerInterop.initializeFullScreen", dotNetRef, fullScreenHostId, pdfContainerId);
                 fullScreenInteropInitialized = true;
             }
-            catch (JSException jsEx)
-            {
-                Logger.LogWarning(jsEx, "Failed to initialize PDF fullscreen helpers for '{DocumentPath}'", document?.FileName);
-            }
             catch (Exception ex)
             {
-                Logger.LogWarning(ex, "Unexpected error while initializing PDF fullscreen helpers for '{DocumentPath}'", document?.FileName);
+                if (ex is JSException jsEx)
+                {
+                    Logger.LogWarning(jsEx, "Failed to initialize PDF fullscreen helpers for '{DocumentPath}'", document?.FileName);
+                }
+                else
+                {
+                    Logger.LogWarning(ex, "Unexpected error while initializing PDF fullscreen helpers for '{DocumentPath}'", document?.FileName);
+                }
             }
         }
 
@@ -327,9 +330,16 @@ else
                     await ScrollToCurrentPageAsync(false);
                 }
             }
-            catch (JSException jsEx)
+            catch (Exception ex)
             {
-                Logger.LogError(jsEx, "Failed to render PDF preview for '{DocumentPath}'", document?.FileName);
+                if (ex is JSException jsEx)
+                {
+                    Logger.LogError(jsEx, "Failed to render PDF preview for '{DocumentPath}'", document?.FileName);
+                }
+                else
+                {
+                    Logger.LogError(ex, "Unexpected error while rendering PDF preview for '{DocumentPath}'", document?.FileName);
+                }
                 if (pdfRenderAttempts < MaxPdfRenderAttempts)
                 {
                     pendingPdfRender = true;
@@ -342,20 +352,82 @@ else
                     await InvokeAsync(StateHasChanged);
                 }
             }
+        }
+
+        if (requestFullScreenPending)
+        {
+            requestFullScreenPending = false;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("pdfViewerInterop.requestFullScreen", fullScreenHostId);
+            }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Unexpected error while rendering PDF preview for '{DocumentPath}'", document?.FileName);
-                if (pdfRenderAttempts < MaxPdfRenderAttempts)
+                if (ex is JSException jsEx)
                 {
-                    pendingPdfRender = true;
-                    await InvokeAsync(StateHasChanged);
+                    Logger.LogWarning(jsEx, "Browser refused fullscreen for '{DocumentPath}'", document?.FileName);
                 }
                 else
                 {
-                    isPreviewLoading = false;
-                    previewErrorMessage = "ไม่สามารถโหลดตัวอย่างไฟล์ PDF ได้ กรุณาลองอีกครั้งหรือดาวน์โหลดไฟล์แทน";
-                    await InvokeAsync(StateHasChanged);
+                    Logger.LogWarning(ex, "Unexpected error while requesting fullscreen for '{DocumentPath}'", document?.FileName);
                 }
+                fullScreenRenderFailed = true;
+                isFullScreen = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+
+        if (exitFullScreenPending)
+        {
+            exitFullScreenPending = false;
+            await JSRuntime.InvokeVoidAsync("pdfViewerInterop.exitFullScreen", fullScreenHostId);
+        }
+    }
+
+    private async Task ZoomIn()
+    {
+        await JSRuntime.InvokeVoidAsync("pdfViewerInterop.zoomIn", pdfContainerId);
+    }
+
+    private async Task ZoomOut()
+    {
+        await JSRuntime.InvokeVoidAsync("pdfViewerInterop.zoomOut", pdfContainerId);
+    }
+
+    private async Task FitWidth()
+    {
+        await JSRuntime.InvokeVoidAsync("pdfViewerInterop.fitWidth", pdfContainerId);
+    }
+
+    private string FullScreenButtonLabel => "แสดงเต็มหน้าจอ";
+    private bool HasPageControls => isPdfReady && hasPageData && totalPages > 1;
+    private bool CanGoNext => HasPageControls && currentPage < totalPages;
+    private bool CanGoPrevious => HasPageControls && currentPage > 1;
+
+    private async Task ToggleFullScreen()
+    {
+        if (string.IsNullOrEmpty(previewSource))
+        {
+            return;
+        }
+
+        var title = !string.IsNullOrWhiteSpace(document?.DisplayName)
+            ? document!.DisplayName
+            : document?.FileName ?? "PDF Viewer";
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("pdfViewerInterop.openStandalone", previewSource, title);
+        }
+        catch (Exception ex)
+        {
+            if (ex is JSException jsEx)
+            {
+                Logger.LogWarning(jsEx, "Failed to open standalone PDF window for '{DocumentPath}'", document?.FileName);
+            }
+            else
+            {
+                Logger.LogWarning(ex, "Unexpected error while opening standalone PDF window for '{DocumentPath}'", document?.FileName);
             }
         }
 
@@ -411,41 +483,6 @@ else
         await JSRuntime.InvokeVoidAsync("pdfViewerInterop.zoomOut", pdfContainerId);
     }
 
-    private async Task FitWidth()
-    {
-        await JSRuntime.InvokeVoidAsync("pdfViewerInterop.fitWidth", pdfContainerId);
-    }
-
-    private string FullScreenButtonLabel => "แสดงเต็มหน้าจอ";
-    private bool HasPageControls => isPdfReady && hasPageData && totalPages > 1;
-    private bool CanGoNext => HasPageControls && currentPage < totalPages;
-    private bool CanGoPrevious => HasPageControls && currentPage > 1;
-
-    private async Task ToggleFullScreen()
-    {
-        if (string.IsNullOrEmpty(previewSource))
-        {
-            return;
-        }
-
-        var title = !string.IsNullOrWhiteSpace(document?.DisplayName)
-            ? document!.DisplayName
-            : document?.FileName ?? "PDF Viewer";
-
-        try
-        {
-            await JSRuntime.InvokeVoidAsync("pdfViewerInterop.openStandalone", previewSource, title);
-        }
-        catch (JSException jsEx)
-        {
-            Logger.LogWarning(jsEx, "Failed to open standalone PDF window for '{DocumentPath}'", document?.FileName);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Unexpected error while opening standalone PDF window for '{DocumentPath}'", document?.FileName);
-        }
-    }
-
     private async Task EnterFullScreenAsync()
     {
         fullScreenRenderFailed = false;
@@ -458,15 +495,16 @@ else
                 totalPages = 1;
             }
         }
-        catch (JSException jsEx)
-        {
-            Logger.LogWarning(jsEx, "Unable to determine PDF page count for '{DocumentPath}' in full screen", document?.FileName);
-            hasPageData = false;
-            totalPages = 1;
-        }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Unexpected error determining PDF page count for '{DocumentPath}'", document?.FileName);
+            if (ex is JSException jsEx)
+            {
+                Logger.LogWarning(jsEx, "Unable to determine PDF page count for '{DocumentPath}' in full screen", document?.FileName);
+            }
+            else
+            {
+                Logger.LogWarning(ex, "Unexpected error determining PDF page count for '{DocumentPath}'", document?.FileName);
+            }
             hasPageData = false;
             totalPages = 1;
         }
@@ -481,14 +519,16 @@ else
                     currentPage = Math.Clamp(visiblePage, 1, totalPages);
                 }
             }
-            catch (JSException jsEx)
-            {
-                Logger.LogDebug(jsEx, "Unable to determine current visible page for '{DocumentPath}'");
-                currentPage = Math.Clamp(currentPage, 1, totalPages);
-            }
             catch (Exception ex)
             {
-                Logger.LogDebug(ex, "Unexpected error determining current visible page for '{DocumentPath}'");
+                if (ex is JSException jsEx)
+                {
+                    Logger.LogDebug(jsEx, "Unable to determine current visible page for '{DocumentPath}'");
+                }
+                else
+                {
+                    Logger.LogDebug(ex, "Unexpected error determining current visible page for '{DocumentPath}'");
+                }
                 currentPage = Math.Clamp(currentPage, 1, totalPages);
             }
         }
@@ -586,13 +626,16 @@ else
                 await JSRuntime.InvokeVoidAsync("pdfViewerInterop.focusFullScreenHost", fullScreenHostId);
             }
         }
-        catch (JSException jsEx)
+        catch (Exception ex)
         {
-            Logger.LogDebug(jsEx, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
-        }
-        catch (InvalidOperationException invalidOp)
-        {
-            Logger.LogDebug(invalidOp, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
+            if (ex is JSException or InvalidOperationException)
+            {
+                Logger.LogDebug(ex, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
+            }
+            else
+            {
+                throw;
+            }
         }
     }
 
