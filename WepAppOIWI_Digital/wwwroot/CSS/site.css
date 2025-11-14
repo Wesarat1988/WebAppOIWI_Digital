@@ -159,6 +159,116 @@
     box-shadow: 0 8px 24px rgba(0,0,0,.10);
 }
 
+/* ===== Full Screen PDF Viewer ===== */
+.document-preview-frame {
+    position: relative;
+}
+
+.document-preview-frame.pdf-fullscreen-active {
+    position: fixed;
+    inset: 0;
+    z-index: 1090;
+    background: #000;
+    border-radius: 0;
+    border: none;
+    display: flex;
+    flex-direction: column;
+    box-shadow: none;
+}
+
+.document-preview-frame.pdf-fullscreen-active .document-viewer {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.document-preview-frame.pdf-fullscreen-active .document-toolbar {
+    background: rgba(17, 17, 17, 0.85);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
+
+.document-preview-frame.pdf-fullscreen-active:focus {
+    outline: 2px solid rgba(255, 255, 255, 0.35);
+    outline-offset: 0;
+}
+
+.document-preview-frame.pdf-fullscreen-active .document-toolbar .btn {
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.document-preview-frame.pdf-fullscreen-active .document-toolbar .btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+}
+
+.document-preview-frame.pdf-fullscreen-active .document-container {
+    flex: 1;
+    overflow: auto;
+    padding: 1.5rem 0;
+    background: transparent;
+}
+
+.document-preview-frame.pdf-fullscreen-active .pdfjs-viewer {
+    padding: 0 1.5rem;
+}
+
+.pdf-fullscreen-nav {
+    display: none;
+}
+
+.document-preview-frame.pdf-fullscreen-active .pdf-fullscreen-nav {
+    position: fixed;
+    left: 50%;
+    bottom: 2rem;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 999px;
+    background: rgba(17, 17, 17, 0.75);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+    z-index: 1100;
+}
+
+.pdf-fullscreen-nav .btn {
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.08);
+    padding-inline: 1.25rem;
+}
+
+.pdf-fullscreen-nav .btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+}
+
+.pdf-fullscreen-nav .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.pdf-fullscreen-page-indicator {
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: 0.02em;
+    color: #fff;
+}
+
+.pdf-fullscreen-error {
+    margin: 0;
+    border-radius: 0;
+}
+
+.document-preview-frame.pdf-fullscreen-active .pdf-fullscreen-error {
+    background: rgba(255, 193, 7, 0.18);
+    color: #fff;
+    border-color: rgba(255, 193, 7, 0.45);
+}
+
 /* ===== Sidebar / Brand Logo ===== */
 
 /* ความกว้าง sidebar */
