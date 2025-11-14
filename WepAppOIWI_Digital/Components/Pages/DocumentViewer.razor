@@ -119,6 +119,41 @@ else
         <p class="text-muted small mt-2">
             หากไฟล์ไม่แสดงผลในตัวอย่าง กรุณากดปุ่มดาวน์โหลดเพื่อเปิดไฟล์ในโปรแกรมที่รองรับ
         </p>
+        if (isFullScreen)
+        {
+            <div class="pdf-fullscreen-overlay" tabindex="0" @onkeydown="HandleFullScreenKeyDown" @ref="fullScreenOverlayRef">
+                <div class="pdf-fullscreen-toolbar d-flex align-items-center justify-content-between">
+                    <div class="pdf-fullscreen-title text-truncate" title="@document?.DisplayName">@document?.DisplayName</div>
+                    <button class="btn btn-sm btn-light" @onclick="ExitFullScreen" aria-label="ออกจากโหมดเต็มหน้าจอ" title="ออกจากโหมดเต็มหน้าจอ">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+                <div class="pdf-fullscreen-body">
+                    <div class="pdf-fullscreen-canvas-wrapper">
+                        @if (fullScreenRenderFailed)
+                        {
+                            <iframe src="@previewSource" class="pdf-fullscreen-iframe" title="ตัวอย่างเอกสารแบบเต็มหน้าจอ"></iframe>
+                        }
+                        else
+                        {
+                            <canvas id="@fullScreenCanvasId" class="pdf-fullscreen-canvas"></canvas>
+                        }
+                    </div>
+                </div>
+                @if (HasPageControls)
+                {
+                    <div class="pdf-fullscreen-nav">
+                        <button class="btn btn-lg btn-outline-light" @onclick="PreviousPage" disabled="@(!CanGoPrevious)" aria-label="หน้าก่อนหน้า">
+                            <i class="bi bi-arrow-left"></i>
+                        </button>
+                        <span class="pdf-fullscreen-page-indicator">หน้าที่ @currentPage / @totalPages</span>
+                        <button class="btn btn-lg btn-outline-light" @onclick="NextPage" disabled="@(!CanGoNext)" aria-label="หน้าถัดไป">
+                            <i class="bi bi-arrow-right"></i>
+                        </button>
+                    </div>
+                }
+            </div>
+        }
     }
     else
     {
