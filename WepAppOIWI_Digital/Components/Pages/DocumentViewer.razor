@@ -484,13 +484,13 @@ else
         {
             Logger.LogDebug(ex, "Unable to scroll PDF viewer to page {Page} for '{DocumentPath}'", currentPage, document?.FileName);
         }
-        catch (InvalidOperationException ex)
-        {
-            Logger.LogDebug(ex, "PDF viewer scroll target is unavailable for '{DocumentPath}'", document?.FileName);
-        }
         catch (ObjectDisposedException ex)
         {
             Logger.LogDebug(ex, "PDF viewer was disposed before scrolling to page {Page} for '{DocumentPath}'", currentPage, document?.FileName);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogDebug(ex, "PDF viewer scroll target is unavailable for '{DocumentPath}'", document?.FileName);
         }
     }
 
@@ -523,13 +523,13 @@ else
         {
             Logger.LogDebug(ex, "Unable to detect visible PDF page during scroll for '{DocumentPath}'", document?.FileName);
         }
-        catch (InvalidOperationException ex)
-        {
-            Logger.LogDebug(ex, "PDF viewer scroll detection failed because the element was unavailable for '{DocumentPath}'", document?.FileName);
-        }
         catch (ObjectDisposedException ex)
         {
             Logger.LogDebug(ex, "PDF viewer scroll detection skipped because the component was disposed for '{DocumentPath}'", document?.FileName);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogDebug(ex, "PDF viewer scroll detection failed because the element was unavailable for '{DocumentPath}'", document?.FileName);
         }
         finally
         {
@@ -561,13 +561,13 @@ else
         {
             Logger.LogDebug(ex, "Unable to determine current visible page for '{DocumentPath}'");
         }
-        catch (InvalidOperationException ex)
-        {
-            Logger.LogDebug(ex, "Visible page detection failed because the viewer was unavailable for '{DocumentPath}'", document?.FileName);
-        }
         catch (ObjectDisposedException ex)
         {
             Logger.LogDebug(ex, "Visible page detection skipped because the component was disposed for '{DocumentPath}'", document?.FileName);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogDebug(ex, "Visible page detection failed because the viewer was unavailable for '{DocumentPath}'", document?.FileName);
         }
 
         currentPage = Math.Clamp(currentPage, 1, totalPages);
