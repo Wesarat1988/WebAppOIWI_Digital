@@ -122,7 +122,9 @@ else
                     </div>
                 }
 
-                <div class="document-container position-relative @(IsFullScreen ? "pdf-fullscreen-frame-container" : string.Empty)">
+                <div class="document-container position-relative @(IsFullScreen ? "pdf-fullscreen-frame-container" : string.Empty)"
+                     @ref="pdfScrollContainerRef"
+                     @onscroll="HandlePdfScroll">
                     @if (isPreviewLoading)
                     {
                         <div class="pdf-preview-status text-muted">กำลังโหลดตัวอย่างเอกสาร PDF...</div>
@@ -182,6 +184,7 @@ else
     private readonly string fullScreenHostId = $"pdf-viewer-host-{System.Guid.NewGuid():N}";
     private const int MaxPdfRenderAttempts = 3;
     private ElementReference fullScreenOverlayRef;
+    private ElementReference pdfScrollContainerRef;
     private bool focusOverlayPending;
     private bool IsFullScreen { get; set; }
     private bool viewerRegistrationCompleted;
@@ -189,7 +192,10 @@ else
     private int totalPages = 1;
     private int currentPage = 1;
     private bool isPdfReady;
+    private bool isUpdatingVisiblePage;
     private DotNetObjectReference<DocumentViewer>? dotNetRef;
+
+    private const string PdfPageSelector = ".pdfjs-page-canvas";
 
     private bool ShouldPreventFullScreenKeyHandling => IsFullScreen;
 
@@ -407,26 +413,7 @@ else
 
         if (hasPageData)
         {
-            try
-            {
-                var visiblePage = await JSRuntime.InvokeAsync<int>("pdfViewerInterop.getCurrentPageIndex", pdfContainerId);
-                if (visiblePage > 0)
-                {
-                    currentPage = Math.Clamp(visiblePage, 1, totalPages);
-                }
-            }
-            catch (Exception ex)
-            {
-                if (ex is JSException jsEx)
-                {
-                    Logger.LogDebug(jsEx, "Unable to determine current visible page for '{DocumentPath}'");
-                }
-                else
-                {
-                    Logger.LogDebug(ex, "Unexpected error determining current visible page for '{DocumentPath}'");
-                }
-                currentPage = Math.Clamp(currentPage, 1, totalPages);
-            }
+            await UpdateVisiblePageFromScrollContainerAsync();
         }
         else
         {
@@ -478,14 +465,112 @@ else
         await InvokeAsync(StateHasChanged);
     }
 
-    private Task ScrollToCurrentPageAsync(bool smooth = true)
+    private async Task ScrollToCurrentPageAsync(bool smooth = true)
     {
-        if (!isPdfReady || !HasPageControls)
+        if (!isPdfReady || !HasPageControls || pdfScrollContainerRef.Context is null)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        return InvokeViewerVoidAsync("goToPage", pdfContainerId, currentPage, smooth);
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("pdfViewerInterop.scrollToPageInContainer",
+                pdfScrollContainerRef,
+                PdfPageSelector,
+                currentPage,
+                smooth);
+        }
+        catch (JSException ex)
+        {
+            Logger.LogDebug(ex, "Unable to scroll PDF viewer to page {Page} for '{DocumentPath}'", currentPage, document?.FileName);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogDebug(ex, "PDF viewer scroll target is unavailable for '{DocumentPath}'", document?.FileName);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            Logger.LogDebug(ex, "PDF viewer was disposed before scrolling to page {Page} for '{DocumentPath}'", currentPage, document?.FileName);
+        }
+    }
+
+    private async Task HandlePdfScroll()
+    {
+        if (!IsFullScreen || !HasPageControls || !isPdfReady || pdfScrollContainerRef.Context is null)
+        {
+            return;
+        }
+
+        if (isUpdatingVisiblePage)
+        {
+            return;
+        }
+
+        try
+        {
+            isUpdatingVisiblePage = true;
+            var visiblePage = await JSRuntime.InvokeAsync<int>("pdfViewerInterop.getVisiblePageIndexInContainer",
+                pdfScrollContainerRef,
+                PdfPageSelector);
+
+            if (visiblePage >= 1 && visiblePage <= totalPages && visiblePage != currentPage)
+            {
+                currentPage = visiblePage;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (JSException ex)
+        {
+            Logger.LogDebug(ex, "Unable to detect visible PDF page during scroll for '{DocumentPath}'", document?.FileName);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogDebug(ex, "PDF viewer scroll detection failed because the element was unavailable for '{DocumentPath}'", document?.FileName);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            Logger.LogDebug(ex, "PDF viewer scroll detection skipped because the component was disposed for '{DocumentPath}'", document?.FileName);
+        }
+        finally
+        {
+            isUpdatingVisiblePage = false;
+        }
+    }
+
+    private async Task UpdateVisiblePageFromScrollContainerAsync()
+    {
+        if (!hasPageData || pdfScrollContainerRef.Context is null)
+        {
+            currentPage = Math.Clamp(currentPage, 1, totalPages);
+            return;
+        }
+
+        try
+        {
+            var visiblePage = await JSRuntime.InvokeAsync<int>("pdfViewerInterop.getVisiblePageIndexInContainer",
+                pdfScrollContainerRef,
+                PdfPageSelector);
+
+            if (visiblePage >= 1)
+            {
+                currentPage = Math.Clamp(visiblePage, 1, totalPages);
+                return;
+            }
+        }
+        catch (JSException ex)
+        {
+            Logger.LogDebug(ex, "Unable to determine current visible page for '{DocumentPath}'");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogDebug(ex, "Visible page detection failed because the viewer was unavailable for '{DocumentPath}'", document?.FileName);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            Logger.LogDebug(ex, "Visible page detection skipped because the component was disposed for '{DocumentPath}'", document?.FileName);
+        }
+
+        currentPage = Math.Clamp(currentPage, 1, totalPages);
     }
 
     private async Task HandleFullScreenKeyDown(KeyboardEventArgs args)
@@ -591,8 +676,4 @@ else
         dotNetRef?.Dispose();
     }
 
-    private async Task InvokeViewerVoidAsync(string identifier, params object?[] args)
-    {
-        await JSRuntime.InvokeVoidAsync($"pdfViewerInterop.{identifier}", args);
-    }
 }

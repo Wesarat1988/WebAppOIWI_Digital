@@ -262,6 +262,76 @@
         return bestIndex + 1;
     }
 
+    function getPageElements(scrollContainer, selector) {
+        if (!scrollContainer || typeof scrollContainer.querySelectorAll !== "function") {
+            return [];
+        }
+
+        if (!selector) {
+            return Array.from(scrollContainer.children || []);
+        }
+
+        return Array.from(scrollContainer.querySelectorAll(selector));
+    }
+
+    function getVisiblePageIndexInContainer(scrollContainer, selector) {
+        if (!scrollContainer) {
+            return 0;
+        }
+
+        const pages = getPageElements(scrollContainer, selector);
+        if (!pages.length) {
+            return 0;
+        }
+
+        const containerRect = scrollContainer.getBoundingClientRect();
+        let bestIndex = 0;
+        let bestVisibility = -1;
+
+        pages.forEach((page, index) => {
+            const rect = page.getBoundingClientRect();
+            const visibleTop = Math.max(rect.top, containerRect.top);
+            const visibleBottom = Math.min(rect.bottom, containerRect.bottom);
+            const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+            const visibilityRatio = rect.height > 0 ? visibleHeight / rect.height : 0;
+
+            if (visibilityRatio > bestVisibility) {
+                bestVisibility = visibilityRatio;
+                bestIndex = index;
+            }
+        });
+
+        return bestIndex + 1;
+    }
+
+    function scrollToPageInContainer(scrollContainer, selector, pageNumber, smooth) {
+        if (!scrollContainer) {
+            return;
+        }
+    }
+
+        const pages = getPageElements(scrollContainer, selector);
+        if (!pages.length) {
+            return;
+        }
+
+        const targetIndex = Math.min(Math.max((pageNumber || 1) - 1, 0), pages.length - 1);
+        const target = pages[targetIndex];
+        if (!target) {
+            return;
+        }
+
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const offset = targetRect.top - containerRect.top + scrollContainer.scrollTop;
+
+        const behavior = smooth === false ? "auto" : "smooth";
+        scrollContainer.scrollTo({
+            top: offset,
+            behavior
+        });
+    }
+
     function initializeFullScreen(dotNetRef, hostId, viewerId) {
         if (!viewerId || !dotNetRef) {
             return;
@@ -386,6 +456,8 @@
         getPageCount,
         goToPage,
         getCurrentPageIndex,
+        getVisiblePageIndexInContainer,
+        scrollToPageInContainer,
         initializeFullScreen,
         requestFullScreen: requestFullScreenHost,
         exitFullScreen: exitFullScreenHost,
