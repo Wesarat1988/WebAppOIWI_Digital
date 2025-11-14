@@ -120,6 +120,12 @@
         getCurrentPageIndex: function (containerId) {
             return tryCall("getCurrentPageIndex", [containerId]).catch(() => 0);
         },
+        getVisiblePageIndexInContainer: function (scrollContainer, pageSelector) {
+            return tryCall("getVisiblePageIndexInContainer", [scrollContainer, pageSelector]).catch(() => 0);
+        },
+        scrollToPageInContainer: function (scrollContainer, pageSelector, pageNumber, smooth) {
+            return tryCall("scrollToPageInContainer", [scrollContainer, pageSelector, pageNumber, smooth]);
+        },
         openStandalone: function (source, title) {
             return tryCall("openStandalone", [source, title]);
         }
