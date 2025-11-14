@@ -1,8 +1,6 @@
 @page "/debug/oiwi-v2"
-@using Microsoft.EntityFrameworkCore
-@using Oiwi.Data
 @using Oiwi.Data.Entities
-@inject OiwiDbContext DbContext
+@inject DocumentV2Service DocumentService
 
 <PageTitle>OI/WI V2 Debug</PageTitle>
 
@@ -30,6 +28,7 @@ else
                     <th>Model</th>
                     <th>Uploaded by</th>
                     <th>Uploaded at (UTC)</th>
+                    <th class="text-end">Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -44,6 +43,9 @@ else
                         <td>@doc.Model</td>
                         <td>@doc.UploadedBy</td>
                         <td>@doc.UploadedAt.ToString("u")</td>
+                        <td class="text-end">
+                            <a class="btn btn-outline-secondary btn-sm" href="@($"/debug/oiwi-v2/edit/{doc.Id}")">Edit</a>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -56,29 +58,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        if (!await DbContext.Documents.AnyAsync())
-        {
-            var seed = new Document
-            {
-                DocumentCode = "OI-9000",
-                DocumentType = "OI",
-                Title = "TEST OI FROM V2",
-                Line = "STF03",
-                Station = "AS-01",
-                Model = "FA121A08-P84",
-                MachineName = "Test Machine",
-                Comment = "Seed data",
-                UploadedBy = "System",
-                UploadedAt = DateTime.UtcNow,
-                LastUpdatedAt = DateTime.UtcNow
-            };
-
-            DbContext.Documents.Add(seed);
-            await DbContext.SaveChangesAsync();
-        }
-
-        _documents = await DbContext.Documents
-            .OrderBy(d => d.DocumentCode)
-            .ToListAsync();
+        await DocumentService.EnsureSeedDataAsync();
+        _documents = await DocumentService.GetDocumentsAsync();
     }
 }

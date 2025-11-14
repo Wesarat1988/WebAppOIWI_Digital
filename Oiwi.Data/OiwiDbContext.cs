@@ -23,6 +23,9 @@ public class OiwiDbContext : DbContext
         {
             entity.HasIndex(e => e.DocumentCode).IsUnique();
 
+            entity.Property(e => e.IsDeleted)
+                .HasDefaultValue(false);
+
             entity.HasMany(e => e.Files)
                 .WithOne(f => f.Document)
                 .HasForeignKey(f => f.DocumentId)

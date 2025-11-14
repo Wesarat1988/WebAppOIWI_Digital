@@ -14,6 +14,10 @@ public class Document
     public required string UploadedBy { get; set; }
     public DateTime UploadedAt { get; set; }
     public DateTime? LastUpdatedAt { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public string? DeletedBy { get; set; }
+    public string? DeleteReason { get; set; }
 
     public List<DocumentFile> Files { get; set; } = new();
     public List<DocumentHistory> Histories { get; set; } = new();

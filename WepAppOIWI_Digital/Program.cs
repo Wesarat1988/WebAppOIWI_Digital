@@ -35,6 +35,7 @@ builder.Services.Configure<OiwiIndexerOptions>(builder.Configuration.GetSection(
 builder.Services.AddMemoryCache();
 builder.Services.AddDbContextFactory<AppDbContext>(options => options.UseSqlite(catalogConnectionString));
 builder.Services.AddDbContext<OiwiDbContext>(options => options.UseSqlite(oiwiV2ConnectionString));
+builder.Services.AddScoped<DocumentV2Service>();
 builder.Services.AddSingleton<DocumentCatalogService>();
 builder.Services.AddSingleton<IPdfStampService, PdfStampService>();
 builder.Services.AddSingleton<DocumentUploadService>();

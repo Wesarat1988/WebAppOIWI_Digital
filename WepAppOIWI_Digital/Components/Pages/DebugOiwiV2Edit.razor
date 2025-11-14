@@ -1,0 +1,203 @@
+@page "/debug/oiwi-v2/edit/{DocumentId:int}"
+
+@using Oiwi.Data.Entities
+@inject DocumentV2Service DocumentService
+@inject NavigationManager Navigation
+@inject ILogger<DebugOiwiV2Edit> Logger
+
+<PageTitle>OI/WI V2 Document Detail</PageTitle>
+
+<h3 class="mb-3">OI/WI V2 Document Detail</h3>
+
+@if (_isLoading)
+{
+    <p><em>Loading document...</em></p>
+}
+else if (!string.IsNullOrEmpty(_errorMessage))
+{
+    <div class="alert alert-danger" role="alert">@_errorMessage</div>
+}
+else if (_document is null)
+{
+    <div class="alert alert-warning" role="alert">Document not found.</div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-3">
+                <div>
+                    <h5 class="card-title mb-1">@_document.Title</h5>
+                    <div class="text-muted">@_document.DocumentCode (@_document.DocumentType)</div>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-secondary" @onclick="NavigateBack">Back</button>
+                    <button class="btn btn-danger" @onclick="ShowDeleteDialog" disabled="@_document.IsDeleted">🗑 Delete</button>
+                </div>
+            </div>
+
+            @if (_document.IsDeleted)
+            {
+                <div class="alert alert-danger" role="alert">
+                    <div class="fw-semibold mb-1">This document is marked as deleted.</div>
+                    <div>Deleted by: @(_document.DeletedBy ?? "-")</div>
+                    <div>Deleted at (UTC): @(_document.DeletedAt?.ToString("u") ?? "-")</div>
+                    <div>Reason: @(_document.DeleteReason ?? "-")</div>
+                </div>
+            }
+
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Line</dt>
+                <dd class="col-sm-9">@(_document.Line ?? "-")</dd>
+
+                <dt class="col-sm-3">Station</dt>
+                <dd class="col-sm-9">@(_document.Station ?? "-")</dd>
+
+                <dt class="col-sm-3">Model</dt>
+                <dd class="col-sm-9">@(_document.Model ?? "-")</dd>
+
+                <dt class="col-sm-3">Machine name</dt>
+                <dd class="col-sm-9">@(_document.MachineName ?? "-")</dd>
+
+                <dt class="col-sm-3">Comment</dt>
+                <dd class="col-sm-9">@(_document.Comment ?? "-")</dd>
+
+                <dt class="col-sm-3">Uploaded by</dt>
+                <dd class="col-sm-9">@_document.UploadedBy</dd>
+
+                <dt class="col-sm-3">Uploaded at (UTC)</dt>
+                <dd class="col-sm-9">@_document.UploadedAt.ToString("u")</dd>
+
+                <dt class="col-sm-3">Last updated (UTC)</dt>
+                <dd class="col-sm-9">@(_document.LastUpdatedAt?.ToString("u") ?? "-")</dd>
+            </dl>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_deleteError))
+    {
+        <div class="alert alert-danger" role="alert">@_deleteError</div>
+    }
+}
+
+@if (_showDeleteConfirm)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.45);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm document delete</h5>
+                    <button type="button" class="btn-close" aria-label="Close" @onclick="CancelDelete"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">This action will mark the document as deleted. It will no longer appear in normal searches.</p>
+                    <div class="mb-3">
+                        <label class="form-label">Deleted by</label>
+                        <input class="form-control" @bind="DeletedBy" @bind:event="oninput" />
+                    </div>
+                    <div>
+                        <label class="form-label">Reason for delete</label>
+                        <textarea class="form-control" rows="3" @bind="DeleteReason" @bind:event="oninput"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelDelete" disabled="@_deleteInProgress">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmDelete" disabled="@IsDeleteDisabled">
+                        @(_deleteInProgress ? "Deleting..." : "Confirm delete")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int DocumentId { get; set; }
+
+    private Document? _document;
+    private bool _isLoading = true;
+    private string? _errorMessage;
+    private bool _showDeleteConfirm;
+    private bool _deleteInProgress;
+    private string _deleteError = string.Empty;
+
+    private string DeletedBy { get; set; } = string.Empty;
+    private string DeleteReason { get; set; } = string.Empty;
+
+    private bool IsDeleteDisabled => _deleteInProgress || string.IsNullOrWhiteSpace(DeletedBy) || string.IsNullOrWhiteSpace(DeleteReason);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+        _deleteError = string.Empty;
+
+        try
+        {
+            _document = await DocumentService.GetDocumentAsync(DocumentId);
+            if (_document is null)
+            {
+                _errorMessage = "Document not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load document {DocumentId}", DocumentId);
+            _errorMessage = "Failed to load the document. See logs for details.";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void ShowDeleteDialog()
+    {
+        DeletedBy = string.Empty;
+        DeleteReason = string.Empty;
+        _deleteError = string.Empty;
+        _showDeleteConfirm = true;
+    }
+
+    private void CancelDelete()
+    {
+        _showDeleteConfirm = false;
+        _deleteInProgress = false;
+        DeletedBy = string.Empty;
+        DeleteReason = string.Empty;
+        _deleteError = string.Empty;
+    }
+
+    private void NavigateBack()
+    {
+        Navigation.NavigateTo("/debug/oiwi-v2");
+    }
+
+    private async Task ConfirmDelete()
+    {
+        if (_document is null)
+        {
+            return;
+        }
+
+        _deleteInProgress = true;
+        _deleteError = string.Empty;
+
+        try
+        {
+            await DocumentService.DeleteDocumentAsync(_document.Id, DeletedBy, DeleteReason);
+            _showDeleteConfirm = false;
+            Navigation.NavigateTo("/debug/oiwi-v2");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to delete document {DocumentId}", _document.Id);
+            _deleteError = "Delete failed. Please check the inputs and try again.";
+        }
+        finally
+        {
+            _deleteInProgress = false;
+        }
+    }
+}
