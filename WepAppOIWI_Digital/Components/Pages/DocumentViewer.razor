@@ -551,11 +551,21 @@ else
             {
                 await JSRuntime.InvokeVoidAsync("pdfViewerInterop.focusFullScreenHost", fullScreenHostId);
             }
-            else
+            catch (JSException jsEx)
             {
-                await JSRuntime.InvokeVoidAsync("pdfViewer.focusFullScreenHost", fullScreenHostId);
+                Logger.LogDebug(jsEx, "Unable to determine current visible page for '{DocumentPath}'");
+                currentPage = Math.Clamp(currentPage, 1, totalPages);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Unexpected error determining current visible page for '{DocumentPath}'");
+                currentPage = Math.Clamp(currentPage, 1, totalPages);
             }
         }
+        else
+        {
+            currentPage = 1;
+        }
         catch (JSException jsEx)
         {
             Logger.LogDebug(jsEx, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
@@ -567,7 +577,7 @@ else
     }
 
     [JSInvokable]
-    public Task HandleFullScreenCommand(string command) => command switch
+    public Task HandleFullScreenCommandAsync(string command) => command switch
     {
         "next" => NextPage(),
         "previous" => PreviousPage(),
@@ -576,7 +586,7 @@ else
     };
 
     [JSInvokable]
-    public async Task OnFullScreenChanged(string hostId, bool active)
+    public async Task OnFullScreenChangedAsync(string hostId, bool active)
     {
         if (!string.Equals(hostId, fullScreenHostId, StringComparison.Ordinal))
         {
@@ -605,62 +615,7 @@ else
     }
 
     [JSInvokable]
-    public Task OnPdfRenderStatusChanged(string viewerId, bool success, string? message)
-    {
-        if (!string.Equals(viewerId, pdfContainerId, StringComparison.Ordinal))
-        {
-            return Task.CompletedTask;
-        }
-        catch (JSException jsEx)
-        {
-            Logger.LogDebug(jsEx, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
-        }
-        catch (InvalidOperationException invalidOp)
-        {
-            Logger.LogDebug(invalidOp, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
-        }
-    }
-
-    [JSInvokable]
-    public Task HandleFullScreenCommand(string command) => command switch
-    {
-        "next" => NextPage(),
-        "previous" => PreviousPage(),
-        "exit" => ExitFullScreenAsync(),
-        _ => Task.CompletedTask
-    };
-
-    [JSInvokable]
-    public async Task OnFullScreenChanged(string hostId, bool active)
-    {
-        if (!string.Equals(hostId, fullScreenHostId, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        if (isFullScreen == active)
-        {
-            return;
-        }
-
-        fullScreenRenderFailed = false;
-        isFullScreen = active;
-
-        if (isFullScreen && HasPageControls)
-        {
-            await ScrollToCurrentPageAsync(false);
-        }
-
-        if (isFullScreen)
-        {
-            await FocusFullScreenHostAsync();
-        }
-
-        await InvokeAsync(StateHasChanged);
-    }
-
-    [JSInvokable]
-    public Task OnPdfRenderStatusChanged(string viewerId, bool success, string? message)
+    public Task OnPdfRenderStatusChangedAsync(string viewerId, bool success, string? message)
     {
         if (!string.Equals(viewerId, pdfContainerId, StringComparison.Ordinal))
         {

@@ -117,7 +117,7 @@
             }
 
             if (state.dotNetRef) {
-                state.dotNetRef.invokeMethodAsync("OnFullScreenChanged", hostId, isActive).catch(() => { });
+                state.dotNetRef.invokeMethodAsync("OnFullScreenChangedAsync", hostId, isActive).catch(() => { });
             }
         });
     }
@@ -154,7 +154,7 @@
             event.preventDefault();
 
             if (state.dotNetRef) {
-                state.dotNetRef.invokeMethodAsync("HandleFullScreenCommand", command).catch(() => { });
+                state.dotNetRef.invokeMethodAsync("HandleFullScreenCommandAsync", command).catch(() => { });
             }
         };
 
@@ -456,7 +456,7 @@
         }
 
         try {
-            dotNetRef.invokeMethodAsync("OnPdfRenderStatusChanged", containerId, !!success, message || null)
+            dotNetRef.invokeMethodAsync("OnPdfRenderStatusChangedAsync", containerId, !!success, message || null)
                 .catch(() => { });
         } catch (error) {
             // ignore
