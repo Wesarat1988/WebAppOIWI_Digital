@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using System
 @using System.Linq
+@using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
 @inject DocumentCatalogService DocumentCatalog
@@ -80,8 +81,13 @@ else
 
     @if (canPreviewInline && !string.IsNullOrEmpty(previewSource))
     {
-        <div id="@fullScreenHostId" class="@GetPreviewFrameClasses()">
-            <div class="document-viewer">
+        <div id="@fullScreenHostId"
+             @ref="fullScreenOverlayRef"
+             tabindex="-1"
+             @onkeydown="HandleFullScreenKeyDown"
+             @onkeydown:preventDefault="ShouldPreventFullScreenKeyHandling"
+             class="@GetPreviewFrameClasses()">
+            <div id="@fullScreenCanvasId" class="document-viewer">
                 <!-- PDF Toolbar -->
                 <div class="document-toolbar d-flex align-items-center gap-2 p-2 border-bottom bg-light">
                     <button class="btn btn-sm btn-outline-secondary" @onclick="ZoomOut" aria-label="ซูมออก">−</button>
@@ -93,6 +99,13 @@ else
                         <i class="bi @(isFullScreen ? "bi-fullscreen-exit" : "bi-arrows-fullscreen")"></i>
                     </button>
                 </div>
+
+                @if (fullScreenRenderFailed)
+                {
+                    <div class="alert alert-warning pdf-fullscreen-error" role="alert">
+                        ไม่สามารถเข้าสู่โหมดเต็มหน้าจอได้ เบราว์เซอร์อาจปิดกั้นการใช้งาน กรุณาลองอีกครั้งหรือตรวจสอบการตั้งค่า
+                    </div>
+                }
 
                 <!-- PDF Canvas Container -->
                 <div class="document-container">
@@ -179,7 +192,9 @@ else
     private int pdfRenderAttempts;
     private readonly string pdfContainerId = $"pdfjs-viewer-{System.Guid.NewGuid():N}";
     private readonly string fullScreenHostId = $"pdf-viewer-host-{System.Guid.NewGuid():N}";
+    private readonly string fullScreenCanvasId = $"pdf-viewer-focus-{System.Guid.NewGuid():N}";
     private const int MaxPdfRenderAttempts = 3;
+    private ElementReference fullScreenOverlayRef;
     private bool isFullScreen;
     private bool hasPageData;
     private int totalPages = 1;
@@ -188,7 +203,10 @@ else
     private bool fullScreenInteropInitialized;
     private bool requestFullScreenPending;
     private bool exitFullScreenPending;
+    private bool fullScreenRenderFailed;
     private DotNetObjectReference<DocumentViewer>? dotNetRef;
+
+    private bool ShouldPreventFullScreenKeyHandling => isFullScreen;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -210,6 +228,7 @@ else
         requestFullScreenPending = false;
         exitFullScreenPending = wasFullScreen;
         isFullScreen = false;
+        fullScreenRenderFailed = false;
 
         if (!DocumentCatalogService.TryDecodeDocumentToken(Token, out var normalizedPath))
         {
@@ -302,7 +321,24 @@ else
         if (requestFullScreenPending)
         {
             requestFullScreenPending = false;
-            await JSRuntime.InvokeVoidAsync("pdfViewer.requestFullScreen", fullScreenHostId);
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("pdfViewer.requestFullScreen", fullScreenHostId);
+            }
+            catch (JSException jsEx)
+            {
+                Logger.LogWarning(jsEx, "Browser refused fullscreen for '{DocumentPath}'", document?.FileName);
+                fullScreenRenderFailed = true;
+                isFullScreen = false;
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Unexpected error while requesting fullscreen for '{DocumentPath}'", document?.FileName);
+                fullScreenRenderFailed = true;
+                isFullScreen = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
 
         if (exitFullScreenPending)
@@ -326,6 +362,7 @@ else
 
     private async Task EnterFullScreenAsync()
     {
+        fullScreenRenderFailed = false;
         try
         {
             totalPages = await JSRuntime.InvokeAsync<int>("pdfViewer.getPageCount", pdfContainerId);
@@ -380,9 +417,12 @@ else
 
     private Task ExitFullScreenAsync()
     {
+        fullScreenRenderFailed = false;
         exitFullScreenPending = true;
         return InvokeAsync(StateHasChanged);
     }
+
+    private Task ExitFullScreen() => ExitFullScreenAsync();
 
     private async Task NextPage() => await ChangePageAsync(1);
     private async Task PreviousPage() => await ChangePageAsync(-1);
@@ -402,6 +442,7 @@ else
 
         currentPage = newPage;
         await ScrollToCurrentPageAsync();
+        await FocusFullScreenHostAsync();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -413,6 +454,60 @@ else
         }
 
         return JSRuntime.InvokeVoidAsync("pdfViewer.goToPage", pdfContainerId, currentPage, smooth).AsTask();
+    }
+
+    private async Task HandleFullScreenKeyDown(KeyboardEventArgs args)
+    {
+        if (!isFullScreen)
+        {
+            return;
+        }
+
+        switch (args.Key)
+        {
+            case "ArrowRight":
+            case "PageDown":
+            case " ":
+            case "Spacebar":
+                await NextPage();
+                break;
+            case "ArrowLeft":
+            case "PageUp":
+            case "Backspace":
+                await PreviousPage();
+                break;
+            case "Escape":
+                await ExitFullScreenAsync();
+                break;
+        }
+    }
+
+    private async Task FocusFullScreenHostAsync()
+    {
+        if (!isFullScreen)
+        {
+            return;
+        }
+
+        try
+        {
+            if (fullScreenOverlayRef.Context is not null)
+            {
+                await fullScreenOverlayRef.FocusAsync();
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("pdfViewer.focusFullScreenHost", fullScreenHostId);
+            }
+        }
+        catch (JSException jsEx)
+        {
+            Logger.LogDebug(jsEx, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
+        }
+        catch (InvalidOperationException invalidOp)
+        {
+            Logger.LogDebug(invalidOp, "Unable to focus fullscreen host for '{DocumentPath}'", document?.FileName);
+        }
     }
 
     [JSInvokable]
@@ -437,11 +532,17 @@ else
             return;
         }
 
+        fullScreenRenderFailed = false;
         isFullScreen = active;
 
         if (isFullScreen && HasPageControls)
         {
             await ScrollToCurrentPageAsync(false);
+        }
+
+        if (isFullScreen)
+        {
+            await FocusFullScreenHostAsync();
         }
 
         await InvokeAsync(StateHasChanged);

@@ -109,6 +109,7 @@
             }
 
             if (isActive) {
+                focusFullScreenHost(hostId);
                 attachKeyHandler(state);
             } else {
                 detachKeyHandler(state);
@@ -166,6 +167,23 @@
 
         document.removeEventListener("keydown", state.keyHandler, true);
         state.keyHandler = null;
+    }
+
+    function focusFullScreenHost(hostId) {
+        const host = document.getElementById(hostId);
+        if (!host || typeof host.focus !== "function") {
+            return;
+        }
+
+        try {
+            host.focus({ preventScroll: true });
+        } catch (error) {
+            try {
+                host.focus();
+            } catch (innerError) {
+                // ignore focus failures
+            }
+        }
     }
 
     // preload
@@ -423,6 +441,7 @@
         initializeFullScreen,
         requestFullScreen: requestFullScreenHost,
         exitFullScreen: exitFullScreenHost,
-        disposeFullScreen: disposeFullScreenHost
+        disposeFullScreen: disposeFullScreenHost,
+        focusFullScreenHost
     };
 })();

@@ -188,6 +188,11 @@
     color: #fff;
 }
 
+.document-preview-frame.pdf-fullscreen-active:focus {
+    outline: 2px solid rgba(255, 255, 255, 0.35);
+    outline-offset: 0;
+}
+
 .document-preview-frame.pdf-fullscreen-active .document-toolbar .btn {
     color: #fff;
     border-color: rgba(255, 255, 255, 0.4);
@@ -251,6 +256,17 @@
     font-size: 1.05rem;
     letter-spacing: 0.02em;
     color: #fff;
+}
+
+.pdf-fullscreen-error {
+    margin: 0;
+    border-radius: 0;
+}
+
+.document-preview-frame.pdf-fullscreen-active .pdf-fullscreen-error {
+    background: rgba(255, 193, 7, 0.18);
+    color: #fff;
+    border-color: rgba(255, 193, 7, 0.45);
 }
 
 /* ===== Sidebar / Brand Logo ===== */
